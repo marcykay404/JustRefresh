@@ -58,7 +58,7 @@ describe("alarms for rules not run by a timer", () => {
     expect(rt).toMatchObject({ status: "scheduled", reason: "Outside active hours" });
     env.clock.t = rt.nextDueAt!;
     await env.fireDue();
-    expect(await env.runtime.get(1)).toMatchObject({ status: "scheduled", nextDueAt: null, reason: "Waiting for navigation trigger" });
+    expect(await env.runtime.get(1)).toMatchObject({ status: "scheduled", nextDueAt: null, reason: "Runs each time the page loads" });
     expect(env.alarms.alarms.has(alarmName(1))).toBe(false);
     expect(env.browser.reloads).toEqual([]);
   });
@@ -80,5 +80,16 @@ describe("alarms for rules not run by a timer", () => {
     env.clock.advance(30_000);
     await env.fireDue();
     expect(env.browser.reloads).toEqual([1]);
+  });
+
+  it("a manual refresh whose page never finishes loading recovers at its watchdog, without running again", async () => {
+    const env = await setup({}, "manual");
+    await env.engine.handleEvent(1, "manual");
+    expect((await env.runtime.get(1))?.status).toBe("refreshing");
+    env.clock.advance(60_000);
+    await env.fireDue();
+    expect(await env.runtime.get(1)).toMatchObject({ status: "scheduled", pendingReload: null, nextDueAt: null, reason: "Runs when you run it" });
+    expect(env.browser.reloads).toEqual([1]);
+    expect(env.alarms.alarms.has(alarmName(1))).toBe(false);
   });
 });

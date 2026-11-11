@@ -15,7 +15,7 @@ describe("popup wording helpers", () => {
   });
 
   it("summarises a rule in one line", () => {
-    const base = { trigger: { type: "interval", seconds: 600 } as never, actions: { onMatched: [{ type: "notify" }], onNotMatched: [] } as never };
+    const base = { trigger: { type: "interval", seconds: 600 } as never, actions: { onMatched: [{ type: "stopRefresh" }, { type: "notify" }], onNotMatched: [{ type: "refresh" }] } as never };
     expect(describeRule({ ...base, stopWhen: { type: "dom.text", operator: "contains", value: "S$ 3", selector: ".price" } as never })).toBe(
       "Refreshing every 10 min until “S$ 3” appears in .price, then notify me",
     );
@@ -54,3 +54,36 @@ describe("Refresh until something appears", () => {
     expect(validateRule(r).valid).toBe(true);
   });
 });
+
+describe("describing a rule from its actions (approval card, popup)", () => {
+  const interval = { type: "interval", seconds: 60 } as never;
+  const cond = { type: "dom.text", operator: "contains", value: "Sold out" } as never;
+  const d = (actions: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    describeRule({ trigger: interval, stopWhen: undefined, actions: { onMatched: [], onNotMatched: [], ...actions } as never, ...extra } as never);
+
+  it("doesn't say Refreshing when nothing refreshes", () => {
+    expect(d({ onNotMatched: [{ type: "notify" }] })).toBe("Every 1 min: notify me (no refresh)");
+    expect(d({ onNotMatched: [{ type: "refresh" }, { type: "notify" }] })).toBe("Refreshing every 1 min, and each time: notify me");
+  });
+
+  it("an unusual shape is spelled out instead of read as 'until'", () => {
+    expect(d({ onMatched: [{ type: "refresh" }], onNotMatched: [] }, { stopWhen: cond })).toBe("Every 1 min: when “Sold out” appears, refresh; otherwise do nothing");
+    expect(d({ onMatched: [{ type: "notify" }], onNotMatched: [{ type: "refresh" }] }, { stopWhen: cond })).toBe(
+      "Every 1 min: when “Sold out” appears, notify me; otherwise refresh",
+    );
+  });
+
+  it("mentions what happens when the page can't be checked, and timed pauses", () => {
+    expect(
+      d({ onMatched: [{ type: "stopRefresh" }], onNotMatched: [{ type: "refresh" }], onUnknown: [{ type: "pauseRefresh", minutes: 30 }] }, { stopWhen: cond }),
+    ).toBe("Refreshing every 1 min until “Sold out” appears; if the page can't be checked: pause for 30 min");
+  });
+
+  it("page-load rules that only look", () => {
+    expect(describeRule({ trigger: { type: "navigation" } as never, stopWhen: cond, actions: { onMatched: [{ type: "notify" }], onNotMatched: [] } as never })).toBe(
+      "Checking each time the page loads: notify me when “Sold out” appears",
+    );
+    expect(describeRule({ trigger: { type: "navigation" } as never, actions: { onMatched: [], onNotMatched: [] } as never })).toBe("Runs each time the page loads");
+  });
+});
+

@@ -34,6 +34,9 @@ describe("approval card: the rule in words", () => {
   it("warns when it can run on every website", () => {
     expect(words({ id: "b", target: { patterns: ["*://*/*"] } })).toContain("This rule can run on every website.");
     expect(words({ id: "c", target: { patterns: ["regex:.*"] } })).toContain("This rule can run on every website.");
+    expect(words({ id: "c2", target: { patterns: ["https://*/*"] } })).toContain("This rule can run on every website.");
+    expect(words({ id: "c3", target: { patterns: ["regex:^https://"] } })).toContain("This rule can run on every website.");
+    expect(words({ id: "c4", target: { patterns: ["*.shop.test"] } })).not.toContain("every website");
   });
 
   it("names startup and manual triggers in words", () => {

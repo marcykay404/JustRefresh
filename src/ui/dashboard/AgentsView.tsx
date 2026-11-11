@@ -5,7 +5,7 @@ import { formatTime } from "../shared/format";
 import { Empty, ErrorBox, Toggle } from "../shared/components";
 import type { AgentRecord, AgentScope, ApprovalRequest, AuditEntry, Rule, Settings } from "../../core/types";
 import { useDialog } from "../shared/dialog";
-import { describeRule } from "../popup/describe";
+import { describeRule, intervalLabel } from "../popup/describe";
 import { matchesAny, patternToString } from "../../core/url-pattern";
 
 interface AgentsData {
@@ -289,7 +289,7 @@ export function RuleInWords({ rule }: { rule: Rule }) {
   const extras = [
     rule.schedule && (rule.schedule.startTime || rule.schedule.days?.length) ? "only during its active hours" : null,
     limits.maxRefreshes ? `at most ${limits.maxRefreshes} refreshes` : null,
-    limits.maxDurationSeconds ? `stops after ${Math.round(limits.maxDurationSeconds / 60)} min` : null,
+    limits.maxDurationSeconds ? `stops after ${intervalLabel(limits.maxDurationSeconds)}` : null,
     limits.stopAt ? `stops at ${formatTime(Date.parse(limits.stopAt))}` : null,
   ].filter(Boolean);
   return (
@@ -325,9 +325,7 @@ export function RuleInWords({ rule }: { rule: Rule }) {
 
 /** Whether a rule's pages include unrelated sites (a catch-all glob, domain or regex). */
 function matchesEverySite(rule: Rule): boolean {
-  try {
-    return ["https://unrelated-a.example/x", "http://unrelated-b.test/"].every((u) => matchesAny(rule.target.patterns, u) !== null);
-  } catch {
-    return false;
-  }
+  const all = (urls: string[]) => urls.every((u) => matchesAny(rule.target.patterns, u) !== null);
+  // https-only or http-only catch-alls count too ("https://*/*", "regex:^https://").
+  return all(["https://unrelated-a.example/x", "https://other-b.test/"]) || all(["http://unrelated-a.example/x", "http://other-b.test/"]);
 }

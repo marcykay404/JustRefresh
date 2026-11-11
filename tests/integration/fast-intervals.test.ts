@@ -148,3 +148,24 @@ it("a waiting tab that gets paused for typing doesn't hold up the others", async
   await env.fireDue(); // tab 1 had yielded to tab 2; it looks again a second later
   expect(env.browser.reloads).toEqual([1, 1]);
 });
+
+it("a waiting tab that is stopped gives up its place at once (no gap on the site)", async () => {
+  const env = createApiEnv();
+  await env.service.call(env.user, "updateSettings", { allowFastIntervals: true });
+  for (const id of [1, 2, 3]) env.browser.addTab(id, `https://shop.test/${id}`);
+  for (const id of [1, 2, 3]) await env.service.call(env.user, "startTab", { tabId: id, intervalSeconds: 5 });
+  const start = env.clock.t;
+  const times: number[] = [];
+  while (env.clock.t < start + 40_000) {
+    env.clock.advance(1_000);
+    if (env.clock.t === start + 7_000) await env.service.call(env.user, "stopTab", { tabId: 2 });
+    const before = env.browser.reloads.length;
+    await env.fireDue();
+    for (const id of env.browser.reloads.slice(before)) {
+      times.push(env.clock.t - start);
+      await env.completeNavigation(id);
+    }
+  }
+  expect(env.browser.reloads.slice(1)).not.toContain(2);
+  for (let i = 1; i < times.length; i++) expect(times[i]! - times[i - 1]!).toBeLessThanOrEqual(6_000);
+});
