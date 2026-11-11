@@ -46,6 +46,15 @@ export function nextWindowStart(w: ActiveWindow | undefined, now: number): numbe
 
 export type LimitOutcome = { reached: false } | { reached: true; reason: string };
 
+/** When a time-based limit ends the run (null = none): lets a paused tab still stop on time. */
+export function limitDeadline(limits: LimitsConfig, rt: Pick<TabRuntime, "startedAt">): number | null {
+  const times = [
+    limits.maxDurationSeconds !== undefined ? rt.startedAt + limits.maxDurationSeconds * 1000 : null,
+    limits.stopAt !== undefined ? Date.parse(limits.stopAt) : null,
+  ].filter((t): t is number => t !== null && Number.isFinite(t));
+  return times.length ? Math.min(...times) : null;
+}
+
 export function checkLimits(limits: LimitsConfig, rt: Pick<TabRuntime, "refreshCount" | "startedAt">, now: number): LimitOutcome {
   if (limits.maxRefreshes !== undefined && rt.refreshCount >= limits.maxRefreshes) {
     return { reached: true, reason: `Reached maximum of ${limits.maxRefreshes} refreshes` };

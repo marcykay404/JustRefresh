@@ -49,7 +49,7 @@ export function TabsView() {
           case "status":
             return a.status.localeCompare(b.status);
           case "next":
-            return (a.runtime?.nextDueAt ?? Infinity) - (b.runtime?.nextDueAt ?? Infinity);
+            return nextRefreshAt(a.runtime) - nextRefreshAt(b.runtime);
           case "count":
             return (b.runtime?.refreshCount ?? 0) - (a.runtime?.refreshCount ?? 0);
           default:
@@ -233,7 +233,7 @@ export function TabsView() {
                     <td className="small">
                       {r.controllerId?.startsWith("tab:") ? "Tab-specific" : r.controllerName ? <a href={`#/builder/${r.controllerId}`}>{r.controllerName}</a> : <span className="muted">—</span>}
                     </td>
-                    <td className="mono">{rt?.nextDueAt ? formatDuration(rt.nextDueAt - now) : "—"}</td>
+                    <td className="mono">{nextRefreshAt(rt) !== Infinity ? formatDuration(nextRefreshAt(rt) - now) : "—"}</td>
                     <td>{rt?.refreshCount ?? 0}</td>
                     <td className="small">
                       {rt?.lastEvaluation ? (
@@ -265,4 +265,13 @@ export function TabsView() {
       </div>
     </>
   );
+}
+
+/**
+ * When the next refresh is due (Infinity = none). A tab paused on a submitted
+ * form has no next refresh: its stored time is only when a time limit ends it.
+ */
+function nextRefreshAt(rt: TabRuntime | null | undefined): number {
+  if (!rt?.nextDueAt || rt.status === "paused_resubmit") return Infinity;
+  return rt.nextDueAt;
 }

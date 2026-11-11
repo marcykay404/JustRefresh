@@ -54,11 +54,14 @@
 * **Pages reached by submitting a form** (an order, a payment, a sign-up) are
   never refreshed automatically: in Chrome a reload asks "Confirm Form
   Resubmission", which blocks an unattended tab and, if Continue is pressed,
-  sends the form again. The tab pauses with that reason (notified once) and
-  the popup offers **Open this page fresh**, which loads the address as a
-  normal visit. Detection runs in the page: a form submitted with POST that
-  the page didn't handle with script, followed by a page that wasn't
-  redirected (a redirected page was fetched with GET and is safe). It uses the
+  sends the form again. The tab pauses with that reason (notified once), with
+  no timer running: it resumes by itself when the tab goes to another page
+  (a time limit still ends a watch on time). It stays paused if Memory Saver
+  unloads and restores the tab. The popup offers **Open this page fresh**,
+  which loads the address as a normal visit. Detection runs in the page: a
+  form submitted with POST that the page didn't handle with script, followed
+  by a page that wasn't redirected (a redirected page was fetched with GET
+  and is safe). It uses the
   site's sessionStorage, so a form that posts to a *different* site isn't
   detected, and it needs site access like activity protection does. Also not
   detected: forms sent from script with `form.submit()` (no submit event, e.g.

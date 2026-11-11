@@ -297,6 +297,9 @@ describe("rules made from the popup take effect", () => {
 describe("pages reached by submitting a form", () => {
   it("paused on one: explains and offers Open this page fresh", async () => {
     await render({ source: "tab", status: "paused_resubmit" });
+    expect(text()).toContain("Paused on a submitted form");
+    expect(text()).toContain("Refreshing every 5 min starts again when this tab goes to another page");
+    expect(el.querySelector(".progress")).toBeNull(); // no countdown: nothing is due
     expect(text()).toContain("This page came from submitting a form");
     await click("Open this page fresh");
     expect(called("openFresh")).toEqual([{ tabId: 1 }]);
@@ -314,6 +317,14 @@ describe("pages reached by submitting a form", () => {
     expect(called("openFresh")).toEqual([{ tabId: 1 }]);
     expect(called("refreshNow")).toEqual([{ tabId: 1 }]); // no forced retry
     refreshNowResult = { refreshed: true };
+  });
+});
+
+describe("rule tab paused on a form page", () => {
+  it("says so without a countdown, and doesn't promise more than the rule covers", async () => {
+    await render({ source: "rule", status: "paused_resubmit" });
+    expect(text()).toContain("Paused on a submitted form. The rule carries on if this tab goes to another page it covers.");
+    expect(el.querySelector(".progress")).toBeNull();
   });
 });
 

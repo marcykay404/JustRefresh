@@ -13,7 +13,7 @@ import type { ActivitySnapshot } from "../shared/messaging-types";
 import { evaluateConditionTree, explainTrace } from "./evaluator";
 import { resolveTab, type Resolution } from "./rule-resolver";
 import { decideSafety, FORM_RESULT_REASON } from "./safety";
-import { checkLimits, inActiveWindow, MIN_ALARM_DELAY_MS, nextWindowStart, restoredDueAt } from "./schedule";
+import { checkLimits, inActiveWindow, limitDeadline, MIN_ALARM_DELAY_MS, nextWindowStart, restoredDueAt } from "./schedule";
 import { isPaused, isTerminal, newRuntime, transition } from "./state-machine";
 import { TimeoutError, withTimeout } from "./timeout";
 import { FAST_SITE_SPACING_MS, MIN_INTERVAL_SECONDS } from "../triggers/interval";
@@ -120,7 +120,8 @@ class SafetyBlock extends Error {
   constructor(
     public readonly status: ExecutionStatus,
     public readonly reason: string,
-    public readonly retryAt: number,
+    /** null = no timer: something else resumes the tab. */
+    public readonly retryAt: number | null,
     /** Routine deferrals (e.g. the per-site rate limit) are not written to history. */
     public readonly quiet = false,
   ) {
@@ -374,6 +375,7 @@ export class RuleEngine {
       }
     }
     if (change.status === "complete") {
+      await this.resumeAfterFormPage(tabId);
       const handledOwn = await this.onNavigationComplete(tabId);
       if (!handledOwn) await this.runCycle(tabId, "navigation");
     }
@@ -400,6 +402,29 @@ export class RuleEngine {
         delete c.tabOverrides[String(tabId)];
       });
     }
+  }
+
+  /**
+   * A tab paused on a form result has loaded a page: carry on with the
+   * schedule. If the new page is a form result too, the next refresh attempt
+   * pauses it again.
+   */
+  private async resumeAfterFormPage(tabId: number) {
+    await this.withLock(tabId, async () => {
+      const rt = await this.deps.stores.runtime.get(tabId);
+      if (rt?.status !== "paused_resubmit") return;
+      const tab = await this.deps.browser.getTab(tabId);
+      if (!tab) return;
+      const res = resolveTab(tab, await this.deps.stores.config.get());
+      if (res.kind !== "controller") return;
+      // Some pages fire "complete" without leaving (e.g. history.pushState to the
+      // same address): stay paused, quietly, while it's still the form result.
+      const { activity } = await this.page.activity(tabId);
+      if (activity?.formResult) return;
+      const next = transition(rt, "scheduled", { reason: undefined, nextDueAt: this.nextDue(res.controller, this.now()) });
+      await this.deps.stores.runtime.put(next);
+      await this.setAlarm(next);
+    });
   }
 
   /** Our own reload finished loading: count it and evaluate post-navigation. */
@@ -698,9 +723,13 @@ export class RuleEngine {
       // The status has moved on to "evaluating" by now; the reason is kept.
       const already = rt.reason === FORM_RESULT_REASON;
       if (!already && _config.settings.notificationsEnabled) {
-        await this.deps.browser.notify(`sar:form:${tab.id}:${now}`, `Refreshing paused: ${siteKey(tab.url) ?? "this page"}`, "This page came from submitting a form, so refreshing it could send the form again. Open the JustRefresh popup to open the page fresh.");
+        await this.deps.browser.notify(`sar:form:${tab.id}:${now}`, `Refreshing paused: ${siteKey(tab.url) ?? "this page"}`, "This page came from submitting a form, so refreshing it could send the form again. It carries on by itself when you leave this page, or open the JustRefresh popup to open it fresh.");
       }
-      throw new SafetyBlock("paused_resubmit", FORM_RESULT_REASON, now + Math.max(this.intervalMs(rule), MIN_ALARM_DELAY_MS), already);
+      // No retry timer: nothing changes while the tab stays on this page. It
+      // resumes when the tab loads another page (onTabUpdated) or is opened
+      // fresh. A time limit still ends the run on time.
+      const deadline = limitDeadline(rule.limits, rt);
+      throw new SafetyBlock("paused_resubmit", FORM_RESULT_REASON, deadline === null ? null : Math.max(deadline, now + MIN_ALARM_DELAY_MS), already);
     }
     const decision = decideSafety({
       safety: rule.safety,

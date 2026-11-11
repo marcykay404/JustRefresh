@@ -61,7 +61,15 @@ export function watchFormPosts(win: Window, getStore: () => Store = () => win.se
  * script starts. `timeOrigin` identifies this document, so a content script
  * injected again into the same page (after an extension update) still knows.
  */
-export function detectFormResult(href: string, nav: NavigationInfo | null, getStore: () => Store, now = Date.now(), timeOrigin = 0): boolean {
+export function detectFormResult(
+  href: string,
+  nav: NavigationInfo | null,
+  getStore: () => Store,
+  now = Date.now(),
+  timeOrigin = 0,
+  /** document.wasDiscarded: Chrome (Memory Saver) unloaded the tab and is restoring it. */
+  wasDiscarded = false,
+): boolean {
   const store = safeStore(getStore);
   if (!store || !nav) return false;
   let submitted: { at?: number; action?: string } = {};
@@ -84,8 +92,13 @@ export function detectFormResult(href: string, nav: NavigationInfo | null, getSt
     return true;
   }
   if (result.href === href) {
-    // Reloaded, revisited via back/forward, or the same document with a newly injected content script.
-    if (nav.type === "reload" || nav.type === "back_forward") return true;
+    // Reloaded, revisited via back/forward, the same document with a newly
+    // injected content script, or restored after Memory Saver discarded the tab
+    // (the restore counts as "navigate" but reloads the form result).
+    if (nav.type === "reload" || nav.type === "back_forward" || wasDiscarded) {
+      if (wasDiscarded) store.setItem(RESULT_KEY, JSON.stringify({ href, timeOrigin }));
+      return true;
+    }
     if (timeOrigin && result.timeOrigin === timeOrigin) return true;
   }
   store.removeItem(RESULT_KEY);
