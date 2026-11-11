@@ -33,6 +33,7 @@ export function TabsView() {
   const [bulkInterval, setBulkInterval] = useState(300);
   const [actionError, setActionError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [refreshingAll, setRefreshingAll] = useState(false);
 
   const rows = useMemo(() => {
     if (!data) return [];
@@ -80,8 +81,21 @@ export function TabsView() {
   };
 
   const refreshAll = async () => {
-    const r = (await act("refreshAll")) as { refreshed: number[]; skipped: { tabId: number; reason: string }[] } | null;
-    if (!r) return;
+    // Reloads are spaced out to avoid storms, so this takes a moment: show it,
+    // and ignore further clicks until it finishes (avoids duplicate refreshes).
+    if (refreshingAll) return;
+    setRefreshingAll(true);
+    setNotice("Refreshing eligible tabs…");
+    let r: { refreshed: number[]; skipped: { tabId: number; reason: string }[] } | null;
+    try {
+      r = (await act("refreshAll")) as typeof r;
+    } finally {
+      setRefreshingAll(false);
+    }
+    if (!r) {
+      setNotice(null);
+      return;
+    }
     const blocked = r.skipped.filter((s) => !/No rule|Excluded|excluded|cannot|Browser-internal|globally disabled/.test(s.reason));
     setNotice(`Refreshed ${r.refreshed.length} tab(s); ${r.skipped.length} skipped.`);
     if (blocked.length && confirm(`${blocked.length} tab(s) were protected (e.g. unsaved changes). Force refresh them anyway?`)) {
@@ -117,7 +131,9 @@ export function TabsView() {
         ) : (
           <button onClick={() => act("pauseAll")}>Pause all</button>
         )}
-        <button onClick={refreshAll} title="Refresh every tab with an active rule (respects exclusions & safety)">Refresh all eligible</button>
+        <button onClick={refreshAll} disabled={refreshingAll} aria-busy={refreshingAll} title="Refresh every tab with an active rule (respects exclusions & safety)">
+          {refreshingAll ? "Refreshing…" : "Refresh all eligible"}
+        </button>
       </div>
       {selected.size > 0 && (
         <div className="card row">
