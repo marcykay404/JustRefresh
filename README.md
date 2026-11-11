@@ -50,8 +50,8 @@ conditions); you can also grant all sites in Dashboard → Settings.
   for this site…". A tab run by a rule shows the rule in words, with Check now.
 * **Dashboard** (popup → Dashboard, or the extension's Options page):
   Tabs · Rules · Templates · Rule Builder · Exclusions · History · Agent Integrations · Settings.
-* **Templates** — ready-made rules you fill in (back in stock, while an order
-  is processing, a dashboard during work hours, failed builds, stay signed
+* **Templates** — ready-made rules you fill in (back in stock, a status page
+  that changes, a dashboard during work hours, failed builds, stay signed
   in). Each shows the rule in words before it's created, or opens it in the
   Rule Builder to customise.
 * **Welcome page** — opens once after install with three short steps; open it

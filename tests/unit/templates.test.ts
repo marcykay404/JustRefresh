@@ -50,3 +50,12 @@ describe("templates", () => {
     expect(normalizeAddress("  ")).toBeNull();
   });
 });
+
+describe("no template invites refreshing payment pages", () => {
+  it("the status template is for status pages and warns against payment or checkout pages", () => {
+    const t = TEMPLATES.find((x) => x.id === "status-changes")!;
+    expect(t.title).toBe("Tell me when a status changes");
+    expect(t.warning).toMatch(/Never use it on payment or checkout pages/);
+    for (const x of TEMPLATES) expect(`${x.title} ${x.description}`).not.toMatch(/order is processing|checkout|payment/i);
+  });
+});

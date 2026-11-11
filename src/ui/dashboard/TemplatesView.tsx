@@ -35,6 +35,7 @@ export function TemplatesView() {
             </div>
             <p style={{ margin: 0 }}>{t.description}</p>
             <p className="small muted" style={{ margin: 0 }}>You fill in: {t.fills}</p>
+            {t.warning && <p className="notice small" style={{ margin: 0 }}>{t.warning}</p>}
             <span className="spacer" />
             <button style={{ alignSelf: "flex-start" }} onClick={() => { setCreated(null); setOpen(t); }}>
               Use template
@@ -140,6 +141,8 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
           <span className="eyebrow">Template</span>
           <h3 id="tpl-title" style={{ fontSize: 18 }}>{t.title}</h3>
         </div>
+
+        {t.warning && <p className="notice small" style={{ margin: 0 }}>{t.warning}</p>}
 
         <label className="field">
           <span className="field-label">{t.scope === "site" ? "Which site?" : "Which page?"}</span>

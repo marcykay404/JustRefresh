@@ -47,7 +47,7 @@ export function WelcomeView() {
             <p>
               In the popup, <strong>More → Refresh until something appears</strong> stops and notifies you, with a sound, when a word shows up.
             </p>
-            <p>Or start from a template: restocks, order status, failed builds, dashboards during work hours.</p>
+            <p>Or start from a template: restocks, delivery or application status, failed builds, dashboards during work hours.</p>
           </li>
         </ol>
 

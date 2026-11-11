@@ -23,6 +23,8 @@ export interface Template {
   /** "You fill in: …" line on the card. */
   fills: string;
   badge?: string;
+  /** Shown on the card and in the form: when NOT to use this template. */
+  warning?: string;
   /** "page": exactly this address. "site": every page on its host. */
   scope: "page" | "site";
   /** Label and starting value of the text blank; absent = no text blank. */
@@ -68,17 +70,19 @@ export const TEMPLATES: Template[] = [
       `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and notify you with a sound. It waits while you're typing.`,
   },
   {
-    id: "while-processing",
-    title: "Refresh while my order is processing",
-    description: "Keeps refreshing while the page says something like “Processing”, and notifies you when that text goes away.",
-    fills: "the page, the text shown while waiting · Every 1 min",
+    id: "status-changes",
+    title: "Tell me when a status changes",
+    description:
+      "Refreshes a status page, such as a delivery tracker, an application or a support ticket, while it shows something like “Pending”, and notifies you when that changes.",
+    fills: "the status page, the text shown while waiting · Every 5 min",
+    warning: "Only for pages you just look at. Never use it on payment or checkout pages: refreshing those can send an order twice.",
     scope: "page",
-    text: { label: "Keep refreshing while this text is on the page", hint: "When it's gone, refreshing stops and you're notified.", initial: "Processing" },
-    intervals: [30, 60, 300, 900],
-    initialSeconds: 60,
-    build: (v) => ({ ...untilRule({ url: v.url, site: hostOf(v.url), seconds: v.seconds, text: v.text, mode: "disappears" }), name: `While processing: ${pageLabel(v.url)}`.slice(0, 100) }),
+    text: { label: "Keep refreshing while this text is on the page", hint: "When it's gone, refreshing stops and you're notified.", initial: "Pending" },
+    intervals: [60, 300, 900, 1800],
+    initialSeconds: 300,
+    build: (v) => ({ ...untilRule({ url: v.url, site: hostOf(v.url), seconds: v.seconds, text: v.text, mode: "disappears" }), name: `Status: ${pageLabel(v.url)}`.slice(0, 100) }),
     describe: (v) =>
-      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} while ${quote(v.text)} is on the page; when it's gone, stop and notify you with a sound. It waits while you're typing.`,
+      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} while ${quote(v.text)} is on the page; when it changes, stop and notify you with a sound. It waits while you're typing.`,
   },
   {
     id: "work-hours-dashboard",
