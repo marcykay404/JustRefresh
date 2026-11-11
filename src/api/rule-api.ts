@@ -10,7 +10,7 @@ import { z } from "zod";
 import { defaultRegistries, type Registries } from "../registries";
 import { validateRule, zodDiagnostics } from "../core/rule-schema";
 import { compilePattern, matchesAny, patternToString, validatePattern } from "../core/url-pattern";
-import { detectRuleConflicts, matchingRules, resolveTab } from "../core/rule-resolver";
+import { detectRuleConflicts, matchingRules, resolveTab, rulesForOtherQuery } from "../core/rule-resolver";
 import { urlPatternSchema } from "../core/pattern-schema";
 import type { BrowserPort, ClockPort, RuleEngine } from "../core/rule-engine";
 import { STATUS_LABELS } from "../core/types";
@@ -286,6 +286,8 @@ export class RuleManagementService {
         candidates: res.kind === "controller" ? res.candidates.map((r) => ({ id: r.id, name: r.name, priority: r.priority })) : [],
       },
       override: config.tabOverrides[String(tabIdValue)] ?? null,
+      /** Rules set for this page with a different "?…" part (they don't run here). */
+      otherQueryRules: rulesForOtherQuery(Object.values(config.rules), tab.url).map((r) => ({ id: r.id, name: r.name })),
       interval: controller?.trigger.type === "interval" ? (controller.trigger as unknown as { seconds: number }).seconds : null,
       safety: controller?.safety ?? config.settings.defaultSafety,
       hostAccess: await this.deps.hostAccess(tab.url).catch(() => false),

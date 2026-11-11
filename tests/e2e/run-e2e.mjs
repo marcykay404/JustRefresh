@@ -408,6 +408,31 @@ await test("a tab paused on a form page resumes by itself when you go to another
   await page.close();
 });
 
+await test("a #hash or replaceState change on a paused form page keeps the run (same time limit, still paused)", async () => {
+  const page = await context.newPage();
+  await page.goto(`${base}/checkout`);
+  await Promise.all([page.waitForURL(`${base}/order`), page.click("#buy")]);
+  const posts = orderPosts;
+  const tabId = await tabIdFor(`${base}/order`);
+  await call("startTab", { tabId, intervalSeconds: 30 });
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "paused_resubmit", "paused on the form result");
+  const before = await runtime(tabId);
+  await page.evaluate(() => { location.hash = "receipt"; });
+  await page.evaluate(() => history.replaceState({}, "", "/order/42"));
+  await waitFor(async () => (await sw.evaluate((id) => chrome.tabs.get(id), tabId)).url.endsWith("/order/42"), "address changed");
+  await new Promise((r) => setTimeout(r, 500));
+  await fireAlarm(tabId);
+  await new Promise((r) => setTimeout(r, 1000));
+  const after = await runtime(tabId);
+  assert.equal(after?.status, "paused_resubmit");
+  assert.equal(after?.generation, before.generation, "same run");
+  assert.equal(after?.startedAt, before.startedAt, "time limit didn't start over");
+  assert.equal(orderPosts, posts, "the form was not sent again");
+  await call("stopTab", { tabId });
+  await page.close();
+});
+
 await test("a form page unloaded by Memory Saver and restored is still never reloaded", async () => {
   const page = await context.newPage();
   await page.goto(`${base}/checkout`);

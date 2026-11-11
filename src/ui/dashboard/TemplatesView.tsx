@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
 import { useApi } from "../shared/hooks";
 import { ErrorBox } from "../shared/components";
+import { QueryChoice } from "../shared/QueryChoice";
 import type { Rule, Settings, TabInfo } from "../../core/types";
 import { STOP_AFTER_CHOICES } from "../../core/defaults";
 import { matchesAny } from "../../core/url-pattern";
@@ -77,6 +78,7 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
   const [seconds, setSeconds] = useState(t.initialSeconds);
   const [start, setStart] = useState("08:00");
   const [end, setEnd] = useState("18:00");
+  const [anyQuery, setAnyQuery] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -100,7 +102,7 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
   const matching = url && t.scope === "page" ? (rules.data ?? []).filter((r) => r.enabled && !r.meta.draft && matchesAny(r.target.patterns, url) !== null) : [];
   const stopAfterMinutes = stopAfter === undefined ? (settings?.defaultStopAfterMinutes ?? null) : stopAfter;
   const protects = settings ? settings.defaultSafety.pauseWhileTyping : true;
-  const values: TemplateValues | null = url ? { url, text, seconds, start, end, stopAfterMinutes: t.until ? stopAfterMinutes : null, priority: priorityAbove(matching), protects } : null;
+  const values: TemplateValues | null = url ? { url, text, seconds, start, end, stopAfterMinutes: t.until ? stopAfterMinutes : null, priority: priorityAbove(matching), protects, anyQuery: t.scope === "page" && anyQuery } : null;
   const textOk = !t.text || text.trim().length > 0;
   const hoursOk = !t.hours || (start !== "" && end !== "" && start < end);
   // Wait for rules and settings: priority, protection wording and the default time limit come from them.
@@ -190,6 +192,7 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
           <span className="field-hint">
             {choice === ADDRESS && address && !url ? "That doesn't look like a web address." : t.scope === "site" ? "Every page on this site." : "Pick one of your open tabs, or type an address."}
           </span>
+          {t.scope === "page" && url && <QueryChoice url={url} anyQuery={anyQuery} onChange={setAnyQuery} />}
         </label>
 
         {t.text && (

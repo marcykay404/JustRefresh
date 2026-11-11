@@ -68,7 +68,8 @@ export function SettingsView() {
         <div className="card col">
           <h2>Activity protection</h2>
           <p className="small muted" style={{ margin: 0 }}>
-            Defaults for every tab and rule. A tab's popup switch or a rule's own settings take priority.
+            Tabs you start from the popup follow these settings (a tab's own popup switch wins). New rules start with a
+            copy, so changing these later doesn't change rules you already have: edit those in the Rule Builder.
           </p>
           <Toggle checked={sf.pauseWhileTyping} onChange={(v) => update({ defaultSafety: { pauseWhileTyping: v } })} label="Wait while I'm typing" />
           <Toggle checked={sf.protectUnsavedChanges} onChange={(v) => update({ defaultSafety: { protectUnsavedChanges: v } })} label="Don't refresh over unsaved form changes" />

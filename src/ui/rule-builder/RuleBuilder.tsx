@@ -9,6 +9,7 @@ import { useApi } from "../shared/hooks";
 import { downloadJson } from "../shared/format";
 import { Diagnostics, ErrorBox, Field, Toggle } from "../shared/components";
 import { detectPattern, validatePattern, patternToString } from "../../core/url-pattern";
+import { hasQuery, pagePatterns } from "../popup/describe";
 import type { ActionConfig, ConditionNode, Diagnostic, EvaluationResult, EvaluationTrace, Rule, RuleInput, TabInfo, UrlPatternInput } from "../../core/types";
 import { ConditionEditor, describeCondition, isSimpleTree, type CapabilityItem } from "./ConditionEditor";
 import { defaultsFor, SchemaForm } from "./SchemaForm";
@@ -466,7 +467,7 @@ function IntervalInput({ seconds, onChange, min }: { seconds: number; onChange: 
   );
 }
 
-function PatternList({ label, items, onChange }: { label: string; items: UrlPatternInput[]; onChange: (p: UrlPatternInput[]) => void }) {
+export function PatternList({ label, items, onChange }: { label: string; items: UrlPatternInput[]; onChange: (p: UrlPatternInput[]) => void }) {
   return (
     <div className="col" style={{ gap: 4 }}>
       <span className="field-label">{label}</span>
@@ -479,6 +480,15 @@ function PatternList({ label, items, onChange }: { label: string; items: UrlPatt
             <span className="pill pill-muted">{detectPattern(p).type}</span>
             <button className="small danger" onClick={() => onChange(items.filter((_, j) => j !== i))} aria-label="Remove pattern">✕</button>
             {problem && <span className="small" style={{ color: "var(--error)", width: "100%" }}>{problem}</span>}
+            {!problem && detectPattern(p).type === "exact" && hasQuery(detectPattern(p).value) && (
+              <button
+                className="link small"
+                style={{ width: "100%", textAlign: "left" }}
+                onClick={() => onChange([...items.slice(0, i), ...pagePatterns(detectPattern(p).value, true), ...items.slice(i + 1)])}
+              >
+                Match this page whatever comes after “?” (for sites that change it on every load)
+              </button>
+            )}
           </div>
         );
       })}

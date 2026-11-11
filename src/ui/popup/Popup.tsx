@@ -5,6 +5,7 @@ import { formatDuration, formatTime } from "../shared/format";
 import { ErrorBox, Toggle } from "../shared/components";
 import type { Rule, SafetyConfig, Settings, TabInfo, TabOverride, TabRuntime } from "../../core/types";
 import { useDialog } from "../shared/dialog";
+import { QueryChoice } from "../shared/QueryChoice";
 import { describeRule, intervalChips, intervalLabel, priorityAbove, untilRule, type UntilMode } from "./describe";
 
 interface TabState {
@@ -20,6 +21,7 @@ interface TabState {
     candidates: { id: string; name: string; priority: number }[];
   };
   override: TabOverride | null;
+  otherQueryRules?: { id: string; name: string }[];
   interval: number | null;
   safety: SafetyConfig;
   hostAccess: boolean;
@@ -278,11 +280,12 @@ export function Popup() {
     card = (
       <UntilForm
         site={siteName}
+        url={s.tab.url}
         picker={picker}
         canStart={chosenValid}
         problem={tooShort}
         onCancel={() => setView("main")}
-        onStart={async (text, mode) => {
+        onStart={async (text, mode, anyQuery) => {
           setError(null);
           if (!s.hostAccess && origin) {
             const granted = await requestOrigins([origin]).catch(() => false);
@@ -301,6 +304,7 @@ export function Popup() {
             // Outrank rules already matching this page, or the new one would never run here.
             priority: priorityAbove(s.resolution.candidates),
             stopAfterSeconds: stopAfter ? stopAfter * 60 : null,
+            anyQuery,
           });
           const created = (await run("createRule", { rule: newRule })) as Rule | null;
           if (!created) return;
@@ -392,6 +396,8 @@ export function Popup() {
       </div>
 
       <section className="card col popup-card">{card}</section>
+
+      {view === "main" && !restricted && <OtherQueryNotice rules={s.otherQueryRules ?? []} onEdit={(id) => openDashboard(`/builder/${id}`)} />}
 
       {!restricted && view === "main" && (
         <>
@@ -773,9 +779,18 @@ function ProtectionLine(p: {
   );
 }
 
-function UntilForm(p: { site: string; picker: ReactNode; canStart: boolean; problem: string | null; onCancel: () => void; onStart: (text: string, mode: UntilMode) => Promise<void> }) {
+function UntilForm(p: {
+  site: string;
+  url: string;
+  picker: ReactNode;
+  canStart: boolean;
+  problem: string | null;
+  onCancel: () => void;
+  onStart: (text: string, mode: UntilMode, anyQuery: boolean) => Promise<void>;
+}) {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<UntilMode>("appears");
+  const [anyQuery, setAnyQuery] = useState(false);
   const [busy, setBusy] = useState(false);
   const ready = text.trim().length > 0 && p.canStart && !busy;
   return (
@@ -786,7 +801,7 @@ function UntilForm(p: { site: string; picker: ReactNode; canStart: boolean; prob
         e.preventDefault();
         if (!ready) return;
         setBusy(true);
-        void p.onStart(text, mode).finally(() => setBusy(false));
+        void p.onStart(text, mode, anyQuery).finally(() => setBusy(false));
       }}
     >
       <span className="card-title">Refresh until something appears</span>
@@ -801,6 +816,7 @@ function UntilForm(p: { site: string; picker: ReactNode; canStart: boolean; prob
       <span className="small muted">Checking every</span>
       {p.picker}
       {p.problem && <span className="small field-error">{p.problem}</span>}
+      <QueryChoice url={p.url} anyQuery={anyQuery} onChange={setAnyQuery} />
       <span className="small muted">
         It looks anywhere on this page (ignoring upper/lower case), then stops refreshing and notifies you with a sound. You'll find it under Rules in the
         dashboard.
@@ -810,6 +826,24 @@ function UntilForm(p: { site: string; picker: ReactNode; canStart: boolean; prob
       </button>
       <button type="button" className="link small" style={{ alignSelf: "center" }} onClick={p.onCancel}>Cancel</button>
     </form>
+  );
+}
+
+/** A rule set for this page with another "?…" part doesn't run here: say so instead of dropping out silently. */
+function OtherQueryNotice({ rules, onEdit }: { rules: { id: string; name: string }[]; onEdit: (id: string) => void }) {
+  if (!rules.length) return null;
+  const [first] = rules;
+  return (
+    <div className="notice small col" style={{ gap: 4 }} role="status">
+      <span>
+        {rules.length === 1 ? `Rule “${first!.name}” is` : `${rules.length} rules, including “${first!.name}”, are`} set for this page with a different part
+        after “?” in the address, so {rules.length === 1 ? "it doesn't" : "they don't"} run here. If the site changes that part on each load, edit the rule
+        to cover the page whatever comes after “?”.
+      </span>
+      <button className="link small" style={{ alignSelf: "flex-start" }} onClick={() => onEdit(first!.id)}>
+        Edit “{first!.name}”
+      </button>
+    </div>
   );
 }
 

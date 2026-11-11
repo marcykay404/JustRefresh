@@ -5,7 +5,7 @@
  * a RuleInput. Only features that exist today are used.
  */
 import type { RuleInput } from "../../core/types";
-import { intervalLabel, pageName, stopAfterLabel, untilRule } from "../popup/describe";
+import { hasQuery, intervalLabel, pageName, pagePatterns, stopAfterLabel, untilRule, withoutQuery } from "../popup/describe";
 
 export interface TemplateValues {
   /** Full page address (scope "page") or any page on the site (scope "site"). */
@@ -20,6 +20,8 @@ export interface TemplateValues {
   priority: number;
   /** Whether new rules wait while you're typing (Settings → Activity protection). */
   protects: boolean;
+  /** Scope "page" with a "?…" address: match whatever comes after "?" (see pagePatterns). */
+  anyQuery?: boolean;
 }
 
 export interface Template {
@@ -60,7 +62,9 @@ export function pageLabel(url: string): string {
   return url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
 }
 
-const exactPage = (url: string) => ({ type: "url" as const, patterns: [{ type: "exact" as const, value: url }], exclusions: [] });
+const exactPage = (v: TemplateValues) => ({ type: "url" as const, patterns: pagePatterns(v.url, v.anyQuery), exclusions: [] });
+/** The page as described to people, saying when anything after "?" is fine. */
+const pageOf = (v: TemplateValues) => (v.anyQuery && hasQuery(v.url) ? `${pageLabel(withoutQuery(v.url))} (whatever comes after “?”)` : pageLabel(v.url));
 const quote = (s: string) => `“${s.trim()}”`;
 const waits = (v: TemplateValues) => (v.protects ? " It waits while you're typing." : "");
 const stopClause = (v: TemplateValues, what: string) =>
@@ -77,6 +81,7 @@ function until(v: TemplateValues, mode: "appears" | "disappears", name: string):
       mode,
       priority: v.priority,
       stopAfterSeconds: v.stopAfterMinutes ? v.stopAfterMinutes * 60 : null,
+      anyQuery: v.anyQuery,
     }),
     name: `${name}: ${pageName(v.url)}`.slice(0, 100),
   };
@@ -96,7 +101,7 @@ export const TEMPLATES: Template[] = [
     until: true,
     build: (v) => until(v, "appears", "Back in stock"),
     describe: (v) =>
-      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and notify you with a sound.${stopClause(v, "it hasn't appeared")}${waits(v)}`,
+      `Refresh ${pageOf(v)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and notify you with a sound.${stopClause(v, "it hasn't appeared")}${waits(v)}`,
   },
   {
     id: "status-changes",
@@ -112,7 +117,7 @@ export const TEMPLATES: Template[] = [
     until: true,
     build: (v) => until(v, "disappears", "Status"),
     describe: (v) =>
-      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} while ${quote(v.text)} is on the page; when it changes, stop and notify you with a sound.${stopClause(v, "it hasn't changed")}${waits(v)}`,
+      `Refresh ${pageOf(v)} every ${intervalLabel(v.seconds)} while ${quote(v.text)} is on the page; when it changes, stop and notify you with a sound.${stopClause(v, "it hasn't changed")}${waits(v)}`,
   },
   {
     id: "work-hours-dashboard",
@@ -127,12 +132,12 @@ export const TEMPLATES: Template[] = [
         name: `Work hours: ${pageName(v.url)}`.slice(0, 100),
         enabled: true,
         priority: v.priority,
-        target: exactPage(v.url),
+        target: exactPage(v),
         trigger: { type: "interval", seconds: 300, randomMaxSeconds: 360 },
         schedule: { days: [1, 2, 3, 4, 5], startTime: v.start, endTime: v.end },
         actions: { onMatched: [], onNotMatched: [{ type: "refresh" }] },
       }) as RuleInput,
-    describe: (v) => `Refresh ${pageLabel(v.url)} every 5 to 6 min, Monday to Friday, ${v.start} to ${v.end}.${waits(v)}`,
+    describe: (v) => `Refresh ${pageOf(v)} every 5 to 6 min, Monday to Friday, ${v.start} to ${v.end}.${waits(v)}`,
   },
   {
     id: "build-failed",
@@ -159,7 +164,7 @@ export const TEMPLATES: Template[] = [
       } as RuleInput;
     },
     describe: (v) =>
-      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and alert you once with a sound.${stopClause(v, "it hasn't appeared")}${waits(v)}`,
+      `Refresh ${pageOf(v)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and alert you once with a sound.${stopClause(v, "it hasn't appeared")}${waits(v)}`,
   },
   {
     id: "stay-signed-in",
