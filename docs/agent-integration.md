@@ -14,7 +14,7 @@ Agents use the **same Rule Management API** as the extension UI. Three levels:
 
 Other extensions can call `chrome.runtime.sendMessage(JUSTREFRESH_ID, msg)`,
 but **only if the user has added the calling extension's ID** under Dashboard →
-Agent Integrations → Allowed extensions. The list is empty by default; any
+Agent Integrations → Browser extensions that may connect. The list is empty by default; any
 other extension is rejected with `forbidden` before anything is recorded, so
 unknown extensions cannot file pairing requests. The allowlist is never
 exported or imported. (The manifest's `externally_connectable.ids` stays `*`

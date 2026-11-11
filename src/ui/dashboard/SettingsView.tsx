@@ -52,29 +52,38 @@ export function SettingsView() {
         </div>
 
         <div className="card col">
-          <h2>Default activity protection</h2>
-          <Toggle checked={sf.pauseWhileTyping} onChange={(v) => update({ defaultSafety: { pauseWhileTyping: v } })} label="Pause while typing" />
-          <Toggle checked={sf.protectUnsavedChanges} onChange={(v) => update({ defaultSafety: { protectUnsavedChanges: v } })} label="Protect unsaved form changes" />
-          <Toggle checked={sf.pauseOnMouse} onChange={(v) => update({ defaultSafety: { pauseOnMouse: v } })} label="Also pause on mouse activity" />
-          <Toggle checked={sf.pauseOnScroll} onChange={(v) => update({ defaultSafety: { pauseOnScroll: v } })} label="Also pause on scrolling" />
-          <Field label="Inactivity grace period" hint="Refresh waits until there has been no activity for this long.">
+          <h2>Activity protection</h2>
+          <p className="small muted" style={{ margin: 0 }}>
+            Defaults for every tab and rule. A tab's popup switch or a rule's own settings take priority.
+          </p>
+          <Toggle checked={sf.pauseWhileTyping} onChange={(v) => update({ defaultSafety: { pauseWhileTyping: v } })} label="Wait while I'm typing" />
+          <Toggle checked={sf.protectUnsavedChanges} onChange={(v) => update({ defaultSafety: { protectUnsavedChanges: v } })} label="Don't refresh over unsaved form changes" />
+          <Toggle checked={sf.pauseOnMouse} onChange={(v) => update({ defaultSafety: { pauseOnMouse: v } })} label="Also wait while I move the mouse" />
+          <Toggle checked={sf.pauseOnScroll} onChange={(v) => update({ defaultSafety: { pauseOnScroll: v } })} label="Also wait while I scroll" />
+          <Field label="Quiet time before a postponed refresh" hint="A refresh that waited for you happens once the page has been quiet this long.">
             <select value={sf.inactivityGraceSeconds} onChange={(e) => update({ defaultSafety: { inactivityGraceSeconds: Number(e.target.value) } })}>
               {[30, 60, 120, 300, 600, 1800].map((v) => <option key={v} value={v}>{v < 60 ? `${v} s` : `${v / 60} min`}</option>)}
               {![30, 60, 120, 300, 600, 1800].includes(sf.inactivityGraceSeconds) && <option value={sf.inactivityGraceSeconds}>{sf.inactivityGraceSeconds} s</option>}
             </select>
           </Field>
-          <Field label="When activity detection is unavailable" hint="E.g. site access not granted or the page blocks the content script.">
+          <Field
+            label="When JustRefresh can't see inside the page"
+            hint="For example, site access isn't allowed yet, or it's a page Chrome protects, like the Chrome Web Store."
+          >
             <select value={sf.onActivityUnavailable} onChange={(e) => update({ defaultSafety: { onActivityUnavailable: e.target.value } })}>
-              <option value="pause">Pause (safe)</option>
-              <option value="refresh">Refresh anyway</option>
+              <option value="pause">Don't refresh (safe)</option>
+              <option value="refresh">Refresh without protection</option>
             </select>
           </Field>
-          <Field label="When a condition is unknown">
+          <Field
+            label="When a rule can't check the page"
+            hint="Only for rules that look for something on the page, like “refresh until In stock appears”, when the page couldn't be read."
+          >
             <select value={sf.onUnknown} onChange={(e) => update({ defaultSafety: { onUnknown: e.target.value } })}>
-              <option value="pause">Pause and retry (bounded)</option>
-              <option value="skip">Skip this cycle</option>
-              <option value="refresh">Refresh anyway</option>
-              <option value="stop">Stop</option>
+              <option value="pause">Pause, retry {sf.maxUnknownRetries} times, then notify me</option>
+              <option value="skip">Skip this time and keep trying (no limit)</option>
+              <option value="refresh">Treat it as not found and keep refreshing</option>
+              <option value="stop">Stop and notify me</option>
             </select>
           </Field>
         </div>
