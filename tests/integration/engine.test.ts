@@ -84,6 +84,45 @@ describe("Scenario A: per-tab basic refresh", () => {
     expect((await env.runtime.get(1))?.status).toBe("stopped");
     expect(env.alarms.alarms.has(alarmName(1))).toBe(false);
   });
+
+  it("manual refresh restarts the countdown of an active schedule", async () => {
+    const env = createEnv();
+    env.browser.addTab(1, "https://a.test/");
+    await env.config.update((c) => { c.tabOverrides["1"] = override(1, "https://a.test/"); }); // 60 s
+    await env.engine.syncTab(1);
+    env.clock.advance(50_000); // 10 s left on the countdown
+    expect((await env.engine.refreshNow(1)).refreshed).toBe(true);
+    expect(env.browser.reloads).toEqual([1]);
+    expect((await env.runtime.get(1))?.nextDueAt).toBe(env.clock.t + 60_000);
+    expect(env.alarms.alarms.get(alarmName(1))).toBe(env.clock.t + 60_000);
+
+    // The old slot no longer fires a second, back-to-back reload.
+    env.clock.advance(10_000);
+    expect(await env.fireDue()).toBe(0);
+    env.clock.advance(50_000);
+    await env.fireDue();
+    expect(env.browser.reloads).toEqual([1, 1]);
+  });
+
+  it("refresh-all restarts countdowns too, and never moves a due time earlier", async () => {
+    const env = createEnv();
+    env.browser.addTab(1, "https://a.test/");
+    env.browser.addTab(2, "https://b.test/");
+    await env.config.update((c) => {
+      c.tabOverrides["1"] = override(1, "https://a.test/", { intervalSeconds: 60 });
+      c.tabOverrides["2"] = override(2, "https://b.test/", { intervalSeconds: 60 });
+    });
+    await env.engine.syncTab(1);
+    await env.engine.syncTab(2);
+    // Tab 2 is waiting longer than one interval (e.g. outside active hours).
+    const far = env.clock.t + 3_600_000;
+    await env.runtime.put({ ...(await env.runtime.get(2))!, nextDueAt: far });
+    env.clock.advance(30_000);
+    const r = await env.engine.refreshAll();
+    expect(r.refreshed.sort()).toEqual([1, 2]);
+    expect((await env.runtime.get(1))?.nextDueAt).toBe(env.clock.t + 60_000);
+    expect((await env.runtime.get(2))?.nextDueAt).toBe(far);
+  });
 });
 
 describe("Scenario B/C: URL rules and exclusions", () => {
