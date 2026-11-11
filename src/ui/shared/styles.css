@@ -200,3 +200,5 @@ a.btn.primary { background: var(--accent); border-color: var(--accent); color: v
 .step-number { width: 30px; height: 30px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--accent); font-weight: 700; display: flex; align-items: center; justify-content: center; }
 .welcome-example { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
 a.big-link { min-height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 600; }
+.toolbar-picture { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.toolbar-address { flex: 1; height: 26px; border-radius: 99px; background: var(--surface-2); }
