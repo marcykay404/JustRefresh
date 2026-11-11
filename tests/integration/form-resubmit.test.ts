@@ -113,7 +113,7 @@ describe("form results: paused without polling", () => {
     env.clock.advance(30_000);
     await env.fireDue();
     expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
-    expect(env.alarms.alarms.has("sar:tab:7")).toBe(false);
+    expect(env.alarms.alarms.has("justrefresh:tab:7")).toBe(false);
     env.clock.advance(60 * 60_000);
     expect(await env.fireDue()).toBe(0); // nothing wakes up for an hour
   });
@@ -152,7 +152,7 @@ describe("form results: paused without polling", () => {
     env.clock.advance(5 * 60_000);
     await env.fireDue();
     expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
-    expect(env.alarms.alarms.has("sar:tab:7")).toBe(false);
+    expect(env.alarms.alarms.has("justrefresh:tab:7")).toBe(false);
     expect(env.browser.notifications).toHaveLength(1);
     expect(env.browser.reloads).toEqual([]);
   });
@@ -163,7 +163,7 @@ describe("form results: paused without polling", () => {
     await env.fireDue();
     await env.engine.reconcileAll("wake");
     expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
-    expect(env.alarms.alarms.has("sar:tab:7")).toBe(false);
+    expect(env.alarms.alarms.has("justrefresh:tab:7")).toBe(false);
   });
 
   it("with a time limit, wakes once when the limit ends and stops", async () => {
@@ -177,7 +177,7 @@ describe("form results: paused without polling", () => {
     env.clock.advance(30_000);
     await env.fireDue();
     expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
-    expect(env.alarms.alarms.get("sar:tab:7")).toBe(started + 120_000);
+    expect(env.alarms.alarms.get("justrefresh:tab:7")).toBe(started + 120_000);
     env.clock.t = started + 120_000;
     await env.fireDue();
     expect((await env.runtime.get(7))?.status).toBe("completed");
@@ -197,7 +197,7 @@ describe("form results: edge cases from the review of #14", () => {
     const started = (await env.runtime.get(7))!.startedAt;
     await env.engine.handleEvent(7, type);
     expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
-    expect(env.alarms.alarms.get("sar:tab:7")).toBe(started + 120_000);
+    expect(env.alarms.alarms.get("justrefresh:tab:7")).toBe(started + 120_000);
     env.clock.t = started + 120_000;
     await env.fireDue();
     expect(await env.runtime.get(7)).toMatchObject({ status: "completed", reason: "Reached its time limit (2 min)" });
@@ -221,7 +221,7 @@ describe("form results: edge cases from the review of #14", () => {
     await env.fireDue();
     const after = (await env.runtime.get(7))!;
     expect(after).toMatchObject({ status: "paused_resubmit", generation: before.generation, startedAt: before.startedAt });
-    expect(env.alarms.alarms.has("sar:tab:7")).toBe(false);
+    expect(env.alarms.alarms.has("justrefresh:tab:7")).toBe(false);
     expect(env.browser.notifications).toHaveLength(1);
     expect(env.browser.reloads).toEqual([]);
   });

@@ -105,7 +105,7 @@ function checkArgs(t, args) {
  * Minimal MCP (JSON-RPC 2.0) request handler.
  * `callApi(method, params)` resolves to { ok, result } | { ok:false, error }.
  */
-export function createMcpHandler({ callApi, serverName = "smart-auto-refresh", version = "0.1.0", onInitialize } = {}) {
+export function createMcpHandler({ callApi, serverName = "justrefresh", version = "0.1.0", onInitialize } = {}) {
   return async function handle(msg) {
     if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") {
       return msg?.id !== undefined ? { jsonrpc: "2.0", id: msg.id, error: { code: -32600, message: "Invalid request" } } : null;

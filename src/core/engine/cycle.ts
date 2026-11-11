@@ -342,7 +342,7 @@ export abstract class CycleEngine extends EngineBase {
       },
       notify: async (title, message, opts) => {
         if (!config.settings.notificationsEnabled) return;
-        await this.deps.browser.notify(`sar:${rule.id}:${tab.id}:${this.now()}`, title, message, opts);
+        await this.deps.browser.notify(`justrefresh:${rule.id}:${tab.id}:${this.now()}`, title, message, opts);
       },
       log: (level, message) => {
         this.log({ ruleId: rule.id, tabId: tab.id, url: tab.url, trigger: c.event, condition, action: "log", outcome: "ok", reason: `${level}: ${message}` });
@@ -386,7 +386,7 @@ export abstract class CycleEngine extends EngineBase {
     const already = rt.reason === FORM_RESULT_REASON;
     if (!already && config.settings.notificationsEnabled) {
       await this.deps.browser.notify(
-        `sar:form:${tab.id}:${now}`,
+        `justrefresh:form:${tab.id}:${now}`,
         `Refreshing paused: ${siteKey(tab.url) ?? "this page"}`,
         "This page came from submitting a form, so refreshing it could send the form again. It carries on by itself when you leave this page, or open the JustRefresh popup to open it fresh.",
       );
@@ -435,7 +435,7 @@ export abstract class CycleEngine extends EngineBase {
       // A slow reload call may still go through: keep it pending. Navigation
       // completion or NAVIGATION_TIMEOUT_MS settles it either way.
       if (e instanceof TimeoutError) {
-        console.warn(`[sar] ${e.message} (tab ${tab.id}); tracking it as pending`);
+        console.warn(`JustRefresh: ${e.message} (tab ${tab.id}); tracking it as pending`);
         return next;
       }
       await this.deps.stores.runtime.put({ ...next, pendingReload: null, refreshCount: rt.refreshCount });

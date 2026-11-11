@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // JustRefresh local bridge.
 //
-//   sar-bridge.mjs native-host   (started by Chrome via Native Messaging)
-//   sar-bridge.mjs mcp           (started by an MCP client, stdio transport)
+//   justrefresh-bridge.mjs native-host   (started by Chrome via Native Messaging)
+//   justrefresh-bridge.mjs mcp           (started by an MCP client, stdio transport)
 //
 // Chrome ⇄ native-host ⇄ local socket (owner-only permissions + token) ⇄ mcp ⇄ agent.
 // Nothing listens on a network port.
@@ -13,10 +13,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { createLineDecoder, createMcpHandler, createNativeDecoder, encodeNative, sanitizeClientId } from "./lib.mjs";
 
-const DIR = process.env.SAR_BRIDGE_DIR ?? path.join(os.homedir(), ".smart-auto-refresh");
-const SOCKET = process.platform === "win32" ? `\\\\.\\pipe\\smart-auto-refresh-${os.userInfo().username}` : path.join(DIR, "bridge.sock");
+const DIR = process.env.JUSTREFRESH_BRIDGE_DIR ?? path.join(os.homedir(), ".justrefresh");
+const SOCKET = process.platform === "win32" ? `\\\\.\\pipe\\justrefresh-${os.userInfo().username}` : path.join(DIR, "bridge.sock");
 const TOKEN_FILE = path.join(DIR, "token");
-const log = (...a) => process.stderr.write(`[sar-bridge] ${a.join(" ")}\n`);
+const log = (...a) => process.stderr.write(`[justrefresh-bridge] ${a.join(" ")}\n`);
 
 function ensureDir() {
   fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
@@ -100,7 +100,7 @@ function runMcp() {
   let ready = null;
   let seq = 0;
   const waiting = new Map();
-  let clientInfo = { name: process.env.SAR_AGENT_NAME ?? "MCP client" };
+  let clientInfo = { name: process.env.JUSTREFRESH_AGENT_NAME ?? "MCP client" };
 
   function connect() {
     if (ready) return ready;
@@ -135,7 +135,7 @@ function runMcp() {
         }),
       );
       socket.on("connect", () => {
-        const id = process.env.SAR_AGENT_ID ?? clientInfo.name;
+        const id = process.env.JUSTREFRESH_AGENT_ID ?? clientInfo.name;
         socket.write(JSON.stringify({ type: "hello", token, client: { id, name: clientInfo.name } }) + "\n");
       });
     });
@@ -186,6 +186,6 @@ const mode = process.argv[2];
 if (mode === "native-host" || (mode ?? "").startsWith("chrome-extension://")) runNativeHost();
 else if (mode === "mcp") runMcp();
 else {
-  console.error("Usage: sar-bridge.mjs native-host | mcp");
+  console.error("Usage: justrefresh-bridge.mjs native-host | mcp");
   process.exit(2);
 }

@@ -9,10 +9,10 @@ const isWin = process.platform === "win32";
 
 describe.skipIf(isWin)("bridge processes", () => {
   it("relays MCP tool calls to the extension and back", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "sar-bridge-"));
-    const env = { ...process.env, SAR_BRIDGE_DIR: dir };
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
+    const env = { ...process.env, JUSTREFRESH_BRIDGE_DIR: dir };
     // Fake Chrome: the native host's stdin/stdout.
-    const host = spawn(process.execPath, ["bridge/sar-bridge.mjs", "native-host"], { env });
+    const host = spawn(process.execPath, ["bridge/justrefresh-bridge.mjs", "native-host"], { env });
     const seen: any[] = [];
     host.stdout.on(
       "data",
@@ -32,7 +32,7 @@ describe.skipIf(isWin)("bridge processes", () => {
     expect(statSync(join(dir, "token")).mode & 0o777).toBe(0o600);
     expect(statSync(join(dir, "bridge.sock")).mode & 0o077).toBe(0);
 
-    const mcp = spawn(process.execPath, ["bridge/sar-bridge.mjs", "mcp"], { env });
+    const mcp = spawn(process.execPath, ["bridge/justrefresh-bridge.mjs", "mcp"], { env });
     const replies: any[] = [];
     mcp.stdout.on(
       "data",
@@ -48,7 +48,7 @@ describe.skipIf(isWin)("bridge processes", () => {
       throw new Error(`no reply ${id}`);
     };
     send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: "Test Agent" } } });
-    expect((await waitReply(1)).result.serverInfo.name).toBe("smart-auto-refresh");
+    expect((await waitReply(1)).result.serverInfo.name).toBe("justrefresh");
     send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "refresh_list_rules", arguments: {} } });
     const r = await waitReply(2);
     expect(r.result.structuredContent).toEqual({ echo: "listRules", client: { id: "test-agent", name: "Test Agent" } });
@@ -60,8 +60,8 @@ describe.skipIf(isWin)("bridge processes", () => {
   }, 15_000);
 
   it("rejects socket clients without the token", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "sar-bridge-"));
-    const host = spawn(process.execPath, ["bridge/sar-bridge.mjs", "native-host"], { env: { ...process.env, SAR_BRIDGE_DIR: dir } });
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
+    const host = spawn(process.execPath, ["bridge/justrefresh-bridge.mjs", "native-host"], { env: { ...process.env, JUSTREFRESH_BRIDGE_DIR: dir } });
     const net = await import("node:net");
     for (let i = 0; i < 100 && !existsSync(join(dir, "bridge.sock")); i++) await new Promise((r) => setTimeout(r, 25));
     const sock = net.createConnection(join(dir, "bridge.sock"));

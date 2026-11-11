@@ -4,8 +4,8 @@ coverage/
 *.log
 .DS_Store
 test-results/
-bridge/sar-native-host.sh
-bridge/sar-native-host.bat
+bridge/justrefresh-native-host.sh
+bridge/justrefresh-native-host.bat
 
 # Local notes (not committed)
 .local/

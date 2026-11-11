@@ -11,7 +11,7 @@ import type { RuleManagementService } from "../api/rule-api";
 import { BRIDGE_STATUS_KEY } from "../storage/keys";
 import { handleAgentMessage, RateLimiter, AGENT_PROTOCOL } from "./external-messaging";
 
-export const NATIVE_HOST = "com.smartautorefresh.bridge";
+export const NATIVE_HOST = "com.justrefresh.bridge";
 
 interface BridgeRequest {
   id: string;

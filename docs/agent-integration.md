@@ -23,9 +23,9 @@ code.) Pairing requests start with no scopes selected.
 
 ```js
 // 1. Pair (creates a pending agent the user must approve, with scopes)
-await chrome.runtime.sendMessage(ID, { protocol: "sar-agent/1", method: "pair", name: "My Agent" });
+await chrome.runtime.sendMessage(ID, { protocol: "justrefresh-agent/1", method: "pair", name: "My Agent" });
 // 2. After approval:
-await chrome.runtime.sendMessage(ID, { protocol: "sar-agent/1", method: "validateRule", params: { rule } });
+await chrome.runtime.sendMessage(ID, { protocol: "justrefresh-agent/1", method: "validateRule", params: { rule } });
 ```
 
 Responses: `{ ok: true, result }` or `{ ok: false, error: { code, message, diagnostics? } }`.

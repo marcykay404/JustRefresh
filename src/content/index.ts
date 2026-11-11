@@ -7,11 +7,16 @@ import { CONTENT_PROTOCOL, type ContentRequest, type ContentResponse } from "../
 import { ActivityMonitor } from "./activity-monitor";
 import { currentNavigation, detectFormResult, watchFormPosts } from "./form-post";
 
-const FLAG = "__smartAutoRefreshContent__";
+const FLAG = "__justRefreshContent__";
 const g = globalThis as unknown as Record<string, unknown>;
+// Set up once per page and version. Injected twice by the same version, the
+// second copy does nothing. After an update the old copy is cut off (its
+// listener never hears from the extension again) but its flag can remain, so
+// it records the version: a newer one sets the page up again.
+const version = chrome.runtime.getManifest().version;
 
-if (!g[FLAG]) {
-  g[FLAG] = true;
+if (g[FLAG] !== version) {
+  g[FLAG] = version;
   const monitor = new ActivityMonitor(document);
   monitor.start();
   // Whether this page came from submitting a form (reloading it would send the form again).

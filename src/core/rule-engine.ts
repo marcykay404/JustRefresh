@@ -61,7 +61,10 @@ export class RuleEngine extends CycleEngine {
     }
     for (const a of alarms) {
       const id = tabIdFromAlarm(a.name);
-      if (id !== null && !open.has(id)) await this.deps.alarms.clear(a.name);
+      // A closed tab's alarm, or one this version doesn't use (e.g. named by an
+      // older version: Chrome keeps alarms across updates). Running tabs get
+      // their alarm set again below.
+      if (id === null || !open.has(id)) await this.deps.alarms.clear(a.name);
     }
     const alarmMap = new Map(alarms.map((a) => [a.name, a.scheduledTime]));
     let slot = 0;

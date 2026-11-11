@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const HOST = "com.smartautorefresh.bridge";
+const HOST = "com.justrefresh.bridge";
 const args = process.argv.slice(2);
 const opt = (name, def) => {
   const i = args.indexOf(`--${name}`);
@@ -45,7 +45,7 @@ const dirs = {
 const isWin = process.platform === "win32";
 const target = isWin ? here : path.join(home, dirs[process.platform]?.[browser] ?? dirs.linux[browser]);
 const manifestPath = path.join(target, `${HOST}.json`);
-const launcher = path.join(here, isWin ? "sar-native-host.bat" : "sar-native-host.sh");
+const launcher = path.join(here, isWin ? "justrefresh-native-host.bat" : "justrefresh-native-host.sh");
 
 if (uninstall) {
   fs.rmSync(manifestPath, { force: true });
@@ -55,7 +55,7 @@ if (uninstall) {
 }
 
 const node = process.execPath;
-const script = path.join(here, "sar-bridge.mjs");
+const script = path.join(here, "justrefresh-bridge.mjs");
 if (isWin) fs.writeFileSync(launcher, `@echo off\r\n"${node}" "${script}" native-host %*\r\n`);
 else fs.writeFileSync(launcher, `#!/bin/sh\nexec "${node}" "${script}" native-host "$@"\n`, { mode: 0o755 });
 
@@ -78,6 +78,4 @@ console.log(`Installed native host manifest: ${manifestPath}`);
 if (isWin) {
   console.log(`Now register it:\n  reg add "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST}" /ve /t REG_SZ /d "${manifestPath}" /f`);
 }
-console.log(
-  `\nAdd the MCP server to your agent, e.g.:\n${JSON.stringify({ mcpServers: { "smart-auto-refresh": { command: node, args: [script, "mcp"] } } }, null, 2)}`,
-);
+console.log(`\nAdd the MCP server to your agent, e.g.:\n${JSON.stringify({ mcpServers: { justrefresh: { command: node, args: [script, "mcp"] } } }, null, 2)}`);

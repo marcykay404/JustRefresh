@@ -6,7 +6,7 @@
  * empty by default) are accepted; others are rejected before anything is
  * recorded, so unknown extensions cannot flood the pairing queue.
  *
- * Protocol: { protocol: "sar-agent/1", method, params }
+ * Protocol: { protocol: "justrefresh-agent/1", method, params }
  *  - "pair" registers a pending agent the user must approve (no scopes).
  *  - every other method requires an approved agent with the right scope.
  * Calls are rate limited per agent and every call is audited.
@@ -15,7 +15,7 @@ import type { RuleManagementService } from "../api/rule-api";
 import { ApiError } from "../api/permissions";
 import { toErrorResponse } from "../api/messaging";
 
-export const AGENT_PROTOCOL = "sar-agent/1";
+export const AGENT_PROTOCOL = "justrefresh-agent/1";
 
 export interface AgentMessage {
   protocol: typeof AGENT_PROTOCOL;

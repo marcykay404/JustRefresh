@@ -5,7 +5,7 @@
  */
 import type { ConditionNode, EvaluationResult, ElementSummary } from "../core/types";
 
-export const CONTENT_PROTOCOL = "sar/1" as const;
+export const CONTENT_PROTOCOL = "justrefresh/1" as const;
 
 export interface ActivitySnapshot {
   /** Milliseconds since the monitor started observing this document. */
@@ -57,7 +57,7 @@ export type ContentResponse =
 
 /** Requests from extension pages (popup/dashboard) to the service worker. */
 export interface ApiRequest {
-  channel: "sar-api";
+  channel: "justrefresh-api";
   method: string;
   params?: unknown;
 }

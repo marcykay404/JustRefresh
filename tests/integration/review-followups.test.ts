@@ -13,7 +13,7 @@ import { DEFAULT_SAFETY } from "@/core/defaults";
 import { AGENT_LAST_SEEN_RESOLUTION_MS } from "@/api/rule-api";
 
 const EXT = "abcdefghijklmnopabcdefghijklmnop";
-const pair = { protocol: "sar-agent/1", method: "pair", name: "Some extension" };
+const pair = { protocol: "justrefresh-agent/1", method: "pair", name: "Some extension" };
 
 describe("extension allowlist (agent messaging)", () => {
   it("rejects extensions that are not allowlisted before anything is recorded", async () => {
