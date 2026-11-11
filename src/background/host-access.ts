@@ -7,6 +7,7 @@
  * activity monitoring starts at document_start on those pages.
  */
 import { normalizeUrl } from "../core/url-pattern";
+import { withTimeout } from "../core/timeout";
 
 export const CONTENT_SCRIPT_ID = "sar-content";
 
@@ -59,7 +60,7 @@ export async function injectIntoOpenTabs(): Promise<void> {
   for (const t of tabs) {
     if (t.id === undefined || !t.url || !(await hasHostAccess(t.url))) continue;
     try {
-      await chrome.scripting.executeScript({ target: { tabId: t.id, frameIds: [0] }, files: ["content.js"] });
+      await withTimeout(chrome.scripting.executeScript({ target: { tabId: t.id, frameIds: [0] }, files: ["content.js"] }), 5000, "Content script injection");
     } catch {
       /* tab may be discarded or restricted */
     }

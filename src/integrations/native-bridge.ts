@@ -22,21 +22,32 @@ interface BridgeRequest {
 let port: chrome.runtime.Port | null = null;
 let retry = 0;
 let wanted = false;
+/**
+ * Chrome only exposes chrome.runtime.connectNative to a worker that started
+ * with the nativeMessaging permission. When the user grants it at runtime the
+ * running worker cannot connect until the extension restarts.
+ */
+let restartRequired = false;
 const limiter = new RateLimiter(120, 60_000);
 
 export function bridgeStatus() {
-  return { connected: port !== null, wanted };
+  return { connected: port !== null, wanted, restartRequired };
 }
 
 export async function setBridgeEnabled(service: RuleManagementService, enabled: boolean) {
   wanted = enabled;
   if (!enabled) {
+    restartRequired = false;
     port?.disconnect();
     port = null;
     return;
   }
   const granted = await chrome.permissions.contains({ permissions: ["nativeMessaging"] }).catch(() => false);
   if (!granted || port) return;
+  if (typeof chrome.runtime.connectNative !== "function") {
+    restartRequired = true;
+    return;
+  }
   connect(service);
 }
 

@@ -15,6 +15,7 @@ import { resolveTab, type Resolution } from "./rule-resolver";
 import { decideSafety } from "./safety";
 import { checkLimits, inActiveWindow, MIN_ALARM_DELAY_MS, nextWindowStart, restoredDueAt } from "./schedule";
 import { isPaused, isTerminal, newRuntime, transition } from "./state-machine";
+import { TimeoutError, withTimeout } from "./timeout";
 import type {
   ActionConfig,
   Actor,
@@ -79,7 +80,29 @@ export interface EngineDeps {
   registries?: Registries;
   /** Global spacing between reloads to avoid refresh storms. */
   throttle?: () => Promise<void>;
+  /** Override the bounded-wait limits (tests use short values). */
+  timeouts?: Partial<EngineTimeouts>;
 }
+
+export interface EngineTimeouts {
+  /** Max wait for a content-script round trip (activity / DOM evaluation). */
+  pageMs: number;
+  /** Max wait for chrome.tabs.reload to return. */
+  reloadMs: number;
+  /** Backstop: max time one operation may hold a tab's lock. */
+  lockMs: number;
+  /** A tab left in "evaluating" longer than this is re-run by a watchdog alarm. */
+  watchdogMs: number;
+}
+
+export const DEFAULT_TIMEOUTS: EngineTimeouts = {
+  pageMs: 15_000,
+  reloadMs: 10_000,
+  lockMs: 45_000,
+  // Must exceed lockMs so the watchdog cycle can acquire the lock, and be at
+  // least Chrome's minimum alarm delay.
+  watchdogMs: 60_000,
+};
 
 export const ALARM_PREFIX = "sar:tab:";
 export const NAVIGATION_TIMEOUT_MS = 60_000;
@@ -111,15 +134,43 @@ export interface CycleResult {
 export class RuleEngine {
   private readonly registries: Registries;
   private readonly locks = new Map<number, Promise<unknown>>();
+  private readonly timeouts: EngineTimeouts;
+  /** Page port with bounded waits: a stalled page yields "unavailable"/"unknown", never a hang. */
+  private readonly page: PagePort;
 
   constructor(private readonly deps: EngineDeps) {
     this.registries = deps.registries ?? defaultRegistries();
+    this.timeouts = { ...DEFAULT_TIMEOUTS, ...deps.timeouts };
+    const { pageMs } = this.timeouts;
+    this.page = {
+      // A rejection here is reported by the evaluator as an `unknown` result.
+      evaluate: (tabId, leaves, includeText) => withTimeout(deps.page.evaluate(tabId, leaves, includeText), pageMs, "Page"),
+      activity: (tabId) =>
+        withTimeout(deps.page.activity(tabId), pageMs, "Page").catch((e: Error) => ({ activity: null, reason: e.message })),
+    };
   }
 
-  /** Serialize all work per tab: one operation per tab at a time. */
+  private reloadTab(tabId: number, bypassCache: boolean) {
+    return withTimeout(this.deps.browser.reload(tabId, bypassCache), this.timeouts.reloadMs, "Tab reload");
+  }
+
+  /**
+   * Serialize all work per tab: one operation per tab at a time.
+   *
+   * Every browser call inside is bounded, so operations finish on their own.
+   * As a backstop, an operation that still holds the lock after `lockMs`
+   * releases it (its caller gets a TimeoutError) so one stalled call cannot
+   * block the tab — and every API call touching the tab — forever.
+   */
   private withLock<T>(tabId: number, fn: () => Promise<T>): Promise<T> {
     const prev = this.locks.get(tabId) ?? Promise.resolve();
-    const next = prev.then(fn, fn);
+    // Bound the operation's own run time (not its wait in the queue).
+    const run = () =>
+      withTimeout(fn(), this.timeouts.lockMs, `Operation on tab ${tabId}`).catch((e) => {
+        if (e instanceof TimeoutError) console.warn(`[sar] ${e.message}; releasing the tab lock`);
+        throw e;
+      });
+    const next = prev.then(run, run);
     const tail = next.catch(() => undefined);
     this.locks.set(tabId, tail);
     void tail.then(() => {
@@ -419,6 +470,14 @@ export class RuleEngine {
         return save(rt);
       }
 
+      // We hold the tab lock, so an "evaluating" state here was left by a cycle
+      // that never finished (worker terminated, or released by the lock
+      // backstop). Recover it instead of failing the transition below.
+      if (rt.status === "evaluating") {
+        this.log({ ruleId: rule.id, tabId, url: tab.url, trigger: event, action: "recover", outcome: "ok", reason: "Previous evaluation did not finish; retrying" });
+        rt = transition(rt, "scheduled", { reason: undefined });
+      }
+
       // User / rule pauses.
       if (rt.status === "paused_user") {
         if (rt.resumeAt !== null && rt.resumeAt <= now) {
@@ -458,6 +517,9 @@ export class RuleEngine {
       // Evaluate.
       rt = transition(rt, "evaluating", { lastAttemptAt: now });
       await this.deps.stores.runtime.put(rt);
+      // Watchdog: if this cycle never finishes (worker killed, stalled call),
+      // the alarm fires again and re-runs it. A normal finish replaces it.
+      await this.deps.alarms.set(alarmName(tabId), now + this.timeouts.watchdogMs);
       const generation = rt.generation;
 
       let status: EvaluationResult["status"] = "not_matched";
@@ -533,7 +595,7 @@ export class RuleEngine {
       now: this.now(),
       tab: { id: tab.id, url: tab.url, status: tab.status },
       runtime: { refreshCount: rt.refreshCount, navigationCount: rt.navigationCount, startedAt: rt.startedAt },
-      pageEvaluator: (leaves) => this.deps.page.evaluate(tab.id, leaves, false),
+      pageEvaluator: (leaves) => this.page.evaluate(tab.id, leaves, false),
       registries: this.registries,
     });
   }
@@ -605,7 +667,7 @@ export class RuleEngine {
   /** Safety gate + throttled reload. Persists state BEFORE reloading. */
   private async performReload(rule: Rule, tab: TabInfo, rt: TabRuntime, bypassCache: boolean, _config: Config): Promise<TabRuntime> {
     const now = this.now();
-    const { activity, reason } = await this.deps.page.activity(tab.id);
+    const { activity, reason } = await this.page.activity(tab.id);
     const decision = decideSafety({
       safety: rule.safety,
       activity,
@@ -628,8 +690,14 @@ export class RuleEngine {
     await this.deps.stores.runtime.put(next);
     await this.setAlarm(next);
     try {
-      await this.deps.browser.reload(tab.id, bypassCache);
+      await this.reloadTab(tab.id, bypassCache);
     } catch (e) {
+      // A slow reload call may still go through: keep it pending. Navigation
+      // completion or NAVIGATION_TIMEOUT_MS settles it either way.
+      if (e instanceof TimeoutError) {
+        console.warn(`[sar] ${e.message} (tab ${tab.id}); tracking it as pending`);
+        return next;
+      }
       const failed = { ...next, pendingReload: null, refreshCount: rt.refreshCount };
       await this.deps.stores.runtime.put(failed);
       throw e;
@@ -691,7 +759,7 @@ export class RuleEngine {
       if (!opts.force) {
         if (res.kind === "tab_excluded" || res.kind === "url_excluded") return { refreshed: false, reason: res.reason };
         const safety = res.kind === "controller" ? res.controller.safety : config.settings.defaultSafety;
-        const { activity, reason } = await this.deps.page.activity(tabId);
+        const { activity, reason } = await this.page.activity(tabId);
         // Manual refresh is an explicit gesture: only unsaved-change protection applies.
         const decision = decideSafety({
           safety: { ...safety, pauseWhileTyping: false, pauseOnMouse: false, pauseOnScroll: false, onActivityUnavailable: "refresh" },
@@ -701,7 +769,7 @@ export class RuleEngine {
         });
         if (!decision.allowed) return { refreshed: false, reason: decision.reason };
       }
-      await this.deps.browser.reload(tabId, false);
+      await this.reloadTab(tabId, false);
       const actor = opts.actor?.type === "agent" ? "agent" : "user";
       this.log({ ruleId: res.kind === "controller" ? res.controller.id : null, tabId, url: tab.url, trigger: "manual", action: "refresh", outcome: "ok", actor, reason: opts.force ? "forced" : undefined });
       return { refreshed: true };
@@ -737,7 +805,7 @@ export class RuleEngine {
       now: this.now(),
       tab: { id: tab.id, url: tab.url, status: tab.status },
       runtime: { refreshCount: rt.refreshCount, navigationCount: rt.navigationCount, startedAt: rt.startedAt },
-      pageEvaluator: (leaves) => this.deps.page.evaluate(tab.id, leaves, includeText),
+      pageEvaluator: (leaves) => this.page.evaluate(tab.id, leaves, includeText),
       registries: this.registries,
     });
     return { ok: true as const, tab, result: out.result, trace: out.trace };

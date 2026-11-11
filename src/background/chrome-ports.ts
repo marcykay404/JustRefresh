@@ -6,6 +6,7 @@ import { restrictedReason } from "../core/url-pattern";
 import type { ConditionNode, EvaluationResult, TabInfo } from "../core/types";
 import { CONTENT_PROTOCOL, type ActivitySnapshot, type ContentRequest, type ContentResponse } from "../shared/messaging-types";
 import { hasHostAccess } from "./host-access";
+import { withTimeout } from "../core/timeout";
 
 export function toTabInfo(t: chrome.tabs.Tab): TabInfo | null {
   if (t.id === undefined || t.id < 0) return null;
@@ -71,10 +72,10 @@ let seq = 0;
 const requestId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
 
 const MESSAGE_TIMEOUT_MS = 3000;
+const INJECT_TIMEOUT_MS = 5000;
 
 async function send<K extends ContentResponse["kind"]>(tabId: number, req: ContentRequest, expect: K): Promise<Extract<ContentResponse, { kind: K }>> {
-  const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Content script timed out")), MESSAGE_TIMEOUT_MS));
-  const res = (await Promise.race([chrome.tabs.sendMessage(tabId, req, { frameId: 0 }), timeout])) as ContentResponse | undefined;
+  const res = (await withTimeout(chrome.tabs.sendMessage(tabId, req, { frameId: 0 }), MESSAGE_TIMEOUT_MS, "Content script")) as ContentResponse | undefined;
   if (!res) throw new Error("No response from content script");
   if (res.requestId !== req.requestId) throw new Error("Stale response discarded");
   if (res.kind === "error") throw new Error(res.error);
@@ -101,7 +102,9 @@ async function ensureContent(tabId: number): Promise<{ ok: true } | { ok: false;
     /* not injected yet */
   }
   try {
-    await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["content.js"] });
+    // executeScript has no timeout of its own and can stall indefinitely
+    // (e.g. page paused in a debugger, tab driven via chrome.debugger).
+    await withTimeout(chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["content.js"] }), INJECT_TIMEOUT_MS, "Content script injection");
     await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "ping" }, "pong");
     return { ok: true };
   } catch (e) {
