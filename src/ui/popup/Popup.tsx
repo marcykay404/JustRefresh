@@ -94,6 +94,8 @@ export function Popup() {
   const shownInterval = active ? currentInterval : (chosenInterval ?? currentInterval);
   const origin = originOf(s.tab.url);
   const unprotected = !s.hostAccess && s.safety.onActivityUnavailable === "refresh";
+  const protectionOn = s.safety.pauseWhileTyping || s.safety.protectUnsavedChanges || s.safety.pauseOnMouse || s.safety.pauseOnScroll;
+  const siteName = origin === "file:///*" ? "local files" : (() => { try { return new URL(s.tab.url).hostname.replace(/^www\./, ""); } catch { return "this site"; } })();
   // Without site access the default safety policy pauses every refresh: say so and offer a choice.
   const blockedByAccess =
     declinedFor !== null || (!s.hostAccess && rt?.status === "paused_activity" && s.safety.onActivityUnavailable !== "refresh");
@@ -104,7 +106,8 @@ export function Popup() {
    * refresh without protection instead.
    */
   const enable = (intervalSeconds: number) => {
-    if (s.hostAccess || !origin) {
+    // No protection means nothing reads the page, so there is nothing to ask for.
+    if (s.hostAccess || !origin || !protectionOn) {
       void run("startTab", { tabId, intervalSeconds });
       return;
     }
@@ -241,11 +244,12 @@ export function Popup() {
             {blockedByAccess && origin && (
               <div className="notice small col">
                 <span>
-                  Without access to this site, JustRefresh can't see typing or unsaved forms here, so by default it won't refresh this page.
+                  JustRefresh can't see inside <strong>{siteName}</strong>, so it can't tell whether you're typing or have unsaved form changes. To be safe, it
+                  won't refresh this page until you allow access.
                 </span>
                 <div className="row">
                   <button className="small" onClick={() => void requestOrigins([origin]).then((ok) => ok && (declinedFor !== null ? enable(declinedFor) : void run("resumeTab", { tabId })))}>
-                    Grant access
+                    Allow access
                   </button>
                   <button className="small" onClick={() => void startUnprotected()}>Refresh without protection</button>
                 </div>
@@ -288,10 +292,16 @@ export function Popup() {
               label={<span>Smart activity protection <span className="muted small">(pause while typing, protect unsaved forms)</span></span>}
             />
 
-            {!s.hostAccess && origin && !blockedByAccess && !unprotected && (
+            {/* Site access only matters while something reads the page: protection,
+                or a rule (which may have page conditions). With protection off on a
+                tab-specific timer it does nothing, so the prompt is hidden, not greyed out. */}
+            {!s.hostAccess && origin && !blockedByAccess && !unprotected && (protectionOn || s.resolution.source === "rule") && (
               <div className="info small row">
-                <span>Grant site access to enable activity protection and page conditions.</span>
-                <button className="small" onClick={() => void requestOrigins([origin]).then(() => state.reload())}>Grant access</button>
+                <span>
+                  JustRefresh can't see inside <strong>{siteName}</strong> yet. Allow it so refreshes wait while you're typing or have unsaved form changes
+                  {s.resolution.source === "rule" ? ", and so this rule can check the page's content." : "."}
+                </span>
+                <button className="small" onClick={() => void requestOrigins([origin]).then(() => state.reload())}>Allow access</button>
               </div>
             )}
 

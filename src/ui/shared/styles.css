@@ -137,3 +137,5 @@ body.popup { width: 380px; }
 .trace { list-style: none; padding-left: 14px; margin: 0; }
 .trace > li { margin: 3px 0; }
 .sticky { position: sticky; top: 12px; }
+.site-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.site-list + button.link { align-self: flex-start; }

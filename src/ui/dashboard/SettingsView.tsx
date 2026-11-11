@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, requestOrigins } from "../shared/api";
 import { useApi } from "../shared/hooks";
+import { ALL_SITE_PATTERNS, describeUsage, groupOrigins, hasAllSites, inUse, siteUsage } from "../shared/site-access";
 import { downloadJson } from "../shared/format";
 import { ErrorBox, Field, Toggle } from "../shared/components";
 import { INTERVAL_PRESETS } from "../../core/defaults";
@@ -198,23 +199,21 @@ function ImportExport({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** "https://github.com/*" → "github.com"; wildcards and file URLs get readable labels. */
-function siteLabel(origin: string): { label: string; host: string | null } {
-  if (origin === "file:///*") return { label: "Local files (file://)", host: null };
-  const m = /^[a-z*]+:\/\/([^/]+)\//.exec(origin);
-  const host = m?.[1] ?? null;
-  if (!host || host === "*") return { label: `All websites (${origin})`, host: null };
-  return { label: origin, host: host.replace(/^\*\./, "") };
-}
+/** Rows shown before "Show all"; the filter box appears past FILTER_AFTER sites. */
+const COLLAPSED_SITES = 5;
+const FILTER_AFTER = 8;
 
 /**
  * Granted site access, per site, with removal. Chrome's own extension page
  * cannot revoke runtime-granted sites individually, so this is the place.
  */
-function SiteAccess() {
+export function SiteAccess() {
   const [origins, setOrigins] = useState<string[] | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const rules = useApi<Rule[]>("listRules");
+  const [filter, setFilter] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const rules = useApi<Rule[]>("listRules", undefined, { pollMs: 10_000 });
+  const overview = useApi<{ tabs: { tab: { url: string }; status: string }[] }>("getOverview", undefined, { pollMs: 5000 });
 
   useEffect(() => {
     const load = () => void chrome.permissions.getAll().then((p) => setOrigins([...(p.origins ?? [])].sort()));
@@ -227,9 +226,35 @@ function SiteAccess() {
     };
   }, []);
 
-  /** Rules whose patterns mention this host (a hint, not an exact match). */
-  const usedBy = (host: string | null) =>
-    host ? (rules.data ?? []).filter((r) => r.target.patterns.some((p) => (typeof p === "string" ? p : p.value).replace(/\\/g, "").toLowerCase().includes(host.toLowerCase()))) : [];
+  // Usage is only trusted once tabs and rules have loaded; until then nothing
+  // counts as unused, so "Remove unused" cannot remove a site in use.
+  const loaded = !!overview.data && !!rules.data;
+  const sites = useMemo(() => {
+    const tabs = (overview.data?.tabs ?? []).map((r) => ({ url: r.tab.url, status: r.status }));
+    const ruleList = (rules.data ?? []).map((r) => ({ name: r.name, patterns: r.target.patterns }));
+    return groupOrigins(origins ?? [])
+      .map((g) => {
+        const usage = siteUsage(g, tabs, ruleList);
+        return { g, usage, used: !loaded || inUse(usage) };
+      })
+      // "All websites" first, then sites in use, then the rest by name.
+      .sort((a, b) => Number(b.g.kind === "all") - Number(a.g.kind === "all") || Number(b.used) - Number(a.used));
+  }, [origins, overview.data, rules.data, loaded]);
+
+  const unused = sites.filter((s) => !s.used && s.g.kind !== "all");
+  const q = filter.trim().toLowerCase();
+  const matching = q ? sites.filter((s) => s.g.label.toLowerCase().includes(q)) : sites;
+  const shown = expanded || q ? matching : matching.slice(0, COLLAPSED_SITES);
+  const allSites = sites.some((s) => s.g.kind === "all");
+
+  const describe = ({ g, usage }: (typeof sites)[number]) => {
+    const httpOnly = g.schemes.length === 1 && g.schemes[0] === "http" ? "http only" : null;
+    if (g.kind === "all") {
+      const parts = [usage.tabs && `${usage.tabs} tab${usage.tabs === 1 ? "" : "s"}`, usage.rules.length && `${usage.rules.length} rule${usage.rules.length === 1 ? "" : "s"}`].filter(Boolean);
+      return [g.schemes.length === 1 ? `Every ${g.schemes[0]} site` : "Every http and https site", parts.length ? `used by ${parts.join(" and ")}` : null].filter(Boolean).join(" · ");
+    }
+    return [httpOnly, loaded ? describeUsage(usage) : null].filter(Boolean).join(" · ");
+  };
 
   const remove = async (list: string[], what: string) => {
     setError(null);
@@ -241,40 +266,73 @@ function SiteAccess() {
     }
   };
 
+  const removeUnused = async () => {
+    setError(null);
+    const names = unused.map((s) => s.g.label);
+    const preview = names.slice(0, 10).join("\n") + (names.length > 10 ? `\n…and ${names.length - 10} more` : "");
+    if (!confirm(`Remove access to ${names.length} site${names.length === 1 ? "" : "s"} that no running tab or rule uses?\n\n${preview}\n\nJustRefresh asks again the next time you turn on refresh there.`)) return;
+    try {
+      await chrome.permissions.remove({ origins: unused.flatMap((s) => s.g.origins) });
+    } catch (e) {
+      setError(e);
+    }
+  };
+
+  const siteCount = sites.filter((s) => s.g.kind !== "all").length;
+  const summary = allSites
+    ? `Allowed on all websites${siteCount ? `, plus ${siteCount} site${siteCount === 1 ? "" : "s"} granted earlier` : ""}`
+    : `Allowed on ${siteCount} site${siteCount === 1 ? "" : "s"}${loaded ? ` · ${siteCount - unused.length} in use` : ""}`;
+
   return (
     <div className="card col">
       <h2>Site access</h2>
       <p className="small muted" style={{ margin: 0 }}>
-        JustRefresh installs without access to any website. Access is requested per site when you enable refresh. It is needed for activity protection
-        and page (DOM) conditions; without it, a tab only refreshes if you chose to refresh without protection.
+        JustRefresh installs without access to any website and asks per site when you turn on refresh. Access lets it wait while you're typing or have
+        unsaved form changes, and lets rules check a page's content.
       </p>
       {origins === null ? (
         <span className="muted small">Loading…</span>
-      ) : origins.length === 0 ? (
+      ) : sites.length === 0 ? (
         <span className="muted small">No site access granted.</span>
       ) : (
-        // A stacked list, not a table: full site addresses cannot wrap nicely in
-        // table cells and overflowed the narrow card.
-        <div className="site-list">
-          {origins.map((o) => {
-            const { label, host } = siteLabel(o);
-            const used = usedBy(host);
-            return (
-              <div key={o} className="site-row">
-                <div className="site-main">
-                  <code className="site-origin">{label}</code>
-                  <span className="small muted">{used.length ? `Used by: ${used.map((r) => r.name).join(", ")}` : "Not used by any rule"}</span>
+        <>
+          <div className="site-summary">
+            <span className="small">{summary}</span>
+            {unused.length > 0 && (
+              <button className="small" onClick={() => void removeUnused()}>
+                Remove unused ({unused.length})
+              </button>
+            )}
+          </div>
+          {sites.length > FILTER_AFTER && (
+            <input type="search" placeholder="Filter sites…" aria-label="Filter sites" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          )}
+          {/* One row per site: Chrome keeps a pattern per scheme (all sites = http + https). */}
+          <div className="site-list">
+            {shown.map((s) => (
+              <div key={s.g.key} className="site-row">
+                <div className="site-main" title={s.g.origins.join("\n")}>
+                  <code className="site-origin">{s.g.label}</code>
+                  <span className="small muted">{describe(s)}</span>
                 </div>
-                <button className="small" onClick={() => void remove([o], label)}>Remove</button>
+                <button className="small" onClick={() => void remove(s.g.origins, s.g.kind === "all" ? "all websites" : s.g.label)}>
+                  Remove
+                </button>
               </div>
-            );
-          })}
-        </div>
+            ))}
+            {q && matching.length === 0 && <span className="small muted site-row">No sites match “{filter}”.</span>}
+          </div>
+          {!q && matching.length > COLLAPSED_SITES && (
+            <button className="link small" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>
+              {expanded ? "Show fewer" : `Show all ${matching.length} sites`}
+            </button>
+          )}
+        </>
       )}
       <ErrorBox error={error} />
       <div className="row">
-        <button onClick={() => void requestOrigins(["http://*/*", "https://*/*"])}>Grant access to all sites</button>
-        {origins && origins.length > 0 && <button onClick={() => void remove(origins, "all sites")}>Revoke all site access</button>}
+        {origins && !hasAllSites(origins) && <button onClick={() => void requestOrigins(ALL_SITE_PATTERNS)}>Grant access to all sites</button>}
+        {origins && origins.length > 0 && <button onClick={() => void remove(origins, "all sites")}>Revoke all</button>}
       </div>
     </div>
   );
