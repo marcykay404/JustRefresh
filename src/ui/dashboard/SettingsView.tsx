@@ -253,22 +253,23 @@ function SiteAccess() {
       ) : origins.length === 0 ? (
         <span className="muted small">No site access granted.</span>
       ) : (
-        <table>
-          <thead><tr><th>Site</th><th>Used by rules</th><th /></tr></thead>
-          <tbody>
-            {origins.map((o) => {
-              const { label, host } = siteLabel(o);
-              const used = usedBy(host);
-              return (
-                <tr key={o}>
-                  <td className="mono small">{label}</td>
-                  <td className="small">{used.length ? used.map((r) => r.name).join(", ") : <span className="muted">—</span>}</td>
-                  <td><button className="small" onClick={() => void remove([o], label)}>Remove</button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        // A stacked list, not a table: full site addresses cannot wrap nicely in
+        // table cells and overflowed the narrow card.
+        <div className="site-list">
+          {origins.map((o) => {
+            const { label, host } = siteLabel(o);
+            const used = usedBy(host);
+            return (
+              <div key={o} className="site-row">
+                <div className="site-main">
+                  <code className="site-origin">{label}</code>
+                  <span className="small muted">{used.length ? `Used by: ${used.map((r) => r.name).join(", ")}` : "Not used by any rule"}</span>
+                </div>
+                <button className="small" onClick={() => void remove([o], label)}>Remove</button>
+              </div>
+            );
+          })}
+        </div>
       )}
       <ErrorBox error={error} />
       <div className="row">
