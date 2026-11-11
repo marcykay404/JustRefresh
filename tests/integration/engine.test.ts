@@ -286,7 +286,10 @@ describe("Scenario H: unknown condition", () => {
     expect(rt?.reason).toMatch(/after 3 attempts/);
     expect(rt?.nextDueAt).toBeNull();
     expect(env.browser.reloads).toEqual([]);
-    expect(env.browser.notifications).toEqual([]);
+    // Giving up must not be silent: exactly one notification, when it gives up.
+    expect(env.browser.notifications).toHaveLength(1);
+    expect(env.browser.notifications[0].title).toBe("Monitoring stopped: u");
+    expect(env.browser.notifications[0].message).toMatch(/Gave up after 3 checks/);
   });
 
   it("onUnknown=refresh keeps refreshing", async () => {

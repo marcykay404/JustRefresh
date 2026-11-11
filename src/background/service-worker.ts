@@ -9,14 +9,15 @@
 import { RuleEngine } from "../core/rule-engine";
 import { RuleManagementService } from "../api/rule-api";
 import { isApiRequest, isExtensionPage, toErrorResponse } from "../api/messaging";
-import { AuditRepository, ConfigRepository, HistoryRepository, RuntimeRepository } from "../storage/repositories";
+import { AuditRepository, ConfigRepository, HistoryRepository, RUNTIME_PREFIX, RuntimeRepository } from "../storage/repositories";
 import { chromeAlarms, chromeBrowser, chromePage, systemClock } from "./chrome-ports";
 import { hasHostAccess, injectIntoOpenTabs, syncContentScripts } from "./host-access";
 import { createThrottle } from "./throttle";
 import { restoreTabOverrides } from "./tab-manager";
 import { registerExternalMessaging } from "../integrations/external-messaging";
 import { bridgeStatus, setBridgeEnabled } from "../integrations/native-bridge";
-import { STATUS_LABELS } from "../core/types";
+import { STATUS_LABELS, type TabRuntime } from "../core/types";
+import { tabBadge } from "../core/badge";
 
 const config = new ConfigRepository(chrome.storage.local);
 const runtime = new RuntimeRepository(chrome.storage.session);
@@ -104,6 +105,27 @@ async function updateBadge() {
   }
 }
 
+/** Per-tab badge + tooltip, recomputed when that tab's runtime state changes. */
+async function updateTabBadge(tabId: number, rt: TabRuntime | null) {
+  const b = tabBadge(rt, (t) => new Date(t).toLocaleTimeString());
+  try {
+    // null clears the tab-specific text so the global badge (approvals, paused) shows.
+    await chrome.action.setBadgeText({ tabId, text: b ? b.text : (null as unknown as string) });
+    if (b) await chrome.action.setBadgeBackgroundColor({ tabId, color: b.color });
+    await chrome.action.setTitle({ tabId, title: b?.title ?? "JustRefresh" });
+  } catch {
+    /* tab already closed */
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "session") return;
+  for (const [key, change] of Object.entries(changes)) {
+    if (!key.startsWith(RUNTIME_PREFIX)) continue;
+    void updateTabBadge(Number(key.slice(RUNTIME_PREFIX.length)), (change.newValue as TabRuntime | undefined) ?? null);
+  }
+});
+
 async function after<T>(fn: () => Promise<T>): Promise<T> {
   await ready;
   return fn();
@@ -165,7 +187,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
-registerExternalMessaging(service);
+registerExternalMessaging(service, async (id) => (await config.get()).settings.allowedExtensionIds.includes(id));
 
 /* Debug/test hook (no privileged surface beyond what the worker already has). */
 (globalThis as unknown as { __sar: unknown }).__sar = { engine, service, config, runtime, ready };

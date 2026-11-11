@@ -43,6 +43,10 @@ cross-field rules. Unknown fields and unknown types are rejected.
 ```
 
 Omitted `safety` fields take the global defaults **at save time**.
+When a monitor ends without its condition matching (`onUnknown: "pause"`
+gives up after `maxUnknownRetries`, or `onUnknown: "stop"`), a
+"Monitoring stopped" notification is shown (if notifications are enabled),
+so an unattended "refresh until" never ends silently.
 `safety.maxRefreshes` is accepted for compatibility and normalized into
 `limits.maxRefreshes`. The API adds a read-only `meta` object
 (`createdAt`, `updatedAt`, `revision`, `origin`, `draft`).
@@ -96,5 +100,5 @@ Logic: `all` → any `not_matched` wins, else any `unknown` → `unknown`;
 | `stopRefresh` | `as?` (`completed`/`stopped`) | Terminal; later non-disruptive actions still run |
 | `pauseRefresh` | `minutes?` | Auto-resume after `minutes` |
 | `resumeRefresh` | — | |
-| `notify` | `title?`, `message?` | Desktop notification (click focuses the tab) |
+| `notify` | `title?`, `message?`, `sound?` | Desktop notification (click focuses the tab); `sound: true` also plays a short chime |
 | `log` | `message?`, `level?` | Writes to history |

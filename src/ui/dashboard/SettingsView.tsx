@@ -1,10 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, requestOrigins } from "../shared/api";
 import { useApi } from "../shared/hooks";
 import { downloadJson } from "../shared/format";
 import { ErrorBox, Field, Toggle } from "../shared/components";
 import { INTERVAL_PRESETS } from "../../core/defaults";
-import type { Settings } from "../../core/types";
+import type { Rule, Settings } from "../../core/types";
 import type { ImportReport } from "../../integrations/json-import";
 
 export function SettingsView() {
@@ -77,18 +77,7 @@ export function SettingsView() {
           </Field>
         </div>
 
-        <div className="card col">
-          <h2>Site access</h2>
-          <p className="small muted" style={{ margin: 0 }}>
-            The extension installs without access to any website. Access is requested per site when you enable refresh, or you can grant it for all sites
-            here. It is needed for activity protection and page (DOM) conditions — plain refreshing works without it if you allow refresh when detection
-            is unavailable.
-          </p>
-          <div className="row">
-            <button onClick={() => void requestOrigins(["http://*/*", "https://*/*"])}>Grant access to all sites</button>
-            <button onClick={() => void chrome.permissions.remove({ origins: ["http://*/*", "https://*/*", "file:///*"] })}>Revoke all site access</button>
-          </div>
-        </div>
+        <SiteAccess />
 
         <div className="card col">
           <h2>History & privacy</h2>
@@ -190,6 +179,87 @@ function ImportExport({ onDone }: { onDone: () => void }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** "https://github.com/*" → "github.com"; wildcards and file URLs get readable labels. */
+function siteLabel(origin: string): { label: string; host: string | null } {
+  if (origin === "file:///*") return { label: "Local files (file://)", host: null };
+  const m = /^[a-z*]+:\/\/([^/]+)\//.exec(origin);
+  const host = m?.[1] ?? null;
+  if (!host || host === "*") return { label: `All websites (${origin})`, host: null };
+  return { label: origin, host: host.replace(/^\*\./, "") };
+}
+
+/**
+ * Granted site access, per site, with removal. Chrome's own extension page
+ * cannot revoke runtime-granted sites individually, so this is the place.
+ */
+function SiteAccess() {
+  const [origins, setOrigins] = useState<string[] | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const rules = useApi<Rule[]>("listRules");
+
+  useEffect(() => {
+    const load = () => void chrome.permissions.getAll().then((p) => setOrigins([...(p.origins ?? [])].sort()));
+    load();
+    chrome.permissions.onAdded.addListener(load);
+    chrome.permissions.onRemoved.addListener(load);
+    return () => {
+      chrome.permissions.onAdded.removeListener(load);
+      chrome.permissions.onRemoved.removeListener(load);
+    };
+  }, []);
+
+  /** Rules whose patterns mention this host (a hint, not an exact match). */
+  const usedBy = (host: string | null) =>
+    host ? (rules.data ?? []).filter((r) => r.target.patterns.some((p) => (typeof p === "string" ? p : p.value).replace(/\\/g, "").toLowerCase().includes(host.toLowerCase()))) : [];
+
+  const remove = async (list: string[], what: string) => {
+    setError(null);
+    if (!confirm(`Remove JustRefresh's access to ${what}?\n\nRules and tabs on ${list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing unless they are set to refresh without protection, and page conditions will report "unknown".`)) return;
+    try {
+      await chrome.permissions.remove({ origins: list });
+    } catch (e) {
+      setError(e);
+    }
+  };
+
+  return (
+    <div className="card col">
+      <h2>Site access</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        JustRefresh installs without access to any website. Access is requested per site when you enable refresh. It is needed for activity protection
+        and page (DOM) conditions; without it, a tab only refreshes if you chose to refresh without protection.
+      </p>
+      {origins === null ? (
+        <span className="muted small">Loading…</span>
+      ) : origins.length === 0 ? (
+        <span className="muted small">No site access granted.</span>
+      ) : (
+        <table>
+          <thead><tr><th>Site</th><th>Used by rules</th><th /></tr></thead>
+          <tbody>
+            {origins.map((o) => {
+              const { label, host } = siteLabel(o);
+              const used = usedBy(host);
+              return (
+                <tr key={o}>
+                  <td className="mono small">{label}</td>
+                  <td className="small">{used.length ? used.map((r) => r.name).join(", ") : <span className="muted">—</span>}</td>
+                  <td><button className="small" onClick={() => void remove([o], label)}>Remove</button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      <ErrorBox error={error} />
+      <div className="row">
+        <button onClick={() => void requestOrigins(["http://*/*", "https://*/*"])}>Grant access to all sites</button>
+        {origins && origins.length > 0 && <button onClick={() => void remove(origins, "all sites")}>Revoke all site access</button>}
+      </div>
     </div>
   );
 }

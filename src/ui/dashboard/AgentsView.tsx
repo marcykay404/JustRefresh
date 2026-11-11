@@ -11,7 +11,8 @@ interface AgentsData {
   allScopes: AgentScope[];
 }
 
-const DEFAULT_SCOPES: AgentScope[] = ["tabs:read", "rules:read", "rules:write", "rules:test", "rules:activate", "status:read"];
+/** Nothing is pre-selected: the user grants each permission deliberately. */
+const DEFAULT_SCOPES: AgentScope[] = [];
 
 const SCOPE_HELP: Record<AgentScope, string> = {
   "tabs:read": "List open tabs (URLs redacted by default)",
@@ -91,6 +92,8 @@ export function AgentsView() {
         )}
       </div>
 
+      <AllowedExtensions ids={overview.data?.settings.allowedExtensionIds ?? []} save={(ids) => act("updateSettings", { allowedExtensionIds: ids })} />
+
       <div className="card col">
         <h2>Local MCP bridge</h2>
         <p className="small muted" style={{ margin: 0 }}>
@@ -152,6 +155,38 @@ export function AgentsView() {
   );
 }
 
+/** Extensions allowed to call the agent API (empty = none; others are rejected before pairing). */
+function AllowedExtensions({ ids, save }: { ids: string[]; save: (ids: string[]) => Promise<void> }) {
+  const [draft, setDraft] = useState("");
+  const candidate = draft.trim().toLowerCase();
+  const valid = /^[a-p]{32}$/.test(candidate);
+  return (
+    <div className="card col">
+      <h2>Allowed extensions</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        Other browser extensions can use the agent API only if their ID is listed here; they still need your approval as an agent afterwards. Find an
+        extension's ID on <code>chrome://extensions</code> (Developer mode).
+      </p>
+      {ids.length === 0 ? (
+        <span className="small muted">No extensions allowed.</span>
+      ) : (
+        ids.map((id) => (
+          <div key={id} className="row">
+            <code>{id}</code>
+            <span className="spacer" />
+            <button className="small" onClick={() => void save(ids.filter((x) => x !== id))}>Remove</button>
+          </div>
+        ))
+      )}
+      <div className="row">
+        <input aria-label="Extension ID" placeholder="32-letter extension ID" value={draft} onChange={(e) => setDraft(e.target.value)} style={{ minWidth: 300 }} />
+        <button className="small" disabled={!valid || ids.includes(candidate)} onClick={() => void save([...ids, candidate]).then(() => setDraft(""))}>Allow</button>
+        {draft && !valid && <span className="small muted">Extension IDs are 32 letters a–p.</span>}
+      </div>
+    </div>
+  );
+}
+
 function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: AgentScope[]; act: (m: string, p: unknown) => Promise<void> }) {
   const [scopes, setScopes] = useState<AgentScope[]>(agent.status === "pending" ? DEFAULT_SCOPES : agent.scopes);
   return (
@@ -180,7 +215,12 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
           onChange={(on) => (!on || confirm("Allow this agent to activate its rules without asking you each time?")) && act("updateAgent", { id: agent.id, trustedActivation: on })}
         />
         <span className="spacer" />
-        <button className="small primary" onClick={() => act("updateAgent", { id: agent.id, status: "approved", scopes })}>
+        {agent.status === "pending" && scopes.length === 0 && <span className="small muted">Tick what this agent may do.</span>}
+        <button
+          className="small primary"
+          disabled={agent.status === "pending" && scopes.length === 0}
+          onClick={() => act("updateAgent", { id: agent.id, status: "approved", scopes })}
+        >
           {agent.status === "approved" ? "Save scopes" : "Approve with these scopes"}
         </button>
       </div>

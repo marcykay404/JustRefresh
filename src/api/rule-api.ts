@@ -62,9 +62,22 @@ interface MethodDef<P = any> {
   handler: Handler<P>;
 }
 
+/** "Last seen" is informational: record it at most this often (each write rewrites the config). */
+export const AGENT_LAST_SEEN_RESOLUTION_MS = 60_000;
+
 const none = z.strictObject({}).optional();
 const ruleId = z.strictObject({ id: z.string().min(1).max(64) });
 const tabId = z.strictObject({ tabId: z.number().int().nonnegative() });
+/** Tab-specific safety overrides (popup / dashboard). */
+const tabSafety = z.strictObject({
+  pauseWhileTyping: z.boolean().optional(),
+  protectUnsavedChanges: z.boolean().optional(),
+  inactivityGraceSeconds: z.number().int().min(0).max(86400).optional(),
+  pauseOnMouse: z.boolean().optional(),
+  pauseOnScroll: z.boolean().optional(),
+  /** "refresh": keep refreshing a page the extension cannot observe (no site access). */
+  onActivityUnavailable: z.enum(["pause", "refresh"]).optional(),
+});
 
 export function randomId(prefix: string): string {
   const bytes = new Uint8Array(6);
@@ -100,9 +113,13 @@ export class RuleManagementService {
       const parsed = def.params.safeParse(rawParams ?? undefined);
       if (!parsed.success) throw new ApiError("invalid_params", "Invalid parameters", zodDiagnostics(parsed.error, "params"));
       if (actor.type === "agent") {
-        await this.deps.config.update((c) => {
-          if (c.agents[actor.agentId]) c.agents[actor.agentId].lastSeenAt = this.deps.clock.now();
-        });
+        const now = this.deps.clock.now();
+        const seen = config.agents[actor.agentId]?.lastSeenAt ?? 0;
+        if (now - seen >= AGENT_LAST_SEEN_RESOLUTION_MS) {
+          await this.deps.config.update((c) => {
+            if (c.agents[actor.agentId]) c.agents[actor.agentId].lastSeenAt = now;
+          });
+        }
       }
       const result = await def.handler(actor, parsed.data);
       if (def.mutates) await this.deps.engine.reconcileAll("config");
@@ -471,18 +488,25 @@ export class RuleManagementService {
       getTabState: m({ scope: null, params: tabId, handler: async (_a, p) => this.tabState(p.tabId) }),
       startTab: m({
         scope: null,
-        params: z.strictObject({ tabId: z.number().int().nonnegative(), intervalSeconds: z.number().int().min(MIN_INTERVAL_SECONDS).max(MAX_INTERVAL_SECONDS).optional() }),
+        params: z.strictObject({
+          tabId: z.number().int().nonnegative(),
+          intervalSeconds: z.number().int().min(MIN_INTERVAL_SECONDS).max(MAX_INTERVAL_SECONDS).optional(),
+          safety: tabSafety.optional(),
+        }),
         handler: async (_a, p) => {
           const config = await d.config.get();
-          await this.updateOverride(p.tabId, (o, tab) =>
-            this.newOverride(tab, {
-              ...(o?.mode === "custom" ? o : {}),
+          await this.updateOverride(p.tabId, (o, tab) => {
+            const prev = o?.mode === "custom" ? o : undefined;
+            const safety = p.safety || prev?.safety ? { ...(prev?.safety ?? {}), ...(p.safety ?? {}) } : undefined;
+            return this.newOverride(tab, {
+              ...(prev ?? {}),
               mode: "custom",
-              intervalSeconds: p.intervalSeconds ?? o?.intervalSeconds ?? config.settings.defaultIntervalSeconds,
+              intervalSeconds: p.intervalSeconds ?? prev?.intervalSeconds ?? config.settings.defaultIntervalSeconds,
+              ...(safety ? { safety } : {}),
               stopped: false,
               paused: false,
-            }),
-          );
+            });
+          });
           await d.engine.setTabStatus(p.tabId, "scheduled", "Started by user");
           return this.tabState(p.tabId);
         },
@@ -491,13 +515,7 @@ export class RuleManagementService {
         scope: null,
         params: z.strictObject({
           tabId: z.number().int().nonnegative(),
-          safety: z.strictObject({
-            pauseWhileTyping: z.boolean().optional(),
-            protectUnsavedChanges: z.boolean().optional(),
-            inactivityGraceSeconds: z.number().int().min(0).max(86400).optional(),
-            pauseOnMouse: z.boolean().optional(),
-            pauseOnScroll: z.boolean().optional(),
-          }),
+          safety: tabSafety,
         }),
         handler: async (_a, p) => {
           await this.updateOverride(p.tabId, (o, tab) =>
@@ -628,6 +646,10 @@ export class RuleManagementService {
           skipDiscardedTabs: z.boolean().optional(),
           redactUrlsForAgents: z.boolean().optional(),
           nativeBridgeEnabled: z.boolean().optional(),
+          allowedExtensionIds: z
+            .array(z.string().regex(/^[a-p]{32}$/, "Chrome extension IDs are 32 letters a–p"))
+            .max(50)
+            .optional(),
         }),
         mutates: true,
         handler: async (_a, p) => {

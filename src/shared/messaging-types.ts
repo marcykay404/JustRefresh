@@ -63,3 +63,10 @@ export interface ApiRequest {
 export type ApiResponse<T = unknown> =
   | { ok: true; result: T }
   | { ok: false; error: { code: string; message: string; diagnostics?: unknown[] } };
+
+/* Service worker → offscreen document (alert sound). */
+export const OFFSCREEN_CHANNEL = "jr-offscreen" as const;
+export interface OffscreenMessage {
+  channel: typeof OFFSCREEN_CHANNEL;
+  kind: "play";
+}

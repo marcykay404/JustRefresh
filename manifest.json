@@ -13,7 +13,7 @@
   },
   "background": { "service_worker": "background.js", "type": "module" },
   "options_ui": { "page": "dashboard.html", "open_in_tab": true },
-  "permissions": ["tabs", "storage", "alarms", "notifications", "scripting"],
+  "permissions": ["tabs", "storage", "alarms", "notifications", "scripting", "offscreen"],
   "optional_permissions": ["nativeMessaging"],
   "optional_host_permissions": ["http://*/*", "https://*/*", "file:///*"],
   "externally_connectable": { "ids": ["*"] },

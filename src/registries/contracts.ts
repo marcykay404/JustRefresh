@@ -65,13 +65,18 @@ export interface TriggerHandler<TConfig extends { type: string } = { type: strin
   check?(config: TConfig, path: string): Diagnostic[];
 }
 
+export interface NotifyOptions {
+  /** Play a short alert sound as well. */
+  sound?: boolean;
+}
+
 export interface ActionContext {
   tabId: number;
   url: string;
   ruleName: string;
   reload(opts: { bypassCache: boolean }): Promise<void>;
   setStatus(status: ExecutionStatus, reason: string, resumeAt?: number): void;
-  notify(title: string, message: string): Promise<void>;
+  notify(title: string, message: string, opts?: NotifyOptions): Promise<void>;
   log(level: "info" | "warn", message: string): void;
 }
 

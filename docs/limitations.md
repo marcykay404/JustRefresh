@@ -40,6 +40,10 @@
   answer counts as "activity unavailable" / `unknown` and the fail-safe policy
   applies; a reload call that does not return is tracked as pending. A cycle
   that still never finishes is re-run by a watchdog alarm.
+* **Toolbar badge shows state, not a live countdown.** A ticking badge would
+  need a timer keeping the service worker awake permanently. The badge shows
+  each tab's state (ON / II / ✓ / !) and its tooltip the exact next refresh
+  time; the popup shows the live countdown.
 * **Discarded tabs** (Memory Saver) are skipped by default rather than woken.
 * **Regex.** JavaScript has no regex timeout; potentially catastrophic
   patterns are rejected instead, and inputs are length-bounded.

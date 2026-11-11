@@ -2,6 +2,10 @@
  * Agent integration Level 2: other extensions call the Rule Management API
  * through chrome.runtime.onMessageExternal.
  *
+ * Only extensions on the user's allowlist (Settings → allowedExtensionIds,
+ * empty by default) are accepted; others are rejected before anything is
+ * recorded, so unknown extensions cannot flood the pairing queue.
+ *
  * Protocol: { protocol: "sar-agent/1", method, params }
  *  - "pair" registers a pending agent the user must approve (no scopes).
  *  - every other method requires an approved agent with the right scope.
@@ -61,14 +65,31 @@ export async function handleAgentMessage(
   }
 }
 
-export function registerExternalMessaging(service: RuleManagementService) {
+/** Entry point for one external message: allowlist check, then the agent protocol. */
+export async function handleExternalMessage(
+  service: RuleManagementService,
+  limiter: RateLimiter,
+  isAllowed: (extensionId: string) => Promise<boolean>,
+  senderId: string | undefined,
+  msg: unknown,
+) {
+  if (!senderId) return { ok: false, error: { code: "forbidden", message: "Only extensions may connect" } };
+  if (!(await isAllowed(senderId))) {
+    return {
+      ok: false,
+      error: {
+        code: "forbidden",
+        message: `Extension ${senderId} is not allowed. The user can add its ID in JustRefresh → Dashboard → Agent Integrations.`,
+      },
+    };
+  }
+  return handleAgentMessage(service, limiter, { id: `ext:${senderId}`, name: `Extension ${senderId}`, transport: "extension", extensionId: senderId }, msg);
+}
+
+export function registerExternalMessaging(service: RuleManagementService, isAllowed: (extensionId: string) => Promise<boolean>) {
   const limiter = new RateLimiter(60, 60_000);
   chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
-    if (!sender.id) {
-      sendResponse({ ok: false, error: { code: "forbidden", message: "Only extensions may connect" } });
-      return false;
-    }
-    void handleAgentMessage(service, limiter, { id: `ext:${sender.id}`, name: `Extension ${sender.id}`, transport: "extension", extensionId: sender.id }, msg).then(sendResponse);
+    void handleExternalMessage(service, limiter, isAllowed, sender.id, msg).then(sendResponse);
     return true;
   });
 }

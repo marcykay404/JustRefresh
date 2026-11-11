@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   skipDiscardedTabs: true,
   redactUrlsForAgents: true,
   nativeBridgeEnabled: false,
+  allowedExtensionIds: [],
 };
 
 export const INTERVAL_PRESETS: { label: string; seconds: number }[] = [

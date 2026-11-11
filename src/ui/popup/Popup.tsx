@@ -58,6 +58,10 @@ export function Popup() {
 
   const [customValue, setCustomValue] = useState("");
   const [customUnit, setCustomUnit] = useState(60);
+  /** Interval picked while auto refresh is off: applied when the user turns it on. */
+  const [chosenInterval, setChosenInterval] = useState<number | null>(null);
+  /** The site-access prompt was declined for the interval in here. */
+  const [declinedFor, setDeclinedFor] = useState<number | null>(null);
 
   const run = async (method: string, params?: unknown) => {
     setError(null);
@@ -87,20 +91,48 @@ export function Popup() {
   const active = !!rt && ["scheduled", "evaluating", "refreshing"].includes(rt.status) || (rt?.status.startsWith("paused") ?? false);
   const tabExcluded = s.override?.mode === "excluded";
   const currentInterval = s.override?.intervalSeconds ?? s.interval ?? overview.data?.settings.defaultIntervalSeconds ?? 300;
+  const shownInterval = active ? currentInterval : (chosenInterval ?? currentInterval);
   const origin = originOf(s.tab.url);
+  const unprotected = !s.hostAccess && s.safety.onActivityUnavailable === "refresh";
+  // Without site access the default safety policy pauses every refresh: say so and offer a choice.
+  const blockedByAccess =
+    declinedFor !== null || (!s.hostAccess && rt?.status === "paused_activity" && s.safety.onActivityUnavailable !== "refresh");
 
-  /** Enabling requests site access in the same click (user gesture). */
+  /**
+   * Enabling requests site access in the same click (user gesture). If the
+   * user declines, nothing starts silently: the popup explains and offers to
+   * refresh without protection instead.
+   */
   const enable = (intervalSeconds: number) => {
-    const ask = !s.hostAccess && origin ? requestOrigins([origin]).catch(() => false) : Promise.resolve(true);
-    void ask.then(() => run("startTab", { tabId, intervalSeconds }));
+    if (s.hostAccess || !origin) {
+      void run("startTab", { tabId, intervalSeconds });
+      return;
+    }
+    void requestOrigins([origin])
+      .catch(() => false)
+      .then((granted) => {
+        if (granted) {
+          setDeclinedFor(null);
+          void run("startTab", { tabId, intervalSeconds });
+        } else {
+          setDeclinedFor(intervalSeconds);
+        }
+      });
   };
 
+  const startUnprotected = async () => {
+    await run("startTab", { tabId, intervalSeconds: declinedFor ?? shownInterval, safety: { onActivityUnavailable: "refresh" } });
+    setDeclinedFor(null);
+  };
+
+  /** Changing the interval applies at once only while auto refresh is on. */
   const setInterval = (seconds: number) => {
     if (seconds < 30) {
       setError(new Error("The minimum interval is 30 seconds"));
       return;
     }
-    enable(seconds);
+    if (active) enable(seconds);
+    else setChosenInterval(seconds);
   };
 
   const refreshNow = async () => {
@@ -156,8 +188,8 @@ export function Popup() {
                 onChange={(on) => {
                   // A rule-controlled tab is resumed under its rule (keeping its conditions);
                   // only uncontrolled tabs get tab-specific settings.
-                  if (on && s.resolution.source === "rule") void run("resumeTab", { tabId });
-                  else if (on) enable(currentInterval);
+                  if (on && s.resolution.source === "rule" && chosenInterval === null) void run("resumeTab", { tabId });
+                  else if (on) enable(shownInterval);
                   else void run("stopTab", { tabId });
                 }}
               />
@@ -171,13 +203,13 @@ export function Popup() {
             <div className="row">
               <select
                 aria-label="Refresh interval"
-                value={INTERVAL_PRESETS.some((p) => p.seconds === currentInterval) ? currentInterval : "custom"}
+                value={INTERVAL_PRESETS.some((p) => p.seconds === shownInterval) ? shownInterval : "custom"}
                 onChange={(e) => e.target.value !== "custom" && setInterval(Number(e.target.value))}
               >
                 {INTERVAL_PRESETS.map((p) => (
                   <option key={p.seconds} value={p.seconds}>Every {p.label}</option>
                 ))}
-                {!INTERVAL_PRESETS.some((p) => p.seconds === currentInterval) && <option value="custom">Every {currentInterval}s</option>}
+                {!INTERVAL_PRESETS.some((p) => p.seconds === shownInterval) && <option value="custom">Every {shownInterval}s</option>}
               </select>
               <input
                 aria-label="Custom interval"
@@ -193,7 +225,25 @@ export function Popup() {
               </select>
               <button className="small" disabled={!customValue} onClick={() => setInterval(Math.round(Number(customValue) * customUnit))}>Set</button>
             </div>
+            {!active && chosenInterval !== null && <div className="small muted">Turn on Auto refresh to start with this interval.</div>}
             {s.resolution.source === "rule" && <div className="small muted">Changing the interval creates a tab-specific override of the rule.</div>}
+
+            {blockedByAccess && origin && (
+              <div className="notice small col">
+                <span>
+                  Without access to this site, JustRefresh can't see typing or unsaved forms here, so by default it won't refresh this page.
+                </span>
+                <div className="row">
+                  <button className="small" onClick={() => void requestOrigins([origin]).then((ok) => ok && (declinedFor !== null ? enable(declinedFor) : void run("resumeTab", { tabId })))}>
+                    Grant access
+                  </button>
+                  <button className="small" onClick={() => void startUnprotected()}>Refresh without protection</button>
+                </div>
+              </div>
+            )}
+            {unprotected && active && !blockedByAccess && (
+              <div className="small muted">Refreshing without activity protection (no site access): typing and unsaved forms on this page are not detected.</div>
+            )}
 
             <div className="btn-grid">
               {rt?.status === "paused_user" ? (
@@ -228,7 +278,7 @@ export function Popup() {
               label={<span>Smart activity protection <span className="muted small">(pause while typing, protect unsaved forms)</span></span>}
             />
 
-            {!s.hostAccess && origin && (
+            {!s.hostAccess && origin && !blockedByAccess && !unprotected && (
               <div className="info small row">
                 <span>Grant site access to enable activity protection and page conditions.</span>
                 <button className="small" onClick={() => void requestOrigins([origin]).then(() => state.reload())}>Grant access</button>

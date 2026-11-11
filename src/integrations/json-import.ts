@@ -36,7 +36,8 @@ export function exportBundle(config: Config, opts: { includeSettings: boolean; r
   const rules = Object.values(config.rules)
     .filter((r) => !opts.ruleIds || opts.ruleIds.includes(r.id))
     .map(({ meta: _meta, ...rest }) => rest);
-  const { nativeBridgeEnabled: _n, ...settings } = config.settings;
+  // Integration access is never exported (nor importable: see SETTINGS_KEYS).
+  const { nativeBridgeEnabled: _n, allowedExtensionIds: _a, ...settings } = config.settings;
   return {
     format: BUNDLE_FORMAT,
     version: CONFIG_SCHEMA_VERSION,
