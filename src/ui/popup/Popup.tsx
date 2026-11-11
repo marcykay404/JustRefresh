@@ -5,7 +5,7 @@ import { formatDuration, formatTime } from "../shared/format";
 import { ErrorBox, Toggle } from "../shared/components";
 import type { Rule, SafetyConfig, Settings, TabInfo, TabOverride, TabRuntime } from "../../core/types";
 import { useDialog } from "../shared/dialog";
-import { describeRule, intervalChips, intervalLabel, untilRule, type UntilMode } from "./describe";
+import { describeRule, intervalChips, intervalLabel, priorityAbove, untilRule, type UntilMode } from "./describe";
 
 interface TabState {
   tab: TabInfo;
@@ -39,7 +39,7 @@ const UNITS = [
 ];
 
 /** Statuses in which the tab is being looked after (counting down, checking or waiting). */
-const RUNNING = ["scheduled", "evaluating", "refreshing", "paused_activity", "paused_unsaved", "paused_unknown", "paused_user"];
+const RUNNING = ["scheduled", "evaluating", "refreshing", "paused_activity", "paused_unsaved", "paused_resubmit", "paused_unknown", "paused_user"];
 
 function openDashboard(hash = "/tabs") {
   void chrome.tabs.create({ url: chrome.runtime.getURL(`dashboard.html#${hash}`) });
@@ -114,7 +114,11 @@ export function Popup() {
   const restricted = s.resolution.kind === "restricted";
   const tabExcluded = s.override?.mode === "excluded";
   const running = !!rt && RUNNING.includes(rt.status);
-  const currentInterval = s.override?.intervalSeconds ?? s.interval ?? overview.data?.settings.defaultIntervalSeconds ?? 300;
+  // The interval actually in effect (fast intervals are clamped to 30 s while they're turned off).
+  const currentInterval = s.interval ?? s.override?.intervalSeconds ?? overview.data?.settings.defaultIntervalSeconds ?? 300;
+  const kind = s.resolution.kind;
+  /** Nothing runs here right now for a reason that Start can't fix. */
+  const blockedKind = kind === "paused" || kind === "disabled" || kind === "url_excluded" ? kind : null;
   const origin = originOf(s.tab.url);
   const siteName = origin === "file:///*" ? "local files" : hostLabel(s.tab.url);
   const protectionOn = s.safety.pauseWhileTyping || s.safety.protectUnsavedChanges || s.safety.pauseOnMouse || s.safety.pauseOnScroll;
@@ -145,9 +149,12 @@ export function Popup() {
    * protection needs it. If the user declines, nothing starts silently: the
    * popup explains and offers to refresh without protection instead.
    */
-  const start = (intervalSeconds: number) => {
+  const start = (intervalSeconds: number, alreadyGranted = false) => {
     // No protection means nothing reads the page, so there is nothing to ask for.
-    if (s.hostAccess || !origin || !protectionOn) {
+    // `alreadyGranted`: access was just granted in this click; asking again
+    // (outside the click) could be refused by Chrome.
+    if (alreadyGranted || s.hostAccess || !origin || !protectionOn) {
+      setDeclinedFor(null);
       void run("startTab", { tabId, intervalSeconds }).then(() => {
         resetPicker();
         setChanging(false);
@@ -174,8 +181,20 @@ export function Popup() {
     setDeclinedFor(null);
   };
 
+  const openFresh = () => void run("openFresh", { tabId });
+
   const refreshNow = async () => {
-    const r = (await run("refreshNow", { tabId })) as { refreshed: boolean; reason?: string } | null;
+    const r = (await run("refreshNow", { tabId })) as { refreshed: boolean; reason?: string; formResult?: boolean } | null;
+    if (r && !r.refreshed && r.formResult) {
+      const ok = await dialog.confirm({
+        title: "Open this page fresh instead?",
+        message:
+          "This page came from submitting a form. Refreshing it could send the form again, for example placing a second order. Opening it fresh loads the address as a normal visit, so nothing is sent again; the page may look different.",
+        confirmLabel: "Open this page fresh",
+      });
+      if (ok) openFresh();
+      return;
+    }
     if (r && !r.refreshed) {
       const ok = await dialog.confirm({
         title: "Refresh anyway?",
@@ -190,8 +209,7 @@ export function Popup() {
   const toggleProtection = (on: boolean) => run("setTabSafety", { tabId, safety: { pauseWhileTyping: on, protectUnsavedChanges: on } });
 
   const countdown = rt?.nextDueAt ? Math.max(0, rt.nextDueAt - now) : null;
-  const ruleInterval = (rule.data?.trigger as { seconds?: number } | undefined)?.seconds ?? null;
-  const total = (source === "rule" ? ruleInterval : currentInterval) ?? null;
+  const total = s.interval ?? currentInterval;
   const progress = countdown !== null && total ? Math.min(100, Math.max(0, 100 - (countdown / (total * 1000)) * 100)) : 0;
 
   const picker = (
@@ -230,6 +248,32 @@ export function Popup() {
         <button onClick={() => void run("includeTab", { tabId })}>Allow auto-refresh again</button>
       </>
     );
+  } else if (blockedKind === "paused") {
+    card = (
+      <>
+        <span className="card-title">All refreshing is paused</span>
+        <span className="small muted">
+          {s.resolution.controllerName ? `When you resume, “${s.resolution.controllerName}” carries on here.` : "Nothing refreshes until you resume."}
+        </span>
+        <button className="primary big" onClick={() => void run("resumeAll")}>Resume all refreshing</button>
+      </>
+    );
+  } else if (blockedKind === "disabled") {
+    card = (
+      <>
+        <span className="card-title">JustRefresh is switched off</span>
+        <span className="small muted">Auto refresh is turned off in Settings, so no tab refreshes.</span>
+        <button className="primary big" onClick={() => void run("updateSettings", { enabled: true })}>Turn auto refresh on</button>
+      </>
+    );
+  } else if (blockedKind === "url_excluded") {
+    card = (
+      <>
+        <span className="card-title">This page is excluded</span>
+        <span className="small muted">{s.resolution.reason ?? "An exclusion matches this page"}, so nothing refreshes it.</span>
+        <button className="big" onClick={() => openDashboard("/exclusions")}>Manage exclusions</button>
+      </>
+    );
   } else if (view === "until") {
     card = (
       <UntilForm
@@ -247,11 +291,27 @@ export function Popup() {
               return;
             }
           }
-          const created = await run("createRule", { rule: untilRule({ url: s.tab.url, site: siteName, seconds: chosen, text, mode }) });
+          const stopAfter = overview.data?.settings.defaultStopAfterMinutes ?? null;
+          const newRule = untilRule({
+            url: s.tab.url,
+            site: siteName,
+            seconds: chosen,
+            text,
+            mode,
+            // Outrank rules already matching this page, or the new one would never run here.
+            priority: priorityAbove(s.resolution.candidates),
+            stopAfterSeconds: stopAfter ? stopAfter * 60 : null,
+          });
+          const created = (await run("createRule", { rule: newRule })) as Rule | null;
           if (!created) return;
           // A tab-specific timer outranks rules, so hand the tab over to the new rule.
           if (s.override?.mode === "custom") await run("clearTabOverride", { tabId });
-          await run("runNow", { tabId });
+          const after = (await api("getTabState", { tabId }).catch(() => null)) as TabState | null;
+          if (after && after.resolution.controllerId !== created.id) {
+            setError(new Error(`The rule was saved, but “${after.resolution.controllerName ?? "another rule"}” still controls this tab. Raise the new rule's priority in the Rule Builder.`));
+          } else {
+            await run("runNow", { tabId });
+          }
           resetPicker();
           setView("main");
         }}
@@ -261,7 +321,7 @@ export function Popup() {
     card = (
       <RuleCard
         name={s.resolution.controllerName ?? rule.data?.name ?? "Rule"}
-        summary={rule.data ? describeRule(rule.data) : null}
+        summary={rule.data ? describeRule(rule.data, s.interval) : null}
         onEdit={() => openDashboard(`/builder/${ruleId}`)}
         rt={rt}
         countdown={countdown}
@@ -336,6 +396,7 @@ export function Popup() {
               })) && run("allowUnsavedOnce", { tabId })
             }
             onRetry={() => void run("resumeTab", { tabId })}
+            onOpenFresh={openFresh}
             hidden={blockedByAccess}
           />
 
@@ -346,7 +407,7 @@ export function Popup() {
                 it won't refresh this page until you allow access.
               </span>
               <div className="row">
-                <button className="small" onClick={() => void requestOrigins([origin]).then((ok) => ok && (declinedFor !== null ? start(declinedFor) : void run("resumeTab", { tabId })))}>
+                <button className="small" onClick={() => void requestOrigins([origin]).then((ok) => ok && (declinedFor !== null ? start(declinedFor, true) : void run("resumeTab", { tabId })))}>
                   Allow access
                 </button>
                 <button className="small" onClick={() => void startUnprotected()}>Refresh without protection</button>
@@ -354,7 +415,7 @@ export function Popup() {
             </div>
           )}
 
-          {!tabExcluded && !blockedByAccess && (
+          {!tabExcluded && !blockedByAccess && !blockedKind && (
             <ProtectionLine
               site={siteName}
               safety={s.safety}
@@ -381,7 +442,7 @@ export function Popup() {
 
           {moreOpen && (
             <nav className="menu" aria-label="More actions">
-              {source !== "rule" && !tabExcluded && origin && origin !== "file:///*" && (
+              {source !== "rule" && !tabExcluded && !blockedKind && origin && origin !== "file:///*" && (
                 <button onClick={() => { setView("until"); setMoreOpen(false); }}>
                   <strong>Refresh until something appears…</strong>
                   <span>e.g. stop and notify me when “In stock” shows up</span>
@@ -602,9 +663,20 @@ function RuleCard(p: {
 }
 
 /** One plain sentence when JustRefresh is holding back, with the override right there. */
-function WaitingNotice(p: { rt: TabRuntime | null; grace: number; onRefreshAnyway: () => void; onRetry: () => void; hidden: boolean }) {
+function WaitingNotice(p: { rt: TabRuntime | null; grace: number; onRefreshAnyway: () => void; onRetry: () => void; onOpenFresh: () => void; hidden: boolean }) {
   const rt = p.rt;
   if (!rt || p.hidden) return null;
+  if (rt.status === "paused_resubmit") {
+    return (
+      <div className="notice col small">
+        <span>
+          This page came from submitting a form, such as an order or a payment. Refreshing it could send the form again, so JustRefresh won't refresh it.
+        </span>
+        <button className="small" style={{ alignSelf: "flex-start" }} onClick={p.onOpenFresh}>Open this page fresh</button>
+        <span>Loads the address as a normal visit, so nothing is sent again. The page may look different.</span>
+      </div>
+    );
+  }
   if (rt.status === "paused_unsaved") {
     return (
       <div className="notice col small">
@@ -701,13 +773,13 @@ function UntilForm(p: { site: string; picker: ReactNode; canStart: boolean; prob
       }}
     >
       <span className="card-title">Refresh until something appears</span>
-      <label className="col" style={{ gap: 4 }}>
-        <span className="small muted">Stop when this text</span>
-        <div className="seg" role="group" aria-label="Appears or disappears">
+      <div className="col" style={{ gap: 4 }}>
+        <span className="small muted" id="until-mode">Stop when this text</span>
+        <div className="seg" role="group" aria-labelledby="until-mode">
           <button type="button" className={mode === "appears" ? "selected" : ""} aria-pressed={mode === "appears"} onClick={() => setMode("appears")}>appears</button>
           <button type="button" className={mode === "disappears" ? "selected" : ""} aria-pressed={mode === "disappears"} onClick={() => setMode("disappears")}>disappears</button>
         </div>
-      </label>
+      </div>
       <input aria-label="Text to look for" placeholder="e.g. In stock" value={text} maxLength={200} onChange={(e) => setText(e.target.value)} autoFocus />
       <span className="small muted">Checking every</span>
       {p.picker}

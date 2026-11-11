@@ -12,7 +12,7 @@ import type { ActionContext, NotifyOptions, TriggerEvent } from "../registries/c
 import type { ActivitySnapshot } from "../shared/messaging-types";
 import { evaluateConditionTree, explainTrace } from "./evaluator";
 import { resolveTab, type Resolution } from "./rule-resolver";
-import { decideSafety } from "./safety";
+import { decideSafety, FORM_RESULT_REASON } from "./safety";
 import { checkLimits, inActiveWindow, MIN_ALARM_DELAY_MS, nextWindowStart, restoredDueAt } from "./schedule";
 import { isPaused, isTerminal, newRuntime, transition } from "./state-machine";
 import { TimeoutError, withTimeout } from "./timeout";
@@ -39,6 +39,8 @@ export interface BrowserPort {
   getTab(tabId: number): Promise<TabInfo | null>;
   listTabs(): Promise<TabInfo[]>;
   reload(tabId: number, bypassCache: boolean): Promise<void>;
+  /** Load `url` in the tab as a normal visit (GET): never resends a form. */
+  navigate(tabId: number, url: string): Promise<void>;
   notify(id: string, title: string, message: string, opts?: NotifyOptions): Promise<void>;
 }
 
@@ -111,6 +113,8 @@ export const NAVIGATION_TIMEOUT_MS = 60_000;
 export const alarmName = (tabId: number) => `${ALARM_PREFIX}${tabId}`;
 export const tabIdFromAlarm = (name: string): number | null =>
   name.startsWith(ALARM_PREFIX) ? Number(name.slice(ALARM_PREFIX.length)) : null;
+
+export { FORM_RESULT_REASON } from "./safety";
 
 class SafetyBlock extends Error {
   constructor(
@@ -509,7 +513,10 @@ export class RuleEngine {
       const limit = checkLimits(rule.limits, rt, now);
       if (limit.reached) {
         this.log({ ruleId: rule.id, tabId, url: tab.url, trigger: event, action: "stop", outcome: "ok", reason: limit.reason });
-        return save(transition(rt, "completed", { reason: limit.reason, nextDueAt: null }));
+        // A rule waiting for something on the page must not end silently: say
+        // it stopped without finding it. Plain timers end quietly.
+        if (rule.stopWhen) await this.notifyStopped(config, rule, tab, `${limit.reason} before the condition was met. Open the popup to start again.`);
+        return save(transition(rt, "completed", { reason: rule.stopWhen ? `${limit.reason}; the condition wasn't met` : limit.reason, nextDueAt: null }));
       }
       if (!inActiveWindow(rule.schedule, now)) {
         const opens = nextWindowStart(rule.schedule, now);
@@ -684,6 +691,17 @@ export class RuleEngine {
   private async performReload(rule: Rule, tab: TabInfo, rt: TabRuntime, bypassCache: boolean, _config: Config): Promise<TabRuntime> {
     const now = this.now();
     const { activity, reason } = await this.page.activity(tab.id);
+    // Never reload a form result: Chrome would ask to resend it (and an
+    // unattended tab gets stuck on that prompt). Applies whatever the
+    // protection settings, and is announced once.
+    if (activity?.formResult) {
+      // The status has moved on to "evaluating" by now; the reason is kept.
+      const already = rt.reason === FORM_RESULT_REASON;
+      if (!already && _config.settings.notificationsEnabled) {
+        await this.deps.browser.notify(`sar:form:${tab.id}:${now}`, `Refreshing paused: ${siteKey(tab.url) ?? "this page"}`, "This page came from submitting a form, so refreshing it could send the form again. Open the JustRefresh popup to open the page fresh.");
+      }
+      throw new SafetyBlock("paused_resubmit", FORM_RESULT_REASON, now + Math.max(this.intervalMs(rule), MIN_ALARM_DELAY_MS), already);
+    }
     const decision = decideSafety({
       safety: rule.safety,
       activity,
@@ -778,17 +796,19 @@ export class RuleEngine {
    * Manual "refresh now". Does not change the run state (a stopped rule stays
    * stopped). Respects exclusions and safety unless `force` is set.
    */
-  async refreshNow(tabId: number, opts: { force?: boolean; actor?: Actor } = {}): Promise<{ refreshed: boolean; reason?: string }> {
+  async refreshNow(tabId: number, opts: { force?: boolean; actor?: Actor } = {}): Promise<{ refreshed: boolean; reason?: string; formResult?: boolean }> {
     return this.withLock(tabId, async () => {
       const tab = await this.deps.browser.getTab(tabId);
       if (!tab) return { refreshed: false, reason: "Tab not found" };
       const config = await this.deps.stores.config.get();
       const res = resolveTab(tab, config);
       if (res.kind === "restricted") return { refreshed: false, reason: res.reason };
+      if (!opts.force && (res.kind === "tab_excluded" || res.kind === "url_excluded")) return { refreshed: false, reason: res.reason };
+      const { activity, reason } = await this.page.activity(tabId);
+      // Not even a forced refresh may resend a form: "Open this page fresh" is the way out.
+      if (activity?.formResult) return { refreshed: false, reason: FORM_RESULT_REASON, formResult: true };
       if (!opts.force) {
-        if (res.kind === "tab_excluded" || res.kind === "url_excluded") return { refreshed: false, reason: res.reason };
         const safety = res.kind === "controller" ? res.controller.safety : config.settings.defaultSafety;
-        const { activity, reason } = await this.page.activity(tabId);
         // Manual refresh is an explicit gesture: only unsaved-change protection applies.
         const decision = decideSafety({
           safety: { ...safety, pauseWhileTyping: false, pauseOnMouse: false, pauseOnScroll: false, onActivityUnavailable: "refresh" },
@@ -803,6 +823,33 @@ export class RuleEngine {
       const actor = opts.actor?.type === "agent" ? "agent" : "user";
       this.log({ ruleId: res.kind === "controller" ? res.controller.id : null, tabId, url: tab.url, trigger: "manual", action: "refresh", outcome: "ok", actor, reason: opts.force ? "forced" : undefined });
       return { refreshed: true };
+    });
+  }
+
+  /**
+   * "Open this page fresh": load the tab's address as a normal visit, which
+   * never resends a form, and carry on refreshing a tab that was paused on a
+   * form result.
+   */
+  async openFresh(tabId: number, opts: { actor?: Actor } = {}): Promise<{ opened: boolean; reason?: string }> {
+    return this.withLock(tabId, async () => {
+      const tab = await this.deps.browser.getTab(tabId);
+      if (!tab) return { opened: false, reason: "Tab not found" };
+      const config = await this.deps.stores.config.get();
+      const res = resolveTab(tab, config);
+      if (res.kind === "restricted") return { opened: false, reason: res.reason };
+      // Without the #fragment: navigating to the same URL with a fragment is an
+      // in-page jump that loads nothing.
+      await this.deps.browser.navigate(tabId, tab.url.split("#")[0]!);
+      const rt = await this.deps.stores.runtime.get(tabId);
+      if (rt?.status === "paused_resubmit" && res.kind === "controller") {
+        const next = transition(rt, "scheduled", { reason: undefined, nextDueAt: this.nextDue(res.controller, this.now()) });
+        await this.deps.stores.runtime.put(next);
+        await this.setAlarm(next);
+      }
+      const actor = opts.actor?.type === "agent" ? "agent" : "user";
+      this.log({ ruleId: res.kind === "controller" ? res.controller.id : null, tabId, url: tab.url, trigger: "manual", action: "refresh", outcome: "ok", actor, reason: "Opened fresh (no form resent)" });
+      return { opened: true };
     });
   }
 

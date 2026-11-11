@@ -4,11 +4,16 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { TemplatesView } from "@/ui/dashboard/TemplatesView";
 import { takeBuilderDraft } from "@/ui/dashboard/templates";
+import { DEFAULT_SETTINGS } from "@/core/defaults";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const calls: { method: string; params: unknown }[] = [];
 let tabOverride: { mode: string } | null = null;
+let createdId: string | null = null;
+let existingRules: unknown[] = [];
+let stopAfterDefault: number | null = null;
+let otherRuleWins = false;
 const permissionsRequest = vi.fn(async (_p: unknown) => true);
 const TABS = [
   { id: 7, windowId: 1, index: 0, title: "Item 42", url: "https://shop.example.com/item/42", active: true, discarded: false },
@@ -19,7 +24,17 @@ const TABS = [
     sendMessage: async (m: { method: string; params: { rule?: { name: string } } }) => {
       calls.push({ method: m.method, params: m.params });
       const result =
-        m.method === "listTabs" ? TABS : m.method === "createRule" ? { id: "r9", ...m.params.rule } : m.method === "getTabState" ? { override: tabOverride } : { ok: true };
+        m.method === "listTabs"
+          ? TABS
+          : m.method === "listRules"
+            ? existingRules
+            : m.method === "getOverview"
+              ? { settings: { ...DEFAULT_SETTINGS, defaultStopAfterMinutes: stopAfterDefault } }
+              : m.method === "createRule"
+                ? ((createdId = "r9"), { id: "r9", ...m.params.rule })
+                : m.method === "getTabState"
+                  ? { override: tabOverride, resolution: otherRuleWins ? { controllerId: "old", controllerName: "Stay signed in: shop.example.com" } : { controllerId: createdId, controllerName: createdId ? "new" : null } }
+                  : { ok: true };
       return { ok: true, result };
     },
   },
@@ -32,6 +47,10 @@ const tick = () => act(async () => void (await new Promise((r) => setTimeout(r, 
 beforeEach(async () => {
   calls.length = 0;
   tabOverride = null;
+  createdId = null;
+  existingRules = [];
+  stopAfterDefault = null;
+  otherRuleWins = false;
   permissionsRequest.mockClear();
   el = document.createElement("div");
   document.body.append(el);
@@ -125,5 +144,85 @@ describe("Templates page", () => {
     await useTemplate("build fails");
     await act(async () => void el.querySelector(".dialog")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(el.querySelector(".dialog")).toBeNull();
+  });
+
+  it("Stop watching after: starts from the Settings default, can be changed, and becomes the rule's time limit", async () => {
+    stopAfterDefault = 20;
+    await useTemplate("back in stock");
+    const select = [...el.querySelectorAll<HTMLSelectElement>(".dialog select")].find((x) => [...x.options].some((o) => o.text === "No limit"))!;
+    expect(select.value).toBe("20");
+    expect(text()).toContain("If it hasn't appeared after 20 min, it stops and tells you.");
+    await act(async () => {
+      select.value = "60";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await click(button("Create and start"));
+    await tick();
+    const [created] = called("createRule") as { rule: { limits?: { maxDurationSeconds: number } } }[];
+    expect(created!.rule.limits).toEqual({ maxDurationSeconds: 3600 });
+  });
+
+  it("no limit by default, and templates that don't wait for anything have no Stop watching choice", async () => {
+    await useTemplate("back in stock");
+    await click(button("Create and start"));
+    await tick();
+    const [created] = called("createRule") as { rule: { limits?: unknown } }[];
+    expect(created!.rule.limits).toBeUndefined();
+  });
+
+  it("outranks rules already matching the page", async () => {
+    existingRules = [
+      { id: "old", name: "Stay signed in", enabled: true, priority: 3, meta: { draft: false }, target: { patterns: [{ type: "domain", value: "shop.example.com" }] } },
+      { id: "other", name: "Elsewhere", enabled: true, priority: 9, meta: { draft: false }, target: { patterns: ["https://other.example.com/*"] } },
+    ];
+    await useTemplate("back in stock");
+    await click(button("Create and start"));
+    await tick();
+    const [created] = called("createRule") as { rule: { priority: number } }[];
+    expect(created!.rule.priority).toBe(4); // above the matching rule, not the unrelated one
+  });
+
+  it("says so when another rule still controls the tab, and closes the form so a second click can't duplicate the rule", async () => {
+    otherRuleWins = true;
+    await useTemplate("back in stock");
+    await click(button("Create and start"));
+    await tick();
+    expect(text()).toContain("On that tab, “Stay signed in: shop.example.com” still has priority");
+    expect(el.querySelector(".dialog")).toBeNull();
+    expect(called("createRule")).toHaveLength(1);
+    expect(called("runNow")).toEqual([]);
+  });
+
+  it("Stay signed in doesn't outrank rules on the page you pick, and leaves that tab's timer alone", async () => {
+    tabOverride = { mode: "custom" };
+    existingRules = [{ id: "watch", name: "Back in stock", enabled: true, priority: 3, meta: { draft: false }, target: { patterns: [{ type: "exact", value: "https://shop.example.com/item/42" }] } }];
+    await useTemplate("Stay signed in");
+    await click(button("Create and start"));
+    await tick();
+    const [created] = called("createRule") as { rule: { priority: number } }[];
+    expect(created!.rule.priority).toBe(0);
+    expect(called("clearTabOverride")).toEqual([]);
+  });
+
+  it("Create waits until rules and settings have loaded", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const original = (globalThis as { chrome: { runtime: { sendMessage: (m: { method: string }) => Promise<unknown> } } }).chrome.runtime.sendMessage;
+    (globalThis as { chrome: { runtime: { sendMessage: unknown } } }).chrome.runtime.sendMessage = async (m: { method: string }) => {
+      if (m.method === "listRules") await gate;
+      return original(m);
+    };
+    await useTemplate("back in stock");
+    expect(button("Create and start")!.disabled).toBe(true);
+    await act(async () => release());
+    await tick();
+    expect(button("Create and start")!.disabled).toBe(false);
+    (globalThis as { chrome: { runtime: { sendMessage: unknown } } }).chrome.runtime.sendMessage = original;
+  });
+
+  it("each Use template button names its template for screen readers", () => {
+    const labels = [...el.querySelectorAll("article button")].map((b) => b.getAttribute("aria-label"));
+    expect(labels).toContain("Use template: Tell me when a build fails");
+    expect(new Set(labels).size).toBe(5);
   });
 });

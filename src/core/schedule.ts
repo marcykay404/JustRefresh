@@ -51,7 +51,9 @@ export function checkLimits(limits: LimitsConfig, rt: Pick<TabRuntime, "refreshC
     return { reached: true, reason: `Reached maximum of ${limits.maxRefreshes} refreshes` };
   }
   if (limits.maxDurationSeconds !== undefined && now - rt.startedAt >= limits.maxDurationSeconds * 1000) {
-    return { reached: true, reason: "Reached maximum run duration" };
+    const m = Math.round(limits.maxDurationSeconds / 60);
+    const label = m >= 60 && m % 60 === 0 ? (m === 60 ? "1 hour" : `${m / 60} hours`) : `${m} min`;
+    return { reached: true, reason: `Reached its time limit (${label})` };
   }
   if (limits.stopAt !== undefined && now >= Date.parse(limits.stopAt)) {
     return { reached: true, reason: `Stop time ${limits.stopAt} reached` };

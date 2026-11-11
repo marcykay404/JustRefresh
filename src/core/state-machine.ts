@@ -12,7 +12,7 @@
  */
 import type { ExecutionStatus, TabRuntime } from "./types";
 
-const PAUSED: ExecutionStatus[] = ["paused_activity", "paused_unsaved", "paused_global", "paused_user", "paused_unknown"];
+const PAUSED: ExecutionStatus[] = ["paused_activity", "paused_unsaved", "paused_resubmit", "paused_global", "paused_user", "paused_unknown"];
 /** States reachable from anywhere (external control / resolution changes). */
 const UNIVERSAL: ExecutionStatus[] = ["idle", "excluded", "stopped", "paused_global", "paused_user", "error"];
 
@@ -21,15 +21,17 @@ const TRANSITIONS: Record<ExecutionStatus, ExecutionStatus[]> = {
   scheduled: ["scheduled", "evaluating", ...PAUSED, "completed"],
   evaluating: ["scheduled", "refreshing", "completed", ...PAUSED],
   refreshing: ["scheduled", "evaluating", "completed", ...PAUSED],
-  paused_activity: ["scheduled", "evaluating", ...PAUSED],
-  paused_unsaved: ["scheduled", "evaluating", ...PAUSED],
-  paused_global: ["scheduled", "evaluating", ...PAUSED],
-  paused_user: ["scheduled", "evaluating", ...PAUSED],
+  // "completed": a time or refresh limit can be reached while a tab waits.
+  paused_activity: ["scheduled", "evaluating", ...PAUSED, "completed"],
+  paused_unsaved: ["scheduled", "evaluating", ...PAUSED, "completed"],
+  paused_resubmit: ["scheduled", "evaluating", ...PAUSED, "completed"],
+  paused_global: ["scheduled", "evaluating", ...PAUSED, "completed"],
+  paused_user: ["scheduled", "evaluating", ...PAUSED, "completed"],
   paused_unknown: ["scheduled", "evaluating", ...PAUSED, "completed"],
   excluded: ["scheduled"],
   completed: ["scheduled"],
   stopped: ["scheduled"],
-  error: ["scheduled", "evaluating", ...PAUSED],
+  error: ["scheduled", "evaluating", ...PAUSED, "completed"],
 };
 
 export class IllegalTransitionError extends Error {

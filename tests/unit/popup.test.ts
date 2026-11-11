@@ -25,6 +25,14 @@ describe("protectedWhile", () => {
 });
 
 type Case = {
+  /** Resolution kind override: "paused", "disabled" or "url_excluded". */
+  kind?: string;
+  /** Rules already matching the page (resolution.candidates). */
+  candidates?: { id: string; name: string; priority: number }[];
+  /** Another rule keeps control after a new rule is created. */
+  otherRuleWins?: boolean;
+  /** Effective interval when it differs from the tab's own (fast intervals turned off). */
+  effective?: number;
   hostAccess?: boolean;
   status?: string | null;
   protection?: boolean;
@@ -32,6 +40,10 @@ type Case = {
   excluded?: boolean;
 };
 let current: Case;
+/** Set once createRule ran: the new rule then controls the tab. */
+let createdRuleId: string | null = null;
+let defaultStopAfter: number | null = null;
+let refreshNowResult: unknown = { refreshed: true };
 const calls: { method: string; params: unknown }[] = [];
 const URL_ = "https://www.youtube.com/watch?v=x";
 
@@ -42,14 +54,15 @@ const tabState = () => {
     runtime: c.status ? { tabId: 1, status: c.status, refreshCount: 3, nextDueAt: Date.now() + 60_000, lastAttemptAt: Date.now() - 1000 } : null,
     statusLabel: "",
     resolution: {
-      kind: c.excluded ? "tab_excluded" : c.source ? "controller" : "none",
-      controllerId: c.source === "rule" ? "r1" : c.source ? "tab:1" : null,
-      controllerName: c.source === "rule" ? "Cheap flight watch" : null,
+      kind: c.kind ?? (c.excluded ? "tab_excluded" : c.source ? "controller" : "none"),
+      reason: c.kind === "url_excluded" ? "Excluded by https://www.youtube.com/*" : undefined,
+      controllerId: (c.otherRuleWins ? null : createdRuleId) ?? (c.otherRuleWins ? "old" : c.source === "rule" ? "r1" : c.source ? "tab:1" : null),
+      controllerName: c.otherRuleWins ? "Older rule" : c.source === "rule" ? "Cheap flight watch" : null,
       source: c.source,
-      candidates: [],
+      candidates: c.candidates ?? [],
     },
     override: c.excluded ? { mode: "excluded" } : c.source === "tab" ? { mode: "custom", intervalSeconds: 300 } : null,
-    interval: 300,
+    interval: c.effective ?? (c.source === "rule" ? 600 : 300),
     safety: { ...DEFAULT_SAFETY, pauseWhileTyping: c.protection, protectUnsavedChanges: c.protection },
     hostAccess: c.hostAccess,
   };
@@ -74,9 +87,11 @@ const permissionsRequest = vi.fn(async (_p: unknown) => true);
           : m.method === "getRule"
             ? RULE
             : m.method === "getOverview"
-              ? { settings: DEFAULT_SETTINGS, counts: { running: 2, paused: 1, stopped: 0, excluded: 0 }, pendingApprovals: 0, pendingAgents: 0 }
-              : m.method === "createRule"
-                ? { id: "new" }
+              ? { settings: { ...DEFAULT_SETTINGS, defaultStopAfterMinutes: defaultStopAfter }, counts: { running: 2, paused: 1, stopped: 0, excluded: 0 }, pendingApprovals: 0, pendingAgents: 0 }
+              : m.method === "refreshNow"
+                ? refreshNowResult
+                : m.method === "createRule"
+                ? ((createdRuleId = "new"), { id: "new" })
                 : { ok: true };
       return { ok: true, result };
     },
@@ -89,6 +104,7 @@ let el: HTMLDivElement;
 const tick = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))));
 async function render(c: Case) {
   current = c;
+  createdRuleId = null;
   calls.length = 0;
   el = document.createElement("div");
   document.body.append(el);
@@ -218,6 +234,107 @@ describe("simpler popup", () => {
     await tick();
     expect(called("createRule")).toEqual([]);
     expect(text()).toContain("needs access to youtube.com");
+  });
+});
+
+describe("states where Start can't help", () => {
+  it.each([
+    ["paused", "All refreshing is paused", "Resume all refreshing", "resumeAll"],
+    ["disabled", "JustRefresh is switched off", "Turn auto refresh on", "updateSettings"],
+  ])("%s: says so, offers the fix, and no Start or Refresh until", async (kind, title, action, method) => {
+    await render({ kind, source: null });
+    expect(text()).toContain(title);
+    expect(button(/^Start refreshing/)).toBeUndefined();
+    await click(/^More/);
+    expect(text()).not.toContain("Refresh until something appears");
+    await click(action);
+    expect(called(method)).toHaveLength(1);
+  });
+
+  it("excluded by an exclusion pattern: says which, links to Exclusions", async () => {
+    await render({ kind: "url_excluded", source: null });
+    expect(text()).toContain("This page is excluded");
+    expect(text()).toContain("Excluded by https://www.youtube.com/*");
+    expect(button(/^Start refreshing/)).toBeUndefined();
+    expect(button("Manage exclusions")).toBeTruthy();
+  });
+});
+
+describe("rules made from the popup take effect", () => {
+  const startUntil = async () => {
+    await click(/^More/);
+    await click(/Refresh until something appears/);
+    await type(el.querySelector<HTMLInputElement>('input[aria-label="Text to look for"]')!, "In stock");
+    await click("Start watching");
+    await tick();
+  };
+
+  it("are created above rules already matching the page", async () => {
+    await render({ source: "tab", status: "scheduled", candidates: [{ id: "old", name: "Older rule", priority: 5 }] });
+    await startUntil();
+    const [created] = called("createRule") as { rule: { priority: number } }[];
+    expect(created!.rule.priority).toBe(6);
+    expect(called("runNow")).toHaveLength(1);
+  });
+
+  it("say so if another rule still controls the tab", async () => {
+    await render({ source: "tab", status: "scheduled", otherRuleWins: true });
+    await startUntil();
+    expect(text()).toContain("“Older rule” still controls this tab");
+    expect(called("runNow")).toEqual([]);
+  });
+
+  it("use the Settings default for Stop watching after", async () => {
+    defaultStopAfter = 20;
+    await render({});
+    await startUntil();
+    const [created] = called("createRule") as { rule: { limits?: { maxDurationSeconds: number } } }[];
+    expect(created!.rule.limits).toEqual({ maxDurationSeconds: 1200 });
+    defaultStopAfter = null;
+  });
+});
+
+describe("pages reached by submitting a form", () => {
+  it("paused on one: explains and offers Open this page fresh", async () => {
+    await render({ source: "tab", status: "paused_resubmit" });
+    expect(text()).toContain("This page came from submitting a form");
+    await click("Open this page fresh");
+    expect(called("openFresh")).toEqual([{ tabId: 1 }]);
+  });
+
+  it("Refresh now on one asks to open it fresh instead, never offers to resend", async () => {
+    refreshNowResult = { refreshed: false, reason: "form", formResult: true };
+    await render({ source: "tab", status: "scheduled" });
+    await click("Refresh now");
+    expect(document.body.textContent).toContain("Open this page fresh instead?");
+    expect(button("Refresh anyway")).toBeUndefined();
+    const dialogButton = [...document.querySelectorAll(".dialog button")].find((b) => b.textContent === "Open this page fresh") as HTMLButtonElement;
+    await act(async () => dialogButton.click());
+    await tick();
+    expect(called("openFresh")).toEqual([{ tabId: 1 }]);
+    expect(called("refreshNow")).toEqual([{ tabId: 1 }]); // no forced retry
+    refreshNowResult = { refreshed: true };
+  });
+});
+
+describe("declining site access, then allowing it", () => {
+  it("asks Chrome once per click and starts after Allow access", async () => {
+    permissionsRequest.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    await render({ hostAccess: false });
+    await click("Start refreshing every 5 min");
+    expect(called("startTab")).toEqual([]);
+    expect(text()).toContain("won't refresh this page until you allow access");
+    await click("Allow access");
+    await tick();
+    expect(permissionsRequest).toHaveBeenCalledTimes(2); // Start, then Allow access: no third request outside a click
+    expect(called("startTab")).toEqual([{ tabId: 1, intervalSeconds: 300 }]);
+  });
+});
+
+describe("the interval shown is the one in effect", () => {
+  it("a 5 s tab while fast intervals are off shows 30 sec", async () => {
+    await render({ source: "tab", status: "scheduled", effective: 30 });
+    expect(text()).toContain("Refreshing every 30 sec");
   });
 });
 

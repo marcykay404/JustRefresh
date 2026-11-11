@@ -240,6 +240,12 @@ export interface Settings {
    * refresh per site every 5 s). Off by default.
    */
   allowFastIntervals: boolean;
+  /**
+   * "Stop watching after": the time limit given to new rules that wait for
+   * something on the page (popup → Refresh until, templates). null = no
+   * limit. Each rule can have its own (Rule Builder → Stop after).
+   */
+  defaultStopAfterMinutes: number | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -314,6 +320,7 @@ export type ExecutionStatus =
   | "refreshing"
   | "paused_activity"
   | "paused_unsaved"
+  | "paused_resubmit"
   | "paused_global"
   | "paused_user"
   | "paused_unknown"
@@ -329,6 +336,7 @@ export const STATUS_LABELS: Record<ExecutionStatus, string> = {
   refreshing: "Refreshing",
   paused_activity: "Paused: User Activity",
   paused_unsaved: "Paused: Unsaved Changes",
+  paused_resubmit: "Paused: Submitted form",
   paused_global: "Paused: Global",
   paused_user: "Paused",
   paused_unknown: "Paused: Unknown Condition",

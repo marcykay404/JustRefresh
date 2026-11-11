@@ -6,6 +6,10 @@
 import type { ActivitySnapshot } from "../shared/messaging-types";
 import type { ExecutionStatus, SafetyConfig } from "./types";
 
+/** Shown when a page came from submitting a form (see src/content/form-post.ts). */
+export const FORM_RESULT_REASON =
+  "This page came from submitting a form, so refreshing it could send the form again (for example a second order). Open the page fresh to keep refreshing";
+
 export type SafetyDecision =
   | { allowed: true }
   | { allowed: false; status: Extract<ExecutionStatus, "paused_activity" | "paused_unsaved">; reason: string; retryInMs: number };

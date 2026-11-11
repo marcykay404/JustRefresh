@@ -37,6 +37,10 @@ export class FakeBrowser implements BrowserPort {
     this.onReload?.(id);
     if (this.stallReload.has(id)) await never();
   }
+  navigations: { tabId: number; url: string }[] = [];
+  async navigate(tabId: number, url: string) {
+    this.navigations.push({ tabId, url });
+  }
   async notify(_id: string, title: string, message: string, opts?: { sound?: boolean }) {
     this.notifications.push({ title, message, ...(opts?.sound ? { sound: true } : {}) });
   }

@@ -2,14 +2,16 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
 import { useApi } from "../shared/hooks";
 import { ErrorBox } from "../shared/components";
-import type { Rule, TabInfo } from "../../core/types";
-import { intervalLabel } from "../popup/describe";
+import type { Rule, Settings, TabInfo } from "../../core/types";
+import { STOP_AFTER_CHOICES } from "../../core/defaults";
+import { matchesAny } from "../../core/url-pattern";
+import { intervalLabel, priorityAbove, stopAfterLabel } from "../popup/describe";
 import { hostOf, normalizeAddress, pageLabel, stashBuilderDraft, TEMPLATES, type Template, type TemplateValues } from "./templates";
 
 /** Dashboard → Templates: ready-made rules you fill in. */
 export function TemplatesView() {
   const [open, setOpen] = useState<Template | null>(null);
-  const [created, setCreated] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ name: string; note?: string } | null>(null);
   return (
     <>
       <div className="col" style={{ gap: 4, maxWidth: 760 }}>
@@ -19,9 +21,9 @@ export function TemplatesView() {
         </p>
       </div>
       {created && (
-        <div className="info row" role="status">
+        <div className={`${created.note ? "notice" : "info"} row`} role="status">
           <span>
-            Created “{created}”. It runs on matching tabs from now on.
+            Created “{created.name}”. {created.note ?? "It runs on matching tabs from now on."}
           </span>
           <a href="#/rules">See it in Rules</a>
         </div>
@@ -37,7 +39,7 @@ export function TemplatesView() {
             <p className="small muted" style={{ margin: 0 }}>You fill in: {t.fills}</p>
             {t.warning && <p className="notice small" style={{ margin: 0 }}>{t.warning}</p>}
             <span className="spacer" />
-            <button style={{ alignSelf: "flex-start" }} onClick={() => { setCreated(null); setOpen(t); }}>
+            <button style={{ alignSelf: "flex-start" }} aria-label={`Use template: ${t.title}`} onClick={() => { setCreated(null); setOpen(t); }}>
               Use template
             </button>
           </article>
@@ -50,9 +52,9 @@ export function TemplatesView() {
         <TemplateForm
           template={open}
           onClose={() => setOpen(null)}
-          onCreated={(name) => {
+          onCreated={(name, note) => {
             setOpen(null);
-            setCreated(name);
+            setCreated({ name, note });
           }}
         />
       )}
@@ -62,8 +64,12 @@ export function TemplatesView() {
 
 const ADDRESS = "__address__";
 
-function TemplateForm({ template: t, onClose, onCreated }: { template: Template; onClose: () => void; onCreated: (name: string) => void }) {
+function TemplateForm({ template: t, onClose, onCreated }: { template: Template; onClose: () => void; onCreated: (name: string, note?: string) => void }) {
   const tabs = useApi<TabInfo[]>("listTabs");
+  const rules = useApi<Rule[]>("listRules");
+  const overview = useApi<{ settings: Settings }>("getOverview");
+  const settings = overview.data?.settings;
+  const [stopAfter, setStopAfter] = useState<number | null | undefined>(undefined);
   const webTabs = (tabs.data ?? []).filter((x) => /^https?:/.test(x.url));
   const [choice, setChoice] = useState<string>("");
   const [address, setAddress] = useState("");
@@ -89,10 +95,17 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
 
   const pickedTab = webTabs.find((x) => String(x.id) === choice) ?? null;
   const url = choice === ADDRESS ? normalizeAddress(address) : (pickedTab?.url ?? null);
-  const values: TemplateValues | null = url ? { url, text, seconds, start, end } : null;
+  // A page template outranks rules already matching its page, or it would never
+  // run there. A site-wide template doesn't: more specific rules keep their pages.
+  const matching = url && t.scope === "page" ? (rules.data ?? []).filter((r) => r.enabled && !r.meta.draft && matchesAny(r.target.patterns, url) !== null) : [];
+  const stopAfterMinutes = stopAfter === undefined ? (settings?.defaultStopAfterMinutes ?? null) : stopAfter;
+  const protects = settings ? settings.defaultSafety.pauseWhileTyping : true;
+  const values: TemplateValues | null = url ? { url, text, seconds, start, end, stopAfterMinutes: t.until ? stopAfterMinutes : null, priority: priorityAbove(matching), protects } : null;
   const textOk = !t.text || text.trim().length > 0;
   const hoursOk = !t.hours || (start !== "" && end !== "" && start < end);
-  const ready = !!values && textOk && hoursOk && !busy;
+  // Wait for rules and settings: priority, protection wording and the default time limit come from them.
+  const loaded = rules.data !== null && overview.data !== null;
+  const ready = !!values && textOk && hoursOk && loaded && !busy;
   const host = url ? hostOf(url) : "";
 
   const create = async () => {
@@ -107,13 +120,17 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
         return;
       }
       const rule = (await api("createRule", { rule: t.build(values) })) as Rule;
-      // A tab-specific timer on the chosen tab would outrank the new rule: hand the tab over.
-      if (pickedTab) {
+      // The rule now exists: whatever happens next, close the form (no duplicate on a second click).
+      let note: string | undefined;
+      // A page template takes over the chosen tab from a tab-specific timer, which would outrank it.
+      if (pickedTab && t.scope === "page") {
         const state = (await api("getTabState", { tabId: pickedTab.id })) as { override: { mode: string } | null };
         if (state.override?.mode === "custom") await api("clearTabOverride", { tabId: pickedTab.id });
-        if (t.scope === "page") await api("runNow", { tabId: pickedTab.id }).catch(() => undefined);
+        const after = (await api("getTabState", { tabId: pickedTab.id })) as { resolution: { kind: string; reason?: string; controllerId: string | null; controllerName: string | null } };
+        if (after.resolution.controllerId === rule.id) await api("runNow", { tabId: pickedTab.id }).catch(() => undefined);
+        else note = takeoverNote(after.resolution);
       }
-      onCreated(rule.name);
+      onCreated(rule.name, note);
     } catch (e) {
       setError(e);
     } finally {
@@ -131,6 +148,19 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
     if (e.key === "Escape") {
       e.preventDefault();
       onClose();
+    } else if (e.key === "Tab") {
+      // Keep focus inside the form while it's open.
+      const items = [...(boxRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input, select") ?? [])];
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) return;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   };
 
@@ -183,6 +213,18 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
           </div>
         )}
 
+        {t.until && (
+          <label className="field">
+            <span className="field-label">Stop watching after</span>
+            <select value={stopAfterMinutes ?? ""} onChange={(e) => setStopAfter(e.target.value === "" ? null : Number(e.target.value))}>
+              {STOP_AFTER_CHOICES.map((m) => (
+                <option key={m ?? "none"} value={m ?? ""}>{stopAfterLabel(m)}</option>
+              ))}
+            </select>
+            <span className="field-hint">If it hasn't happened by then, it stops and tells you. Your default is in Settings.</span>
+          </label>
+        )}
+
         {t.hours && (
           <div className="field">
             <span className="field-label">Working hours, Monday to Friday</span>
@@ -216,4 +258,13 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
       </div>
     </div>
   );
+}
+
+/** Why a new page rule isn't running on the chosen tab. */
+function takeoverNote(r: { kind: string; reason?: string; controllerName: string | null }): string {
+  if (r.kind === "paused") return "All refreshing is paused; it starts when you resume.";
+  if (r.kind === "disabled") return "Auto refresh is switched off in Settings, so it won't run until you turn it on.";
+  if (r.kind === "tab_excluded" || r.kind === "url_excluded") return `It won't run on that tab: ${r.reason ?? "the tab is excluded"}.`;
+  if (r.controllerName) return `On that tab, “${r.controllerName}” still has priority. Raise the new rule's priority in the Rule Builder to change that.`;
+  return "It isn't running on that tab yet.";
 }

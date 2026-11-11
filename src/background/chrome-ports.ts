@@ -39,6 +39,9 @@ export const chromeBrowser: BrowserPort = {
   async reload(tabId, bypassCache) {
     await chrome.tabs.reload(tabId, { bypassCache });
   },
+  async navigate(tabId, url) {
+    await chrome.tabs.update(tabId, { url });
+  },
   async notify(id, title, message, opts) {
     try {
       await chrome.notifications.create(id, {

@@ -51,6 +51,19 @@
   need a timer keeping the service worker awake permanently. The badge shows
   each tab's state (ON / II / ✓ / !) and its tooltip the exact next refresh
   time; the popup shows the live countdown.
+* **Pages reached by submitting a form** (an order, a payment, a sign-up) are
+  never refreshed automatically: in Chrome a reload asks "Confirm Form
+  Resubmission", which blocks an unattended tab and, if Continue is pressed,
+  sends the form again. The tab pauses with that reason (notified once) and
+  the popup offers **Open this page fresh**, which loads the address as a
+  normal visit. Detection runs in the page: a form submitted with POST that
+  the page didn't handle with script, followed by a page that wasn't
+  redirected (a redirected page was fetched with GET and is safe). It uses the
+  site's sessionStorage, so a form that posts to a *different* site isn't
+  detected, and it needs site access like activity protection does. Also not
+  detected: forms sent from script with `form.submit()` (no submit event, e.g.
+  ASP.NET postbacks) and 307/308 redirects (which keep the POST but count as
+  a redirect). For those, Chrome still shows its resubmission prompt.
 * **Discarded tabs** (Memory Saver) are skipped by default rather than woken.
 * **Regex.** JavaScript has no regex timeout; potentially catastrophic
   patterns are rejected instead, and inputs are length-bounded.

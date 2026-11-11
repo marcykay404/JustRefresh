@@ -5,6 +5,7 @@
 import { evaluateDomCondition, testSelector } from "../conditions/dom-eval";
 import { CONTENT_PROTOCOL, type ContentRequest, type ContentResponse } from "../shared/messaging-types";
 import { ActivityMonitor } from "./activity-monitor";
+import { currentNavigation, detectFormResult, watchFormPosts } from "./form-post";
 
 const FLAG = "__smartAutoRefreshContent__";
 const g = globalThis as unknown as Record<string, unknown>;
@@ -13,6 +14,9 @@ if (!g[FLAG]) {
   g[FLAG] = true;
   const monitor = new ActivityMonitor(document);
   monitor.start();
+  // Whether this page came from submitting a form (reloading it would send the form again).
+  const formResult = detectFormResult(location.href, currentNavigation(window), () => sessionStorage, Date.now(), performance.timeOrigin);
+  watchFormPosts(window);
 
   chrome.runtime.onMessage.addListener((msg: ContentRequest, sender, sendResponse: (r: ContentResponse) => void) => {
     if (sender.id !== chrome.runtime.id || !msg || msg.protocol !== CONTENT_PROTOCOL) return false;
@@ -22,7 +26,7 @@ if (!g[FLAG]) {
           sendResponse({ requestId: msg.requestId, kind: "pong", readyState: document.readyState });
           break;
         case "activity":
-          sendResponse({ requestId: msg.requestId, kind: "activity", activity: monitor.snapshot() });
+          sendResponse({ requestId: msg.requestId, kind: "activity", activity: { ...monitor.snapshot(), formResult } });
           break;
         case "evaluate":
           sendResponse({
