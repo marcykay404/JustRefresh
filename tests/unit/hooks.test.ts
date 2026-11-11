@@ -38,7 +38,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   vi.useRealTimers();
 });
-const advance = (ms: number) => act(async () => void vi.advanceTimersByTime(ms));
+const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
 describe("useApi polling and page visibility", () => {
   it("polls while visible, pauses while hidden, and catches up on return", async () => {

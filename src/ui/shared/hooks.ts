@@ -42,19 +42,23 @@ export function useApi<T>(method: string, params?: unknown, opts: { pollMs?: num
   const key = JSON.stringify(params ?? null);
   const live = (opts.live ?? []).join(",");
   const alive = useRef(true);
+  /** Requests started; only the newest one's answer is used (answers can arrive out of order). */
+  const seq = useRef(0);
 
   const reload = useCallback(async () => {
     if (opts.skip) return;
+    const mine = ++seq.current;
+    const current = () => alive.current && mine === seq.current;
     try {
       const r = await api<T>(method, params);
-      if (alive.current) {
+      if (current()) {
         setData(r);
         setError(null);
       }
     } catch (e) {
-      if (alive.current) setError(e as Error);
+      if (current()) setError(e as Error);
     } finally {
-      if (alive.current) setLoading(false);
+      if (current()) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method, key, opts.skip]);
@@ -70,18 +74,51 @@ export function useApi<T>(method: string, params?: unknown, opts: { pollMs?: num
         alive.current = false;
       };
     }
-    void reload();
-    const t = opts.pollMs ? setInterval(reload, opts.pollMs) : undefined;
-    const off = live ? subscribe(live.split(",") as Topic[], () => void reload()) : undefined;
+    // Changes can arrive many times a second (many tabs, fast intervals): at
+    // most one fetch in flight, one more queued, and LIVE_GAP_MS between starts.
+    let inFlight = false;
+    let dirty = false;
+    let last = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const start = () => {
+      inFlight = true;
+      last = Date.now();
+      void reload().finally(() => {
+        inFlight = false;
+        if (dirty && alive.current) {
+          dirty = false;
+          poke();
+        }
+      });
+    };
+    const poke = () => {
+      if (inFlight) {
+        dirty = true;
+        return;
+      }
+      if (timer !== undefined) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        start();
+      }, Math.max(0, last + LIVE_GAP_MS - Date.now()));
+    };
+    start();
+    // Polling is paced by its own interval.
+    const t = opts.pollMs ? setInterval(() => (inFlight ? (dirty = true) : start()), opts.pollMs) : undefined;
+    const off = live ? subscribe(live.split(",") as Topic[], poke) : undefined;
     return () => {
       alive.current = false;
       if (t) clearInterval(t);
+      if (timer !== undefined) clearTimeout(timer);
       off?.();
     };
   }, [reload, opts.pollMs, active, live]);
 
   return { data, error, loading, reload, setData };
 }
+
+/** Minimum time between two automatic re-fetches of one hook. */
+export const LIVE_GAP_MS = 500;
 
 export function useHashRoute(): [string, (r: string) => void] {
   const [hash, setHash] = useState(location.hash.slice(1) || "/tabs");

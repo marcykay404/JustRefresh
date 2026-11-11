@@ -457,6 +457,9 @@ await test("a form page unloaded by Memory Saver and restored is still never rel
 });
 
 await test("the dashboard updates on changes without polling the service worker", async () => {
+  // Nothing else may refresh meanwhile (an "all local pages" rule would).
+  const others = (await call("listRules")).filter((r) => r.enabled);
+  for (const r of others) await call("disableRule", { id: r.id });
   const dash = await context.newPage();
   // Count the dashboard's API calls (each one wakes the service worker).
   await dash.addInitScript(() => {
@@ -479,10 +482,17 @@ await test("the dashboard updates on changes without polling the service worker"
   const tabId = await tabIdFor(`${base}/live-check`);
   await call("startTab", { tabId, intervalSeconds: 600 });
   await row.getByText("Scheduled", { exact: true }).waitFor({ timeout: 3000 });
+  // A change to the tab's run state alone (storage.session, no config or tab event).
+  await sw.evaluate(async (id) => {
+    const rt = await globalThis.__sar.runtime.get(id);
+    await globalThis.__sar.runtime.put({ ...rt, refreshCount: 42 });
+  }, tabId);
+  await row.getByText("42", { exact: true }).waitFor({ timeout: 3000 });
   await call("stopTab", { tabId });
   await row.getByText("Stopped", { exact: true }).waitFor({ timeout: 3000 });
   await page.close();
   await dash.close();
+  for (const r of others) await call("enableRule", { id: r.id });
 });
 
 await test("popup and dashboard render", async () => {

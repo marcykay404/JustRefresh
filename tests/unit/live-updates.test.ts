@@ -15,11 +15,15 @@ const listeners: Record<string, Fn[]> = {};
 const event = (name: string) => ({ addListener: (f: Fn) => (listeners[name] ??= []).push(f), removeListener: () => undefined });
 const fire = (name: string, ...args: unknown[]) => (listeners[name] ?? []).forEach((f) => f(...args));
 const calls: string[] = [];
+/** Delay (ms) for the answer to each call, by call number (1-based); default 0. */
+let delays: Record<number, number> = {};
 (globalThis as { chrome?: unknown }).chrome = {
   runtime: {
     sendMessage: async (m: { method: string }) => {
       calls.push(m.method);
-      return { ok: true, result: { n: calls.length } };
+      const n = calls.length;
+      await new Promise((r) => setTimeout(r, delays[n] ?? 0));
+      return { ok: true, result: { n } };
     },
   },
   storage: { onChanged: event("storage") },
@@ -47,6 +51,7 @@ describe("useApi with live topics", () => {
   let root: ReturnType<typeof createRoot>;
   beforeEach(async () => {
     calls.length = 0;
+    delays = {};
     el = document.createElement("div");
     document.body.append(el);
     root = createRoot(el);
@@ -68,7 +73,7 @@ describe("useApi with live topics", () => {
     fire("storage", { "rt:1": {}, "rt:2": {} }, "session");
     fire("storage", { "rt:1": {} }, "session");
     fire("tabs.updated", 1, { title: "New" });
-    await wait(200);
+    await wait(700);
     expect(calls).toEqual(["getOverview", "getOverview"]);
   });
 
@@ -78,7 +83,7 @@ describe("useApi with live topics", () => {
     await wait(200);
     expect(calls).toHaveLength(1);
     fire("perm.added", { origins: ["https://x.test/*"] });
-    await wait(200);
+    await wait(700);
     expect(calls).toHaveLength(2);
   });
 
@@ -95,5 +100,27 @@ describe("useApi with live topics", () => {
     await vis("visible");
     await wait(0);
     expect(calls).toHaveLength(2);
+  });
+
+  it("a constant stream of changes costs at most one fetch per half second", async () => {
+    for (let i = 0; i < 30; i++) {
+      fire("storage", { [`rt:${i}`]: {} }, "session");
+      await wait(50);
+    }
+    await wait(700);
+    // 1.5 s of changes + the trailing fetch: about 4, never 30.
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls.length).toBeLessThanOrEqual(6);
+  });
+
+  it("an older answer arriving last doesn't overwrite a newer one", async () => {
+    // Call 2 (a change) is slow; call 3 (a later change) is fast and lands first.
+    delays = { 2: 900 };
+    fire("storage", { "rt:1": {} }, "session");
+    await wait(700); // call 2 starts and is in flight
+    fire("storage", { "rt:1": {} }, "session"); // queued behind it
+    await wait(1600);
+    expect(calls).toHaveLength(3);
+    expect(el.textContent).toBe("3");
   });
 });

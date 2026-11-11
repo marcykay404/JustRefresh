@@ -55,6 +55,7 @@ export async function setBridgeEnabled(service: RuleManagementService, enabled: 
 
 async function applyBridgeEnabled(service: RuleManagementService, enabled: boolean) {
   wanted = enabled;
+  retry = 0; // switching it on (again) gets a fresh set of tries
   if (!enabled) {
     restartRequired = false;
     port?.disconnect();
@@ -79,8 +80,8 @@ function connect(service: RuleManagementService) {
     publishStatus();
     return;
   }
-  retry = 0;
   publishStatus();
+  const connectedAt = Date.now();
   port.onMessage.addListener((raw: unknown) => {
     const req = raw as BridgeRequest;
     if (!req || typeof req.id !== "string" || !req.client || typeof req.client.id !== "string") return;
@@ -97,6 +98,9 @@ function connect(service: RuleManagementService) {
     if (err) console.warn("Native bridge disconnected:", err);
     port = null;
     publishStatus();
+    // A host that stayed connected for a while was really there: start the
+    // back-off again. One that drops at once (not installed) gives up after 5 tries.
+    if (Date.now() - connectedAt > 30_000) retry = 0;
     if (wanted && retry < 5) {
       const delay = 2000 * 2 ** retry++;
       setTimeout(() => wanted && !port && connect(service), delay);

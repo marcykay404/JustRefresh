@@ -132,10 +132,10 @@ export function SettingsView() {
         <div className="card col">
           <h2>History & privacy</h2>
           <Field label="Maximum history entries">
-            <input type="number" min={10} max={5000} defaultValue={s.historyLimit} onBlur={(e) => update({ historyLimit: Number(e.target.value) })} />
+            <input type="number" min={10} max={5000} key={s.historyLimit} defaultValue={s.historyLimit} onBlur={(e) => update({ historyLimit: Number(e.target.value) })} />
           </Field>
           <Field label="Keep history for (days)">
-            <input type="number" min={1} max={365} defaultValue={s.historyRetentionDays} onBlur={(e) => update({ historyRetentionDays: Number(e.target.value) })} />
+            <input type="number" min={1} max={365} key={s.historyRetentionDays} defaultValue={s.historyRetentionDays} onBlur={(e) => update({ historyRetentionDays: Number(e.target.value) })} />
           </Field>
           <Toggle checked={s.redactUrlsForAgents} onChange={(v) => update({ redactUrlsForAgents: v })} label="Hide URL query strings from agents" />
           <p className="small muted" style={{ margin: 0 }}>No analytics or telemetry. Everything is stored locally in this browser profile. Typed text and form values are never recorded.</p>
