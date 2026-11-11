@@ -52,6 +52,7 @@ await sw.evaluate(() => globalThis.__sar.ready);
 const call = (method, params) => sw.evaluate(([m, p]) => globalThis.__sar.service.call({ type: "user" }, m, p), [method, params]);
 const tabIdFor = (url) => sw.evaluate(async (u) => (await chrome.tabs.query({})).find((t) => t.url === u)?.id, url);
 const runtime = (tabId) => sw.evaluate((id) => globalThis.__sar.runtime.get(id), tabId);
+const badge = (tabId) => sw.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId);
 const fireAlarm = (tabId) => sw.evaluate((id) => globalThis.__sar.engine.handleAlarm(`sar:tab:${id}`), tabId);
 const waitFor = async (fn, what, timeout = 10_000) => {
   const start = Date.now();
@@ -82,6 +83,7 @@ await test("per-tab refresh: alarm reloads the tab and navigation completion is 
   await page.goto(`${base}/basic`);
   const tabId = await tabIdFor(`${base}/basic`);
   await call("startTab", { tabId, intervalSeconds: 30 });
+  await waitFor(async () => (await badge(tabId)) === "ON", "toolbar badge ON");
   const alarm = await sw.evaluate((id) => chrome.alarms.get(`sar:tab:${id}`), tabId);
   assert.ok(alarm && alarm.scheduledTime > Date.now() + 25_000, "alarm scheduled ~30s out");
   await fireAlarm(tabId);
@@ -156,6 +158,7 @@ await test("refresh until condition: stops and records completion when #status s
       target: { patterns: [`${base}/status`] },
       trigger: { type: "interval", seconds: 30 },
       stopWhen: { type: "dom.text", selector: "#status", operator: "contains", value: "Available" },
+      actions: { onMatched: [{ type: "stopRefresh" }, { type: "notify", title: "Available", sound: true }] },
     },
   });
   const page = await context.newPage();
@@ -169,6 +172,12 @@ await test("refresh until condition: stops and records completion when #status s
   statusText = "Now Available";
   await fireAlarm(tabId);
   await waitFor(async () => (await runtime(tabId))?.status === "completed", "completed status");
+  await waitFor(async () => (await badge(tabId)) === "✓", "toolbar badge ✓");
+  // The alert sound plays from an offscreen document (service workers cannot play audio).
+  await waitFor(
+    async () => (await sw.evaluate(() => chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] }))).length === 1,
+    "offscreen audio document",
+  );
   const rt = await runtime(tabId);
   assert.equal(rt.lastEvaluation.status, "matched");
   assert.equal(loads.get("/status"), 2);

@@ -230,6 +230,11 @@ export interface Settings {
   redactUrlsForAgents: boolean;
   /** Allow the native-messaging MCP bridge to connect. */
   nativeBridgeEnabled: boolean;
+  /**
+   * Extension IDs allowed to call the agent API via extension messaging.
+   * Empty by default: other extensions are rejected before pairing.
+   */
+  allowedExtensionIds: string[];
 }
 
 /* ------------------------------------------------------------------ */

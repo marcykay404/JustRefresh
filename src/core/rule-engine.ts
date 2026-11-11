@@ -8,7 +8,7 @@
  */
 import type { Registries } from "../registries";
 import { defaultRegistries } from "../registries";
-import type { ActionContext, TriggerEvent } from "../registries/contracts";
+import type { ActionContext, NotifyOptions, TriggerEvent } from "../registries/contracts";
 import type { ActivitySnapshot } from "../shared/messaging-types";
 import { evaluateConditionTree, explainTrace } from "./evaluator";
 import { resolveTab, type Resolution } from "./rule-resolver";
@@ -38,7 +38,7 @@ export interface BrowserPort {
   getTab(tabId: number): Promise<TabInfo | null>;
   listTabs(): Promise<TabInfo[]>;
   reload(tabId: number, bypassCache: boolean): Promise<void>;
-  notify(id: string, title: string, message: string): Promise<void>;
+  notify(id: string, title: string, message: string, opts?: NotifyOptions): Promise<void>;
 }
 
 export interface AlarmPort {
@@ -556,6 +556,7 @@ export class RuleEngine {
           const streak = rt.unknownStreak + 1;
           const giveUp = streak > rule.safety.maxUnknownRetries;
           this.log({ ruleId: rule.id, tabId, url: tab.url, trigger: event, condition: "unknown", action: "pause", outcome: "skipped", reason });
+          if (giveUp) await this.notifyStopped(config, rule, tab, `Gave up after ${streak} checks could not read the page: ${reason}. Open the popup to retry.`);
           return {
             ...(await save(
               transition(rt, "paused_unknown", {
@@ -569,6 +570,7 @@ export class RuleEngine {
         }
         if (policy === "stop") {
           this.log({ ruleId: rule.id, tabId, url: tab.url, trigger: event, condition: "unknown", action: "stop", outcome: "ok", reason });
+          await this.notifyStopped(config, rule, tab, `The page could not be checked: ${reason}`);
           return { ...(await save(transition(rt, "stopped", { reason: `Stopped: condition unknown (${reason})`, nextDueAt: null }))), evaluation: trace };
         }
         if (policy === "skip") {
@@ -588,6 +590,15 @@ export class RuleEngine {
       }
       return { ...(await save(rt)), evaluation: trace };
     });
+  }
+
+  /**
+   * A monitor that ends without its condition matching must not end silently
+   * (e.g. an overnight "refresh until in stock" hitting a login page).
+   */
+  private async notifyStopped(config: Config, rule: Rule, tab: TabInfo, message: string) {
+    if (!config.settings.notificationsEnabled) return;
+    await this.deps.browser.notify(`sar:${rule.id}:${tab.id}:${this.now()}`, `Monitoring stopped: ${rule.name}`, message);
   }
 
   private async evaluate(rule: Rule, tab: TabInfo, rt: TabRuntime) {
@@ -636,9 +647,9 @@ export class RuleEngine {
             nextDueAt: status === "scheduled" ? this.nextDue(rule, this.now()) : (resumeAt ?? null),
           });
         },
-        notify: async (title, message) => {
+        notify: async (title, message, opts) => {
           if (!config.settings.notificationsEnabled) return;
-          await this.deps.browser.notify(`sar:${rule.id}:${tab.id}:${this.now()}`, title, message);
+          await this.deps.browser.notify(`sar:${rule.id}:${tab.id}:${this.now()}`, title, message, opts);
         },
         log: (level, message) => {
           this.log({ ruleId: rule.id, tabId: tab.id, url: tab.url, trigger: event, condition, action: "log", outcome: "ok", reason: `${level}: ${message}` });

@@ -18,6 +18,7 @@ export const notifySchema = z.strictObject({
   type: z.literal("notify"),
   title: z.string().max(100).optional(),
   message: z.string().max(300).optional(),
+  sound: z.boolean().optional().describe("Also play a short alert sound"),
 });
 export const logSchema = z.strictObject({
   type: z.literal("log"),
@@ -81,12 +82,12 @@ export const resumeAction: ActionHandler<z.infer<typeof resumeSchema>> = {
 export const notifyAction: ActionHandler<z.infer<typeof notifySchema>> = {
   type: "notify",
   title: "Notify me",
-  description: "Shows a desktop notification.",
+  description: "Shows a desktop notification, optionally with an alert sound.",
   schema: notifySchema,
   permissions: ["notifications"],
   disruptive: false,
   execute: async (c, ctx) => {
-    await ctx.notify(c.title ?? `Rule matched: ${ctx.ruleName}`, c.message ?? ctx.url);
+    await ctx.notify(c.title ?? `Rule matched: ${ctx.ruleName}`, c.message ?? ctx.url, { sound: c.sound === true });
     return { ok: true };
   },
 };

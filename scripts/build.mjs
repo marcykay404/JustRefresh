@@ -32,7 +32,11 @@ await build({
     sourcemap: false,
     rollupOptions: {
       onwarn,
-      input: { popup: resolve(root, "src/ui/popup.html"), dashboard: resolve(root, "src/ui/dashboard.html") },
+      input: {
+        popup: resolve(root, "src/ui/popup.html"),
+        dashboard: resolve(root, "src/ui/dashboard.html"),
+        offscreen: resolve(root, "src/ui/offscreen.html"),
+      },
       output: { entryFileNames: "assets/[name].js", chunkFileNames: "assets/[name]-[hash].js", assetFileNames: "assets/[name][extname]" },
     },
   },

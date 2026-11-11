@@ -6,3 +6,6 @@ coverage/
 test-results/
 bridge/sar-native-host.sh
 bridge/sar-native-host.bat
+
+# Local notes (not committed)
+.local/

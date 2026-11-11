@@ -4,7 +4,7 @@
 import type { AlarmPort, BrowserPort, ClockPort, PagePort } from "../core/rule-engine";
 import { restrictedReason } from "../core/url-pattern";
 import type { ConditionNode, EvaluationResult, TabInfo } from "../core/types";
-import { CONTENT_PROTOCOL, type ActivitySnapshot, type ContentRequest, type ContentResponse } from "../shared/messaging-types";
+import { CONTENT_PROTOCOL, OFFSCREEN_CHANNEL, type ActivitySnapshot, type ContentRequest, type ContentResponse, type OffscreenMessage } from "../shared/messaging-types";
 import { hasHostAccess } from "./host-access";
 import { withTimeout } from "../core/timeout";
 
@@ -39,7 +39,7 @@ export const chromeBrowser: BrowserPort = {
   async reload(tabId, bypassCache) {
     await chrome.tabs.reload(tabId, { bypassCache });
   },
-  async notify(id, title, message) {
+  async notify(id, title, message, opts) {
     try {
       await chrome.notifications.create(id, {
         type: "basic",
@@ -51,8 +51,30 @@ export const chromeBrowser: BrowserPort = {
     } catch (e) {
       console.warn("Notification failed", e);
     }
+    if (opts?.sound) await playAlertSound();
   },
 };
+
+const OFFSCREEN_URL = "offscreen.html";
+
+/** Service workers cannot play audio: use an offscreen document (AUDIO_PLAYBACK). */
+async function playAlertSound() {
+  try {
+    const url = chrome.runtime.getURL(OFFSCREEN_URL);
+    const existing = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT], documentUrls: [url] });
+    if (!existing.length) {
+      await chrome.offscreen.createDocument({
+        url: OFFSCREEN_URL,
+        reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
+        justification: "Play the alert sound of a notify action",
+      });
+    }
+    const msg: OffscreenMessage = { channel: OFFSCREEN_CHANNEL, kind: "play" };
+    await chrome.runtime.sendMessage(msg);
+  } catch (e) {
+    console.warn("Alert sound failed", e);
+  }
+}
 
 export const chromeAlarms: AlarmPort = {
   async set(name, when) {

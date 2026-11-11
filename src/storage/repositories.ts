@@ -18,7 +18,7 @@ export const CONFIG_KEY = "config";
 export const CONFIG_BACKUP_KEY = "config.backup";
 export const HISTORY_KEY = "history";
 export const AUDIT_KEY = "audit";
-const RUNTIME_PREFIX = "rt:";
+export const RUNTIME_PREFIX = "rt:";
 
 class Mutex {
   private tail: Promise<unknown> = Promise.resolve();

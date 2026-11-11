@@ -12,7 +12,14 @@ Agents use the **same Rule Management API** as the extension UI. Three levels:
 
 ## Level 2 — Extension messaging
 
-Other extensions can call `chrome.runtime.sendMessage(SMART_AUTO_REFRESH_ID, msg)`:
+Other extensions can call `chrome.runtime.sendMessage(JUSTREFRESH_ID, msg)`,
+but **only if the user has added the calling extension's ID** under Dashboard →
+Agent Integrations → Allowed extensions. The list is empty by default; any
+other extension is rejected with `forbidden` before anything is recorded, so
+unknown extensions cannot file pairing requests. The allowlist is never
+exported or imported. (The manifest's `externally_connectable.ids` stays `*`
+because a manifest list cannot change at runtime; the allowlist is enforced in
+code.) Pairing requests start with no scopes selected.
 
 ```js
 // 1. Pair (creates a pending agent the user must approve, with scopes)

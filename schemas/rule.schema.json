@@ -780,7 +780,7 @@
         },
         {
           "title": "Notify me",
-          "description": "Shows a desktop notification.",
+          "description": "Shows a desktop notification, optionally with an alert sound.",
           "type": "object",
           "properties": {
             "type": {
@@ -794,6 +794,10 @@
             "message": {
               "type": "string",
               "maxLength": 300
+            },
+            "sound": {
+              "description": "Also play a short alert sound",
+              "type": "boolean"
             }
           },
           "required": [

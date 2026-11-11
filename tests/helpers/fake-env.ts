@@ -18,7 +18,7 @@ export class FakeClock {
 export class FakeBrowser implements BrowserPort {
   tabs = new Map<number, TabInfo>();
   reloads: number[] = [];
-  notifications: { title: string; message: string }[] = [];
+  notifications: { title: string; message: string; sound?: boolean }[] = [];
   onReload?: (tabId: number) => void;
   /** Tabs whose reload call never returns (the reload is still recorded). */
   stallReload = new Set<number>();
@@ -37,8 +37,8 @@ export class FakeBrowser implements BrowserPort {
     this.onReload?.(id);
     if (this.stallReload.has(id)) await never();
   }
-  async notify(_id: string, title: string, message: string) {
-    this.notifications.push({ title, message });
+  async notify(_id: string, title: string, message: string, opts?: { sound?: boolean }) {
+    this.notifications.push({ title, message, ...(opts?.sound ? { sound: true } : {}) });
   }
 }
 
