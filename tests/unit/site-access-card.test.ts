@@ -6,6 +6,7 @@
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SiteAccess } from "@/ui/dashboard/SettingsView";
+import { DialogProvider } from "@/ui/shared/dialog";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -45,7 +46,7 @@ beforeEach(async () => {
   remove.mockClear();
   el = document.createElement("div");
   root = createRoot(el);
-  await act(async () => root.render(createElement(SiteAccess)));
+  await act(async () => root.render(createElement(DialogProvider, null, createElement(SiteAccess))));
   await flush();
 });
 afterEach(async () => act(async () => root.unmount()));
@@ -71,12 +72,15 @@ describe("Settings site-access card with many sites", () => {
   });
 
   it("Remove unused revokes only sites no running tab or rule uses", async () => {
-    vi.stubGlobal("confirm", () => true);
     await act(async () => button(/Remove unused \(10\)/)!.click());
+    const dialog = el.querySelector("[aria-modal=true]")!;
+    expect(dialog.textContent).toContain("Remove access to 10 unused sites?");
+    expect(dialog.querySelectorAll("li")).toHaveLength(10);
+    expect(remove).not.toHaveBeenCalled();
+    await act(async () => button(/^Remove access$/)!.click());
     const removed = remove.mock.calls[0]![0].origins;
     expect(removed).toHaveLength(10);
     expect(removed).not.toContain("https://site-07.com/*");
     expect(removed).not.toContain("https://site-11.com/*");
-    vi.unstubAllGlobals();
   });
 });

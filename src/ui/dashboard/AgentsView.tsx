@@ -4,6 +4,7 @@ import { useApi } from "../shared/hooks";
 import { formatTime } from "../shared/format";
 import { Empty, ErrorBox, Toggle } from "../shared/components";
 import type { AgentRecord, AgentScope, ApprovalRequest, AuditEntry, Rule, Settings } from "../../core/types";
+import { useDialog } from "../shared/dialog";
 
 interface AgentsData {
   agents: AgentRecord[];
@@ -25,6 +26,7 @@ const SCOPE_HELP: Record<AgentScope, string> = {
 };
 
 export function AgentsView() {
+  const dialog = useDialog();
   const { data, error, reload } = useApi<AgentsData>("listAgents", undefined, { pollMs: 3000 });
   const audit = useApi<AuditEntry[]>("getAudit", undefined, { pollMs: 5000 });
   const rules = useApi<Rule[]>("listRules", undefined, { pollMs: 5000 });
@@ -129,7 +131,10 @@ export function AgentsView() {
         <div className="row">
           <h2>Audit log</h2>
           <span className="spacer" />
-          <button className="small" onClick={() => confirm("Clear the audit log?") && act("clearAudit", undefined)}>Clear</button>
+          <button className="small" onClick={async () =>
+              (await dialog.confirm({ title: "Clear the audit log?", message: "The record of agent requests is deleted.", confirmLabel: "Clear log", danger: true })) &&
+              act("clearAudit", undefined)
+            }>Clear</button>
         </div>
         {!audit.data?.length ? (
           <Empty>No agent operations recorded.</Empty>
@@ -189,6 +194,7 @@ function AllowedExtensions({ ids, save }: { ids: string[]; save: (ids: string[])
 
 function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: AgentScope[]; act: (m: string, p: unknown) => Promise<void> }) {
   const [scopes, setScopes] = useState<AgentScope[]>(agent.status === "pending" ? DEFAULT_SCOPES : agent.scopes);
+  const dialog = useDialog();
   return (
     <div className="info col">
       <div className="row">
@@ -198,7 +204,14 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
         <span className="small muted">via {agent.transport} · last seen {formatTime(agent.lastSeenAt)}</span>
         <span className="spacer" />
         {agent.status !== "revoked" && <button className="small danger" onClick={() => act("updateAgent", { id: agent.id, status: "revoked" })}>Revoke</button>}
-        <button className="small" onClick={() => confirm("Remove this agent?") && act("removeAgent", { id: agent.id })}>Remove</button>
+        <button className="small" onClick={async () =>
+            (await dialog.confirm({
+              title: `Remove ${agent.name}?`,
+              message: "It loses access to JustRefresh and has to ask for approval again to reconnect.",
+              confirmLabel: "Remove agent",
+              danger: true,
+            })) && act("removeAgent", { id: agent.id })
+          }>Remove</button>
       </div>
       <div className="row small">
         {allScopes.map((s) => (
@@ -212,7 +225,15 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
         <Toggle
           checked={agent.trustedActivation}
           label={<span className="small">Trusted activation <span className="muted">(activate/delete its own rules without per-request approval)</span></span>}
-          onChange={(on) => (!on || confirm("Allow this agent to activate its rules without asking you each time?")) && act("updateAgent", { id: agent.id, trustedActivation: on })}
+          onChange={async (on) =>
+            (!on ||
+              (await dialog.confirm({
+                title: `Trust ${agent.name} to activate rules?`,
+                message: "Its rules will start refreshing without asking you each time. You can turn this off again here.",
+                confirmLabel: "Trust agent",
+              }))) &&
+            act("updateAgent", { id: agent.id, trustedActivation: on })
+          }
         />
         <span className="spacer" />
         {agent.status === "pending" && scopes.length === 0 && <span className="small muted">Tick what this agent may do.</span>}

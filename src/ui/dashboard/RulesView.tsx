@@ -5,8 +5,10 @@ import { downloadJson, formatTime } from "../shared/format";
 import { Empty, ErrorBox, Toggle } from "../shared/components";
 import { patternToString } from "../../core/url-pattern";
 import type { Rule } from "../../core/types";
+import { useDialog } from "../shared/dialog";
 
 export function RulesView() {
+  const dialog = useDialog();
   const { data, error, reload } = useApi<Rule[]>("listRules", undefined, { pollMs: 5000 });
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -106,7 +108,14 @@ export function RulesView() {
                       <a className="btn small" href={`#/builder/${r.id}`} style={{ textDecoration: "none" }}>Edit</a>
                       <button className="small" onClick={() => act("duplicateRule", { id: r.id })}>Duplicate</button>
                       <button className="small" onClick={async () => downloadJson(`${r.id}.json`, await api("exportConfig", { ruleIds: [r.id] }))}>Export</button>
-                      <button className="small danger" onClick={() => confirm(`Delete rule "${r.name}"?`) && act("deleteRule", { id: r.id, expectedRevision: r.meta.revision })}>Delete</button>
+                      <button className="small danger" onClick={async () =>
+                          (await dialog.confirm({
+                            title: `Delete rule “${r.name}”?`,
+                            message: "Tabs it controls stop refreshing. This can't be undone; export your rules first if you may want it back.",
+                            confirmLabel: "Delete rule",
+                            danger: true,
+                          })) && act("deleteRule", { id: r.id, expectedRevision: r.meta.revision })
+                        }>Delete</button>
                     </div>
                   </td>
                 </tr>

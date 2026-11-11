@@ -7,6 +7,7 @@ import { ErrorBox, Field, Toggle } from "../shared/components";
 import { INTERVAL_PRESETS } from "../../core/defaults";
 import type { Rule, Settings } from "../../core/types";
 import type { ImportReport } from "../../integrations/json-import";
+import { useDialog } from "../shared/dialog";
 
 export function SettingsView() {
   const { data, error, reload } = useApi<{ settings: Settings }>("getOverview");
@@ -115,6 +116,7 @@ export function SettingsView() {
 function ImportExport({ onDone }: { onDone: () => void }) {
   const [json, setJson] = useState("");
   const [onDuplicate, setOnDuplicate] = useState<"rename" | "replace" | "skip">("rename");
+  const dialog = useDialog();
   const [activate, setActivate] = useState(false);
   const [includeSettings, setIncludeSettings] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -154,7 +156,13 @@ function ImportExport({ onDone }: { onDone: () => void }) {
         <button
           className="danger"
           onClick={async () => {
-            if (confirm("Reset ALL settings, rules, exclusions and agents to defaults? Export first if unsure.")) {
+            const ok = await dialog.confirm({
+              title: "Reset everything to defaults?",
+              message: "All settings, rules, exclusions and paired agents are deleted. This can't be undone; export first if you're unsure.",
+              confirmLabel: "Reset everything",
+              danger: true,
+            });
+            if (ok) {
               await api("resetConfig", { confirm: true });
               onDone();
             }
@@ -211,6 +219,7 @@ export function SiteAccess() {
   const [origins, setOrigins] = useState<string[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState("");
+  const dialog = useDialog();
   const [expanded, setExpanded] = useState(false);
   const rules = useApi<Rule[]>("listRules", undefined, { pollMs: 10_000 });
   const overview = useApi<{ tabs: { tab: { url: string }; status: string }[] }>("getOverview", undefined, { pollMs: 5000 });
@@ -258,7 +267,13 @@ export function SiteAccess() {
 
   const remove = async (list: string[], what: string) => {
     setError(null);
-    if (!confirm(`Remove JustRefresh's access to ${what}?\n\nRules and tabs on ${list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing unless they are set to refresh without protection, and page conditions will report "unknown".`)) return;
+    const ok = await dialog.confirm({
+      title: `Remove access to ${what}?`,
+      message: `Tabs and rules on ${list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing (unless set to refresh without protection), and page conditions will report “unknown”.`,
+      confirmLabel: "Remove access",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await chrome.permissions.remove({ origins: list });
     } catch (e) {
@@ -269,8 +284,23 @@ export function SiteAccess() {
   const removeUnused = async () => {
     setError(null);
     const names = unused.map((s) => s.g.label);
-    const preview = names.slice(0, 10).join("\n") + (names.length > 10 ? `\n…and ${names.length - 10} more` : "");
-    if (!confirm(`Remove access to ${names.length} site${names.length === 1 ? "" : "s"} that no running tab or rule uses?\n\n${preview}\n\nJustRefresh asks again the next time you turn on refresh there.`)) return;
+    const ok = await dialog.confirm({
+      title: `Remove access to ${names.length} unused site${names.length === 1 ? "" : "s"}?`,
+      message: (
+        <>
+          <p>No running tab or rule uses {names.length === 1 ? "it" : "them"}. JustRefresh asks again the next time you turn on refresh there.</p>
+          <ul>
+            {names.slice(0, 10).map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+          {names.length > 10 && <p>…and {names.length - 10} more.</p>}
+        </>
+      ),
+      confirmLabel: "Remove access",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await chrome.permissions.remove({ origins: unused.flatMap((s) => s.g.origins) });
     } catch (e) {

@@ -139,3 +139,13 @@ body.popup { width: 380px; }
 .sticky { position: sticky; top: 12px; }
 .site-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .site-list + button.link { align-self: flex-start; }
+
+/* In-page dialogs (shared/dialog.tsx) */
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 1000; }
+.dialog { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; width: min(440px, 100%); max-height: calc(100vh - 32px); overflow: auto; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .3); }
+.dialog h3 { margin: 0; font-size: 15px; }
+.dialog-message { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.dialog-message p { margin: 0 0 6px; }
+.dialog-message ul { margin: 4px 0; padding-left: 18px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+button.danger-solid { background: var(--error); color: var(--error-bg); border-color: var(--error); }

@@ -5,6 +5,7 @@ import { formatDuration, formatTime } from "../shared/format";
 import { ErrorBox, StatusPill, Toggle } from "../shared/components";
 import { FAST_INTERVAL_PRESETS, INTERVAL_PRESETS } from "../../core/defaults";
 import type { SafetyConfig, Settings, TabInfo, TabOverride, TabRuntime } from "../../core/types";
+import { useDialog } from "../shared/dialog";
 
 interface TabState {
   tab: TabInfo;
@@ -47,6 +48,7 @@ export function Popup() {
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState<string | null>(null);
   const now = useNow(1000);
+  const dialog = useDialog();
 
   useEffect(() => {
     void chrome.tabs.query({ active: true, currentWindow: true }).then(([t]) => setTabId(t?.id ?? null));
@@ -151,7 +153,13 @@ export function Popup() {
   const refreshNow = async () => {
     const r = (await run("refreshNow", { tabId })) as { refreshed: boolean; reason?: string } | null;
     if (r && !r.refreshed) {
-      if (confirm(`${r.reason ?? "Refresh blocked"}.\n\nRefresh anyway? Unsaved changes may be lost.`)) {
+      const ok = await dialog.confirm({
+        title: "Refresh anyway?",
+        message: `${r.reason ?? "Refresh blocked"}. Refreshing now may lose unsaved changes on this page.`,
+        confirmLabel: "Refresh anyway",
+        danger: true,
+      });
+      if (ok) {
         await run("refreshNow", { tabId, force: true });
       }
     }
@@ -281,7 +289,14 @@ export function Popup() {
             {rt?.status === "paused_unsaved" && (
               <div className="notice small row">
                 <span>Possible unsaved changes on this page.</span>
-                <button className="small" onClick={() => confirm("Refresh even though changes may be lost?") && run("allowUnsavedOnce", { tabId })}>Refresh anyway</button>
+                <button className="small" onClick={async () =>
+                    (await dialog.confirm({
+                      title: "Refresh anyway?",
+                      message: "This page may have unsaved changes. Refreshing will lose them.",
+                      confirmLabel: "Refresh anyway",
+                      danger: true,
+                    })) && run("allowUnsavedOnce", { tabId })
+                  }>Refresh anyway</button>
               </div>
             )}
 
