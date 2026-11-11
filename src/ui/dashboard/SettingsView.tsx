@@ -307,9 +307,9 @@ function accessSummary(sites: SiteEntry[], unused: number, loaded: boolean): str
 /** Confirm, then remove access; a failure goes to `setError`. */
 function useAccessRemoval(setError: (e: unknown) => void) {
   const dialog = useDialog();
-  const removeAfter = async (confirmed: Promise<boolean>, origins: string[]) => {
+  const removeAfter = async (ask: () => Promise<boolean>, origins: string[]) => {
     setError(null);
-    if (!(await confirmed)) return;
+    if (!(await ask())) return;
     try {
       await chrome.permissions.remove({ origins });
     } catch (e) {
@@ -318,7 +318,8 @@ function useAccessRemoval(setError: (e: unknown) => void) {
   };
   const remove: RemoveAccess = (list, what) =>
     removeAfter(
-      dialog.confirm({
+      () =>
+        dialog.confirm({
         title: `Remove access to ${what}?`,
         message: `Tabs and rules on ${list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing (unless set to refresh without protection), and page conditions will report “unknown”.`,
         confirmLabel: "Remove access",
@@ -329,7 +330,8 @@ function useAccessRemoval(setError: (e: unknown) => void) {
   const removeUnused = (unused: SiteEntry[]) => {
     const names = unused.map((s) => s.g.label);
     return removeAfter(
-      dialog.confirm({
+      () =>
+        dialog.confirm({
         title: `Remove access to ${plural(names.length, "unused site")}?`,
         message: (
           <>

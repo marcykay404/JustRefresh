@@ -44,6 +44,9 @@ describe("parseImport", () => {
     expect(out.settings).toEqual({ paused: true });
     expect(out.warnings.some((w) => /newer than supported/.test(w))).toBe(true);
     expect(out.warnings.some((w) => /Skipped exclusion/.test(w))).toBe(true);
-    expect(parseImport(bundle(), opts).settings).toBeUndefined();
+    const plain = parseImport(bundle(), opts);
+    expect(Object.keys(plain).sort()).toEqual(["errors", "exclusions", "fatal", "rules", "settings", "warnings"]);
+    expect(plain.settings).toBeUndefined();
+    expect(Object.keys(parseImport("[", opts)).sort()).toEqual(["errors", "exclusions", "fatal", "rules", "warnings"]);
   });
 });

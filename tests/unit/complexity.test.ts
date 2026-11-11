@@ -12,6 +12,15 @@ it("no function is more complex than allowed", async () => {
   expect(compare(offenders, readBaseline())).toEqual([]);
 }, 60_000);
 
+it("the limits are 15 and nothing is excused: the baseline stays empty", async () => {
+  const { ESLint } = await import("eslint");
+  const config = await new ESLint({ cwd: process.cwd() }).calculateConfigForFile("src/any.ts");
+  expect(config.rules.complexity).toEqual([2, { max: 15 }]);
+  expect(config.rules["sonarjs/cognitive-complexity"]).toEqual([2, 15]);
+  // Simplify a function instead of listing it here.
+  expect(readBaseline()).toEqual({ cyclomatic: {}, cognitive: {} });
+});
+
 describe("the ratchet", () => {
   const base = { cyclomatic: { "a.ts | function a()": 20 }, cognitive: {} };
   it("passes when nothing changed", () => {

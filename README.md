@@ -78,7 +78,8 @@ cyclomatic complexity (ESLint `complexity`) and cognitive complexity
 on any function over the limit, and the limits can't be switched off with an
 inline comment. `complexity-baseline.json` is a ratchet for exceptions: a
 listed function may only get simpler, and `complexity:update` only lowers or
-removes entries, never adds one. It is empty: no function is over.
+removes entries, never adds one. A test keeps it empty, so every function is
+within the limits.
 
 **Bundle.** The service worker uses `zod/mini` (via `src/core/zod.ts`) and
 ships the generated JSON Schemas as package files read on demand, instead of
