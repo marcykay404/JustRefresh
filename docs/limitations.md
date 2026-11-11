@@ -7,8 +7,13 @@
   is persisted and alarms wake it. The in-memory per-tab lock exists only
   while the worker is alive; the persisted `pendingReload` guard and
   generation tokens cover restarts.
-* **Unsaved changes.** Detection covers native form controls (value vs.
-  default value) and marks edited `contenteditable` regions as `unknown`.
+* **Unsaved changes.** Detection covers native form controls the user
+  actually edited (trusted input/change events) whose value differs from the
+  default, and marks edited `contenteditable` regions as `unknown`. Values set
+  by the page's own scripts are not the user's work and are ignored. When the
+  content script was injected into an already-open page, earlier edits cannot
+  be told apart from script-set values, so changed fields are `unknown` until
+  the next load.
   Application-level state (e.g. editors with custom models, unsent chat
   drafts kept in JS) may not be detectable. Forms removed from the DOM or
   submitted are treated as saved.

@@ -166,3 +166,37 @@ describe("Scenario G: agent integration & security", () => {
     expect(await env.service.call(env.user, "getRule", { id: r.id })).toBeTruthy();
   });
 });
+
+describe("temporary tab exclusion (FR-01)", () => {
+  it("restores the tab's own settings when the tab is included again", async () => {
+    const env = createApiEnv();
+    env.browser.addTab(7, "https://news.test/");
+    await env.service.call(env.user, "startTab", { tabId: 7, intervalSeconds: 45 });
+
+    await env.service.call(env.user, "excludeTab", { tabId: 7 });
+    expect(await env.runtime.get(7)).toMatchObject({ status: "excluded" });
+    expect(env.alarms.alarms.size).toBe(0);
+
+    const state = (await env.service.call(env.user, "includeTab", { tabId: 7 })) as { statusLabel: string };
+    expect((await env.config.get()).tabOverrides["7"]).toMatchObject({ mode: "custom", intervalSeconds: 45 });
+    expect(state.statusLabel).toBe("Scheduled");
+    expect(env.alarms.alarms.size).toBe(1);
+  });
+
+  it("keeps a paused tab paused after exclude → include, and clears a tab that had no settings", async () => {
+    const env = createApiEnv();
+    env.browser.addTab(7, "https://news.test/");
+    env.browser.addTab(8, "https://other.test/");
+    await env.service.call(env.user, "startTab", { tabId: 7, intervalSeconds: 60 });
+    await env.service.call(env.user, "pauseTab", { tabId: 7 });
+
+    await env.service.call(env.user, "excludeTab", { tabId: 7 });
+    await env.service.call(env.user, "excludeTab", { tabId: 7 }); // twice: must not lose the saved settings
+    await env.service.call(env.user, "includeTab", { tabId: 7 });
+    expect((await env.config.get()).tabOverrides["7"]).toMatchObject({ mode: "custom", intervalSeconds: 60, paused: true });
+
+    await env.service.call(env.user, "excludeTab", { tabId: 8 });
+    await env.service.call(env.user, "includeTab", { tabId: 8 });
+    expect((await env.config.get()).tabOverrides["8"]).toBeUndefined();
+  });
+});

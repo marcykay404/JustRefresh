@@ -44,42 +44,94 @@ describe("DOM conditions", () => {
 });
 
 describe("ActivityMonitor", () => {
+  // jsdom events are never trusted and jsdom documents are already loaded, so
+  // tests state explicitly which events count as the user's and when monitoring began.
+  const asUser = { isUserEvent: () => true, lateStart: false };
+  const userInput = (el: Element, type = "input") => el.dispatchEvent(new Event(type, { bubbles: true }));
+
   it("tracks dirty state conservatively without exposing values", () => {
-    const m = new ActivityMonitor(document);
+    const m = new ActivityMonitor(document, asUser);
     m.start();
     expect(m.snapshot().dirty).toBe("clean");
     const input = document.getElementById("name") as HTMLInputElement;
     input.value = "Bob";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    userInput(input);
     const snap = m.snapshot();
     expect(snap.dirty).toBe("dirty");
     expect(snap.sinceInputMs).not.toBeNull();
     expect(JSON.stringify(snap)).not.toContain("Bob");
     input.value = "Ann";
     expect(m.snapshot().dirty).toBe("clean");
-    (document.getElementById("c") as HTMLInputElement).checked = true;
+    const box = document.getElementById("c") as HTMLInputElement;
+    box.checked = true;
+    userInput(box, "change");
     expect(m.snapshot().dirty).toBe("dirty");
   });
+
+  it("ignores values set by the page's own scripts (e.g. GitHub) and untouched drop-downs", () => {
+    document.body.innerHTML = `<form>
+      <select id="plain"><option>a</option><option>b</option></select>
+      <select id="disabledFirst"><option disabled>pick</option><option>a</option></select>
+      <input id="byScript"><input type="checkbox" id="box"></form>`;
+    const m = new ActivityMonitor(document, { lateStart: false }); // real isTrusted check
+    m.start();
+    (document.getElementById("byScript") as HTMLInputElement).value = "filled by page script";
+    (document.getElementById("box") as HTMLInputElement).checked = true;
+    // Frameworks often dispatch synthetic input events after setting a value: still not the user.
+    userInput(document.getElementById("byScript")!);
+    expect(m.snapshot().dirty).toBe("clean");
+    expect(m.snapshot().sinceInputMs).toBeNull();
+  });
+
+  it("a drop-down the user changed is dirty", () => {
+    document.body.innerHTML = `<select id="s"><option>a</option><option>b</option></select>`;
+    const m = new ActivityMonitor(document, asUser);
+    m.start();
+    const sel = document.getElementById("s") as HTMLSelectElement;
+    expect(m.snapshot().dirty).toBe("clean");
+    sel.selectedIndex = 1;
+    userInput(sel, "change");
+    expect(m.snapshot().dirty).toBe("dirty");
+    sel.selectedIndex = 0;
+    expect(m.snapshot().dirty).toBe("clean");
+  });
+
+  it("monitoring that started after page load reports changed fields as unknown, never clean", () => {
+    document.body.innerHTML = `<select id="plain"><option>a</option><option>b</option></select><input id="q">`;
+    const m = new ActivityMonitor(document, { isUserEvent: () => true, lateStart: true });
+    m.start();
+    expect(m.snapshot().dirty).toBe("clean"); // untouched drop-down is not a change
+    (document.getElementById("q") as HTMLInputElement).value = "typed before we were injected?";
+    expect(m.snapshot().dirty).toBe("unknown");
+  });
+
   it("submitted forms are not dirty; contenteditable edits are unknown", () => {
-    const m = new ActivityMonitor(document);
+    const m = new ActivityMonitor(document, asUser);
     m.start();
     const input = document.getElementById("name") as HTMLInputElement;
     input.value = "Bob";
+    userInput(input);
     document.getElementById("f")!.dispatchEvent(new Event("submit", { bubbles: true }));
     expect(m.snapshot().dirty).toBe("clean");
     const ed = document.createElement("div");
     ed.contentEditable = "true";
     Object.defineProperty(ed, "isContentEditable", { value: true });
     document.body.appendChild(ed);
-    ed.dispatchEvent(new Event("input", { bubbles: true }));
+    userInput(ed);
     expect(m.snapshot().dirty).toBe("unknown");
   });
-  it("records key timing only for editable targets", () => {
-    const m = new ActivityMonitor(document);
+
+  it("records key timing only for the user's keys on editable targets", () => {
+    const m = new ActivityMonitor(document, asUser);
     m.start();
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "j", bubbles: true }));
     expect(m.snapshot().sinceKeyMs).toBeNull();
     document.getElementById("name")!.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
     expect(m.snapshot().sinceKeyMs).not.toBeNull();
+
+    const strict = new ActivityMonitor(document, { lateStart: false });
+    strict.start();
+    document.getElementById("name")!.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    expect(strict.snapshot().sinceKeyMs).toBeNull(); // synthetic, not the user
   });
 });

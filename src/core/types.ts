@@ -1,5 +1,5 @@
 /**
- * Core domain types for Smart Auto Refresh.
+ * Core domain types for JustRefresh.
  *
  * Three kinds of data are kept strictly separate:
  *  - Rule definitions & configuration (persisted in chrome.storage.local)
@@ -204,6 +204,12 @@ export interface TabOverride {
   /** Restoration hints (tab IDs are not stable across restarts). */
   restore: { url: string; windowIndex: number; tabIndex: number; title?: string };
   createdAt: number;
+  /**
+   * `excluded` mode only: the tab-specific configuration in effect before the
+   * tab was excluded. Restored by "include" so a temporary exclusion never
+   * deletes the user's settings (FR-01).
+   */
+  previous?: Omit<TabOverride, "previous">;
 }
 
 /* ------------------------------------------------------------------ */

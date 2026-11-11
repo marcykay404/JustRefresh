@@ -770,10 +770,26 @@ export class RuleEngine {
         if (!decision.allowed) return { refreshed: false, reason: decision.reason };
       }
       await this.reloadTab(tabId, false);
+      if (res.kind === "controller") await this.restartCountdown(tabId, res.controller);
       const actor = opts.actor?.type === "agent" ? "agent" : "user";
       this.log({ ruleId: res.kind === "controller" ? res.controller.id : null, tabId, url: tab.url, trigger: "manual", action: "refresh", outcome: "ok", actor, reason: opts.force ? "forced" : undefined });
       return { refreshed: true };
     });
+  }
+
+  /**
+   * After a manual refresh the next automatic one comes a full interval
+   * later. Only an active schedule is touched (never restarts a paused,
+   * stopped or completed tab — FR-02), and the due time only moves later,
+   * so waits such as "outside active hours" are kept.
+   */
+  private async restartCountdown(tabId: number, rule: Rule) {
+    const rt = await this.deps.stores.runtime.get(tabId);
+    const due = this.nextDue(rule, this.now());
+    if (!rt || rt.status !== "scheduled" || rt.nextDueAt === null || due === null) return;
+    const next = { ...rt, nextDueAt: Math.max(rt.nextDueAt, due) };
+    await this.deps.stores.runtime.put(next);
+    await this.setAlarm(next);
   }
 
   async refreshAll(opts: { force?: boolean } = {}): Promise<{ refreshed: number[]; skipped: { tabId: number; reason: string }[] }> {

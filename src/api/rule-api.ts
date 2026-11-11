@@ -556,7 +556,11 @@ export class RuleManagementService {
         scope: null,
         params: tabId,
         handler: async (_a, p) => {
-          await this.updateOverride(p.tabId, (_o, tab) => this.newOverride(tab, { mode: "excluded" }));
+          // Keep the tab's own settings so "include" can restore them.
+          await this.updateOverride(p.tabId, (o, tab) => {
+            const previous = o?.mode === "custom" ? o : o?.previous;
+            return this.newOverride(tab, { mode: "excluded", ...(previous ? { previous } : {}) });
+          });
           return this.tabState(p.tabId);
         },
       }),
@@ -564,7 +568,7 @@ export class RuleManagementService {
         scope: null,
         params: tabId,
         handler: async (_a, p) => {
-          await this.updateOverride(p.tabId, (o) => (o?.mode === "excluded" ? undefined : o));
+          await this.updateOverride(p.tabId, (o) => (o?.mode === "excluded" ? o.previous : o));
           return this.tabState(p.tabId);
         },
       }),

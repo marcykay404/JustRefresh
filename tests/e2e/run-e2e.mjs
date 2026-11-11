@@ -225,7 +225,7 @@ await test("popup and dashboard render", async () => {
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 380, height: 600 });
   await popup.goto(`chrome-extension://${extId}/popup.html`);
-  await popup.getByText("Smart Auto Refresh").first().waitFor();
+  await popup.getByText("JustRefresh").first().waitFor();
   await popup.screenshot({ path: join(root, "test-results", "popup.png") });
   await popup.close();
   await page.close();

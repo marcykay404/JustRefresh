@@ -53,7 +53,7 @@ export function Dashboard() {
     <div className="layout">
       <nav className="sidebar" aria-label="Sections">
         <div className="brand">
-          <img src="icons/icon48.png" alt="" /> Smart Auto Refresh
+          <img src="icons/icon48.png" alt="" /> JustRefresh
         </div>
         {NAV.map((n) => (
           <a key={n.path} href={`#${n.path}`} className={`/${section ?? "tabs"}` === n.path ? "active" : ""}>
