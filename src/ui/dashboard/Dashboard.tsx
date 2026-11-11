@@ -22,7 +22,7 @@ const NAV = [
 
 export function Dashboard() {
   const [route] = useHashRoute();
-  const overview = useApi<{ pendingApprovals: number; pendingAgents: number; settings: { paused: boolean; enabled: boolean } }>("getOverview", undefined, { pollMs: 5000 });
+  const overview = useApi<{ pendingApprovals: number; pendingAgents: number; settings: { paused: boolean; enabled: boolean } }>("getOverview", undefined, { live: ["config"] });
   const [pathPart, query = ""] = route.split("?");
   const [, section, arg] = pathPart.split("/");
   const params = new URLSearchParams(query);

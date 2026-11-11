@@ -39,7 +39,12 @@
 * **Runtime execution state** — `chrome.storage.session["rt:<tabId>"]`:
   survives service-worker termination, cleared on browser restart (tab ids
   change). Contains status, generation, timestamps, counters, pending reload.
-* **UI state** — React component state only.
+* **UI state** — React component state only. The popup and dashboard
+  don't poll: they re-fetch when Chrome reports a change they show
+  (`storage.onChanged` for `config`, `rt:*`, `history`, `audit` and
+  `bridge.status`; `chrome.tabs` and `chrome.permissions` events), coalesced
+  over 100 ms, and not while the page is hidden (`src/ui/shared/live.ts`).
+  So an open dashboard no longer wakes the service worker every few seconds.
 
 ## Evaluation lifecycle (one cycle)
 

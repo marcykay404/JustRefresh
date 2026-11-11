@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { subscribe, type Topic } from "./live";
 
 /** Whether the page is visible (false while its tab is in the background or minimized). */
 export function usePageVisible(): boolean {
@@ -26,15 +27,20 @@ export function useNow(intervalMs = 1000): number {
 }
 
 /**
- * Fetch an API method and optionally poll it. Polling pauses while the page
- * is hidden — every poll wakes the service worker — and catches up with an
- * immediate fetch when the page becomes visible again.
+ * Fetch an API method and keep it current.
+ *
+ * `live`: re-fetch when one of these kinds of data changes (Chrome tells the
+ * page; see live.ts), instead of polling. `pollMs`: poll as well, for data
+ * Chrome has no event for. Either way, nothing is fetched while the page is
+ * hidden (each fetch wakes the service worker); it catches up as soon as the
+ * page is visible again.
  */
-export function useApi<T>(method: string, params?: unknown, opts: { pollMs?: number; skip?: boolean } = {}) {
+export function useApi<T>(method: string, params?: unknown, opts: { pollMs?: number; skip?: boolean; live?: readonly Topic[] } = {}) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(!opts.skip);
   const key = JSON.stringify(params ?? null);
+  const live = (opts.live ?? []).join(",");
   const alive = useRef(true);
 
   const reload = useCallback(async () => {
@@ -54,8 +60,8 @@ export function useApi<T>(method: string, params?: unknown, opts: { pollMs?: num
   }, [method, key, opts.skip]);
 
   const visible = usePageVisible();
-  // One-off fetches ignore visibility; polled ones only run while visible.
-  const active = !opts.pollMs || visible;
+  // One-off fetches ignore visibility; kept-current ones only run while visible.
+  const active = (!opts.pollMs && !live) || visible;
 
   useEffect(() => {
     alive.current = true;
@@ -66,11 +72,13 @@ export function useApi<T>(method: string, params?: unknown, opts: { pollMs?: num
     }
     void reload();
     const t = opts.pollMs ? setInterval(reload, opts.pollMs) : undefined;
+    const off = live ? subscribe(live.split(",") as Topic[], () => void reload()) : undefined;
     return () => {
       alive.current = false;
       if (t) clearInterval(t);
+      off?.();
     };
-  }, [reload, opts.pollMs, active]);
+  }, [reload, opts.pollMs, active, live]);
 
   return { data, error, loading, reload, setData };
 }

@@ -11,7 +11,7 @@ import type { ImportReport } from "../../integrations/json-import";
 import { useDialog } from "../shared/dialog";
 
 export function SettingsView() {
-  const { data, error, reload } = useApi<{ settings: Settings }>("getOverview");
+  const { data, error, reload } = useApi<{ settings: Settings }>("getOverview", undefined, { live: ["config"] });
   const [actionError, setActionError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   const s = data?.settings;
@@ -254,8 +254,8 @@ export function SiteAccess() {
   const [filter, setFilter] = useState("");
   const dialog = useDialog();
   const [expanded, setExpanded] = useState(false);
-  const rules = useApi<Rule[]>("listRules", undefined, { pollMs: 10_000 });
-  const overview = useApi<{ tabs: { tab: { url: string }; status: string }[] }>("getOverview", undefined, { pollMs: 5000 });
+  const rules = useApi<Rule[]>("listRules", undefined, { live: ["config"] });
+  const overview = useApi<{ tabs: { tab: { url: string }; status: string }[] }>("getOverview", undefined, { live: ["runtime", "config", "tabs"] });
 
   useEffect(() => {
     const load = () => void chrome.permissions.getAll().then((p) => setOrigins([...(p.origins ?? [])].sort()));

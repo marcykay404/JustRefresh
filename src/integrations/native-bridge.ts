@@ -8,6 +8,7 @@
  * permission. Each MCP client is a distinct agent that must be approved.
  */
 import type { RuleManagementService } from "../api/rule-api";
+import { BRIDGE_STATUS_KEY } from "../storage/keys";
 import { handleAgentMessage, RateLimiter, AGENT_PROTOCOL } from "./external-messaging";
 
 export const NATIVE_HOST = "com.smartautorefresh.bridge";
@@ -34,7 +35,25 @@ export function bridgeStatus() {
   return { connected: port !== null, wanted, restartRequired };
 }
 
+/** Keep a copy where the dashboard can watch it (storage.onChanged) instead of polling. */
+let published = "";
+function publishStatus() {
+  const s = bridgeStatus();
+  const json = JSON.stringify(s);
+  if (json === published) return;
+  published = json;
+  void chrome.storage?.session?.set({ [BRIDGE_STATUS_KEY]: s }).catch(() => undefined);
+}
+
 export async function setBridgeEnabled(service: RuleManagementService, enabled: boolean) {
+  try {
+    await applyBridgeEnabled(service, enabled);
+  } finally {
+    publishStatus();
+  }
+}
+
+async function applyBridgeEnabled(service: RuleManagementService, enabled: boolean) {
   wanted = enabled;
   if (!enabled) {
     restartRequired = false;
@@ -57,9 +76,11 @@ function connect(service: RuleManagementService) {
   } catch (e) {
     console.warn("Native bridge unavailable", e);
     port = null;
+    publishStatus();
     return;
   }
   retry = 0;
+  publishStatus();
   port.onMessage.addListener((raw: unknown) => {
     const req = raw as BridgeRequest;
     if (!req || typeof req.id !== "string" || !req.client || typeof req.client.id !== "string") return;
@@ -75,6 +96,7 @@ function connect(service: RuleManagementService) {
     const err = chrome.runtime.lastError?.message;
     if (err) console.warn("Native bridge disconnected:", err);
     port = null;
+    publishStatus();
     if (wanted && retry < 5) {
       const delay = 2000 * 2 ** retry++;
       setTimeout(() => wanted && !port && connect(service), delay);
