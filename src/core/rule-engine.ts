@@ -302,7 +302,7 @@ export class RuleEngine {
    * service-worker wake, and after configuration changes. Recreates missing
    * alarms, removes stale ones, and staggers overdue schedules.
    */
-  async reconcileAll(reason: "startup" | "wake" | "config"): Promise<void> {
+  async reconcileAll(reason: "startup" | "wake" | "config", opts: { before?: Config } = {}): Promise<void> {
     const [config, tabs, runtimes, alarms] = await Promise.all([
       this.deps.stores.config.get(),
       this.deps.browser.listTabs(),
@@ -320,13 +320,18 @@ export class RuleEngine {
     const alarmMap = new Map(alarms.map((a) => [a.name, a.scheduledTime]));
     let slot = 0;
     for (const tab of tabs) {
+      const res = resolveTab(tab, config);
+      // After a change (an agent's or the user's), only tabs whose controlling
+      // rule or state the change affects need a look: the rest are already in
+      // sync, and re-checking them costs a lock and a storage write each.
+      if (opts.before && resolutionKey(resolveTab(tab, opts.before)) === resolutionKey(res)) continue;
       await this.withLock(tab.id, async () => {
         const rt = await this.deps.stores.runtime.get(tab.id);
-        const res = resolveTab(tab, config);
         const next = this.sync(rt, tab, res, config, { restoring: reason !== "config", slot });
         if (next.nextDueAt !== null) slot++;
         if (next.status === "idle" && !rt) return; // nothing to track
-        await this.deps.stores.runtime.put(next);
+        // Unchanged (the common case on wake): no write, so no storage event either.
+        if (!rt || JSON.stringify(rt) !== JSON.stringify(next)) await this.deps.stores.runtime.put(next);
         const existing = alarmMap.get(alarmName(tab.id));
         if (next.nextDueAt === null) {
           if (existing !== undefined) await this.deps.alarms.clear(alarmName(tab.id));
@@ -1020,6 +1025,22 @@ export class RuleEngine {
   }
 
   isPausedStatus = isPaused;
+}
+
+/**
+ * What decides a tab's run: which kind of resolution, which controller (and
+ * its revision), from where, and why. Equal keys mean sync() has nothing to do.
+ */
+function resolutionKey(r: Resolution): string {
+  const c = r.kind === "controller" || r.kind === "paused" ? r.controller : null;
+  return JSON.stringify([
+    r.kind,
+    c?.id ?? null,
+    c?.meta.revision ?? null,
+    c ? c.trigger : null, // fast intervals switched off change the effective trigger, not the revision
+    r.kind === "controller" ? r.source : null,
+    "reason" in r ? r.reason : null,
+  ]);
 }
 
 /** Status line for a rule that waits for its trigger (not a timer). */
