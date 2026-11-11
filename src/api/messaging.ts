@@ -4,8 +4,12 @@ import { ApiError } from "./permissions";
 
 export function isExtensionPage(sender: chrome.runtime.MessageSender): boolean {
   if (sender.id !== chrome.runtime.id) return false;
-  if (sender.tab) return false; // content scripts are never trusted callers
+  // Content scripts share our extension id but run on web-page URLs; only
+  // documents served from the extension's own origin are trusted. (Extension
+  // pages opened in a tab, like the dashboard, do carry `sender.tab`.)
   const base = chrome.runtime.getURL("");
+  const origin = (sender as { origin?: string }).origin;
+  if (origin !== undefined && `${origin}/` !== base) return false;
   return typeof sender.url === "string" && sender.url.startsWith(base);
 }
 

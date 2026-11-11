@@ -320,7 +320,7 @@ export function RuleBuilder({ ruleId, initialUrl }: { ruleId?: string; initialUr
 
               <div className="card col">
                 <div className="section-title">SAFETY & LIMITS</div>
-                <span className="small muted">Unset values use the global defaults from Settings.</span>
+                <span className="small muted">"Default" values are filled from Settings when the rule is saved.</span>
                 <div className="row">
                   <TriToggle label="Pause while typing" value={safety.pauseWhileTyping} onChange={(v) => set({ safety: { ...safety, pauseWhileTyping: v } })} />
                   <TriToggle label="Protect unsaved changes" value={safety.protectUnsavedChanges} onChange={(v) => set({ safety: { ...safety, protectUnsavedChanges: v } })} />

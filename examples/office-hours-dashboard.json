@@ -1,0 +1,7 @@
+{
+  "name": "Ops dashboard during office hours",
+  "target": { "patterns": ["*.grafana.example.com"], "exclusions": ["https://grafana.example.com/admin/*"] },
+  "trigger": { "type": "interval", "seconds": 300, "randomMaxSeconds": 360 },
+  "schedule": { "days": [1, 2, 3, 4, 5], "startTime": "08:00", "endTime": "18:00" },
+  "safety": { "onActivityUnavailable": "refresh" }
+}

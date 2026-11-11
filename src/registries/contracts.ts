@@ -78,7 +78,7 @@ export interface ActionContext {
 export interface ActionResult {
   ok: boolean;
   message?: string;
-  /** Ends the current run (refresh loop stops). */
+  /** Ends the current run: later non-disruptive actions (notify, log) still run, refreshes are skipped. */
   terminal?: boolean;
   /** The action reloaded the tab. */
   reloaded?: boolean;

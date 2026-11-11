@@ -335,9 +335,11 @@ export class RuleEngine {
 
   async onTabRemoved(tabId: number) {
     await this.withLock(tabId, () => this.forgetTab(tabId));
-    await this.deps.stores.config.update((c) => {
-      delete c.tabOverrides[String(tabId)];
-    });
+    if ((await this.deps.stores.config.get()).tabOverrides[String(tabId)]) {
+      await this.deps.stores.config.update((c) => {
+        delete c.tabOverrides[String(tabId)];
+      });
+    }
   }
 
   /** Our own reload finished loading: count it and evaluate post-navigation. */

@@ -154,7 +154,10 @@ export function Popup() {
                 disabled={tabExcluded}
                 label="Auto refresh"
                 onChange={(on) => {
-                  if (on) enable(currentInterval);
+                  // A rule-controlled tab is resumed under its rule (keeping its conditions);
+                  // only uncontrolled tabs get tab-specific settings.
+                  if (on && s.resolution.source === "rule") void run("resumeTab", { tabId });
+                  else if (on) enable(currentInterval);
                   else void run("stopTab", { tabId });
                 }}
               />

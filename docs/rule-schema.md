@@ -1,0 +1,100 @@
+# Rule schema (v1)
+
+Authoritative JSON Schema: [`schemas/rule.schema.json`](../schemas/rule.schema.json)
+(also returned by the `getCapabilities` API as `ruleSchema`). Runtime
+validation is stricter than the JSON Schema: it also checks URL pattern
+syntax, regex safety, CSS selector syntax (where a DOM is available),
+condition depth (≤ 6) and size (≤ 50 nodes), refresh loops, and
+cross-field rules. Unknown fields and unknown types are rejected.
+
+```jsonc
+{
+  "schemaVersion": 1,              // optional on input
+  "id": "rule-001",                // optional; generated if absent. [A-Za-z0-9._-]{1,64}
+  "name": "Monitor availability",  // required
+  "description": "…",              // optional
+  "enabled": true,                 // default true (forced false for agent/imported drafts)
+  "priority": 100,                 // -1000…1000, default 0; higher wins
+  "target": {
+    "type": "url",
+    "patterns":   ["https://example.com/products/*"],  // ≥1, see url-matching.md
+    "exclusions": []                                    // rule-local exclusions
+  },
+  "trigger": { "type": "interval", "seconds": 30, "randomMaxSeconds": 90 },
+  "stopWhen": { /* condition tree, optional */ },
+  "actions": {
+    "onMatched":    [{ "type": "stopRefresh" }, { "type": "notify" }],   // default when stopWhen set
+    "onNotMatched": [{ "type": "refresh" }],                            // default for refreshing triggers
+    "onUnknown":    []                                                   // optional
+  },
+  "safety": {
+    "pauseWhileTyping": true,
+    "protectUnsavedChanges": true,
+    "inactivityGraceSeconds": 60,
+    "pauseOnMouse": false,
+    "pauseOnScroll": false,
+    "onUnknown": "pause",              // pause | skip | refresh | stop
+    "maxUnknownRetries": 3,
+    "onActivityUnavailable": "pause"   // pause | refresh
+  },
+  "limits": { "maxRefreshes": 100, "maxDurationSeconds": 3600, "stopAt": "2026-12-01T09:00:00Z" },
+  "schedule": { "days": [1,2,3,4,5], "startTime": "09:00", "endTime": "17:00" }
+}
+```
+
+Omitted `safety` fields take the global defaults **at save time**.
+`safety.maxRefreshes` is accepted for compatibility and normalized into
+`limits.maxRefreshes`. The API adds a read-only `meta` object
+(`createdAt`, `updatedAt`, `revision`, `origin`, `draft`).
+
+## Triggers
+
+| type | Fields | Fires on | Can refresh |
+|---|---|---|---|
+| `interval` | `seconds` (≥30), `randomMaxSeconds?` | chrome.alarms | yes |
+| `navigation` | — | page load completed | no (loop) |
+| `urlChange` | — | tab URL changed | no (loop) |
+| `startup` | — | extension start | yes |
+| `manual` | — | "Run now" only | yes |
+
+## Conditions
+
+All return `matched`, `not_matched` or `unknown` (never silently false).
+
+| type | Fields | Runs in |
+|---|---|---|
+| `dom.exists` | `selector`, `minCount?` | page |
+| `dom.missing` | `selector` | page |
+| `dom.text` | `selector?` (default `body`), `operator`, `value`, `caseSensitive?` | page |
+| `dom.attribute` | `selector`, `attribute`, `operator`, `value?` | page |
+| `url.match` | `pattern` | worker |
+| `time.after` / `time.before` | `at` (ISO timestamp or local `HH:MM`) | worker |
+| `refreshCount` | `operator` (`>= > <= < == !=`), `value` | worker |
+| `tab.status` | `value` (`loading`/`complete`) | worker |
+| `all` / `any` | `conditions[]` (1–20) | logical |
+| `not` | `condition` | logical |
+
+Text operators: `contains`, `not_contains`, `equals`, `not_equals`,
+`starts_with`, `ends_with`, `matches` (safe regex). Text is the visible text
+of the **first** matching element, whitespace-normalized, case-insensitive
+unless `caseSensitive`. If no element matches, text/attribute conditions are
+`not_matched`. Attribute operators: `exists`, `missing`, `equals`,
+`not_equals`, `contains`, `matches`.
+
+`unknown` happens when: no site access, page still loading, restricted URL,
+content script unavailable, timeout (3 s), invalid selector, unsafe regex.
+Logic: `all` → any `not_matched` wins, else any `unknown` → `unknown`;
+`any` → any `matched` wins, else any `unknown` → `unknown`; `not` keeps `unknown`.
+
+"Refresh **while** X" = `stopWhen: { "type": "not", "condition": X }`.
+
+## Actions
+
+| type | Fields | Notes |
+|---|---|---|
+| `refresh` | `bypassCache?` | Passes the safety gate first |
+| `stopRefresh` | `as?` (`completed`/`stopped`) | Terminal; later non-disruptive actions still run |
+| `pauseRefresh` | `minutes?` | Auto-resume after `minutes` |
+| `resumeRefresh` | — | |
+| `notify` | `title?`, `message?` | Desktop notification (click focuses the tab) |
+| `log` | `message?`, `level?` | Writes to history |

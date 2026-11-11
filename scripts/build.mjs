@@ -9,6 +9,11 @@ import { resolve } from "node:path";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const out = resolve(root, "dist");
 const alias = { "@": resolve(root, "src") };
+const onwarn = (w, warn) => {
+  // zod ships comments rollup can't place; harmless.
+  if (w.code === "INVALID_ANNOTATION" || /annotation that Rollup cannot interpret/.test(w.message)) return;
+  warn(w);
+};
 const common = { configFile: false, logLevel: "warn", resolve: { alias }, define: { "process.env.NODE_ENV": '"production"' } };
 
 rmSync(out, { recursive: true, force: true });
@@ -26,6 +31,7 @@ await build({
     target: "chrome120",
     sourcemap: false,
     rollupOptions: {
+      onwarn,
       input: { popup: resolve(root, "src/ui/popup.html"), dashboard: resolve(root, "src/ui/dashboard.html") },
       output: { entryFileNames: "assets/[name].js", chunkFileNames: "assets/[name]-[hash].js", assetFileNames: "assets/[name][extname]" },
     },
@@ -46,7 +52,7 @@ for (const [entry, file, format] of [
       target: "chrome120",
       minify: true,
       lib: { entry: resolve(root, entry), formats: [format], name: "sar", fileName: () => file },
-      rollupOptions: { output: { inlineDynamicImports: true } },
+      rollupOptions: { onwarn, output: { inlineDynamicImports: true } },
     },
   });
 }
