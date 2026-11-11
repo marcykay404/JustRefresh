@@ -339,7 +339,7 @@ export function Popup() {
             title="Paused on a submitted form"
             rt={rt}
             countdown={null}
-            subtitle={`Refreshing every ${intervalLabel(currentInterval)} resumes when this tab goes to another page`}
+            subtitle={`Refreshing every ${intervalLabel(currentInterval)} starts again when this tab goes to another page`}
           />
         ) : (
           <>
@@ -649,7 +649,7 @@ function RuleCard(p: {
       {active ? (
         <>
           {rt?.status === "paused_resubmit" ? (
-            <CountdownRow title={p.summary ?? "Refreshing"} rt={rt} countdown={null} subtitle="Paused on a submitted form until this tab goes to another page" />
+            <CountdownRow title={p.summary ?? "Refreshing"} rt={rt} countdown={null} subtitle="Paused on a submitted form. The rule carries on if this tab goes to another page it covers." />
           ) : (
             <>
               <CountdownRow title={p.summary ?? "Refreshing"} rt={rt} countdown={p.countdown} />

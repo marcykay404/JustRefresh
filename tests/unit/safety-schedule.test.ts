@@ -80,3 +80,15 @@ describe("state machine", () => {
     expect(() => transition(newRuntime(1, "u", 0), "refreshing")).toThrow(IllegalTransitionError);
   });
 });
+
+import { limitDeadline } from "@/core/schedule";
+
+describe("limitDeadline", () => {
+  it("is the earliest time-based limit, or null", () => {
+    expect(limitDeadline({}, { startedAt: 1000 })).toBeNull();
+    expect(limitDeadline({ maxRefreshes: 5 }, { startedAt: 1000 })).toBeNull();
+    expect(limitDeadline({ maxDurationSeconds: 60 }, { startedAt: 1000 })).toBe(61_000);
+    const stopAt = new Date(30_000).toISOString();
+    expect(limitDeadline({ maxDurationSeconds: 60, stopAt }, { startedAt: 1000 })).toBe(30_000);
+  });
+});

@@ -97,6 +97,15 @@ describe("recognising a form result page", () => {
     expect(detectFormResult("https://shop.test/order", nav("navigate"), () => store, now + 60_000, 11)).toBe(true);
   });
 
+  it("a form result restored after Memory Saver discarded the tab is still one; other restored pages aren't", () => {
+    const store = new MemStore();
+    submitted(store, "https://shop.test/order");
+    detectFormResult("https://shop.test/order", nav("navigate"), () => store, now, 11);
+    // Restoring a discarded tab counts as "navigate" with a new document.
+    expect(detectFormResult("https://shop.test/order", nav("navigate"), () => store, now + 3_600_000, 99, true)).toBe(true);
+    expect(detectFormResult("https://shop.test/other", nav("navigate"), () => store, now, 100, true)).toBe(false);
+  });
+
   it("copes with storage being unavailable or holding junk", () => {
     expect(detectFormResult("https://x.test/", nav("navigate"), () => { throw new Error("denied"); }, now)).toBe(false);
     const store = new MemStore();

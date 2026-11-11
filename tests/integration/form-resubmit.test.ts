@@ -127,14 +127,55 @@ describe("form results: paused without polling", () => {
     expect(env.browser.reloads).toEqual([7]);
   });
 
-  it("pauses again if the next page is also a form result", async () => {
+  it("a page load at the same address that is no longer a form result resumes and refreshes", async () => {
     const env = await setup();
     env.clock.advance(30_000);
     await env.fireDue();
-    await env.engine.onTabUpdated(7, { status: "complete" }); // e.g. another form submitted
+    env.page.activityByTab.set(7, quietActivity()); // e.g. opened fresh by the user or the site
+    await env.engine.onTabUpdated(7, { status: "complete" }); // no URL change
+    expect((await env.runtime.get(7))?.status).toBe("scheduled");
+    env.clock.advance(30_000);
+    await env.fireDue();
+    expect(env.browser.reloads).toEqual([7]);
+  });
+
+  it("a 'complete' event while still on the form result (e.g. history.pushState) keeps it paused, quietly", async () => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    for (let i = 0; i < 4; i++) await env.engine.onTabUpdated(7, { status: "complete" });
+    env.clock.advance(5 * 60_000);
+    await env.fireDue();
+    expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
+    expect(env.alarms.alarms.has("sar:tab:7")).toBe(false);
+    expect(env.browser.notifications).toHaveLength(1);
+    expect(env.browser.reloads).toEqual([]);
+  });
+
+  it("stays paused, with no timer, when the service worker wakes up", async () => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    await env.engine.reconcileAll("wake");
+    expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
+    expect(env.alarms.alarms.has("sar:tab:7")).toBe(false);
+  });
+
+  it("with a time limit, wakes once when the limit ends and stops", async () => {
+    const env = createApiEnv();
+    env.browser.addTab(7, "https://shop.test/order");
+    env.page.activityByTab.set(7, quietActivity({ formResult: true }));
+    await env.service.call(env.user, "startTab", { tabId: 7, intervalSeconds: 30 });
+    await env.config.update((c) => void (c.tabOverrides["7"]!.limits = { maxDurationSeconds: 120 }));
+    await env.engine.reconcileAll("config");
+    const started = (await env.runtime.get(7))!.startedAt;
     env.clock.advance(30_000);
     await env.fireDue();
     expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
+    expect(env.alarms.alarms.get("sar:tab:7")).toBe(started + 120_000);
+    env.clock.t = started + 120_000;
+    await env.fireDue();
+    expect((await env.runtime.get(7))?.status).toBe("completed");
     expect(env.browser.reloads).toEqual([]);
   });
 });

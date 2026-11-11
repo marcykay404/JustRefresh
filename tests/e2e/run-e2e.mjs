@@ -408,6 +408,29 @@ await test("a tab paused on a form page resumes by itself when you go to another
   await page.close();
 });
 
+await test("a form page unloaded by Memory Saver and restored is still never reloaded", async () => {
+  const page = await context.newPage();
+  await page.goto(`${base}/checkout`);
+  await Promise.all([page.waitForURL(`${base}/order`), page.click("#buy")]);
+  const posts = orderPosts;
+  const tabId = await tabIdFor(`${base}/order`);
+  await call("startTab", { tabId, intervalSeconds: 30 });
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "paused_resubmit", "paused on the form result");
+  const other = await context.newPage();
+  await other.goto(`${base}/x`);
+  const discarded = await sw.evaluate(async (id) => (await chrome.tabs.discard(id))?.id ?? id, tabId);
+  await sw.evaluate((id) => chrome.tabs.update(id, { active: true }), discarded);
+  await waitFor(async () => (await sw.evaluate((id) => chrome.tabs.get(id), discarded)).status === "complete", "restored");
+  await new Promise((r) => setTimeout(r, 500));
+  await fireAlarm(discarded);
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.equal(orderPosts, posts, "the form was not sent again after the restore");
+  assert.equal((await runtime(discarded))?.status, "paused_resubmit");
+  await call("stopTab", { tabId: discarded });
+  await other.close();
+});
+
 await test("popup and dashboard render", async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 900 });
