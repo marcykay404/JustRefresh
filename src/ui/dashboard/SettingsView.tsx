@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, requestOrigins } from "../shared/api";
 import { useApi } from "../shared/hooks";
+import { ALL_SITE_PATTERNS, groupOrigins, hasAllSites, type SiteGroup } from "../shared/site-access";
 import { downloadJson } from "../shared/format";
 import { ErrorBox, Field, Toggle } from "../shared/components";
 import { INTERVAL_PRESETS } from "../../core/defaults";
@@ -198,15 +199,6 @@ function ImportExport({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** "https://github.com/*" → "github.com"; wildcards and file URLs get readable labels. */
-function siteLabel(origin: string): { label: string; host: string | null } {
-  if (origin === "file:///*") return { label: "Local files (file://)", host: null };
-  const m = /^[a-z*]+:\/\/([^/]+)\//.exec(origin);
-  const host = m?.[1] ?? null;
-  if (!host || host === "*") return { label: `All websites (${origin})`, host: null };
-  return { label: origin, host: host.replace(/^\*\./, "") };
-}
-
 /**
  * Granted site access, per site, with removal. Chrome's own extension page
  * cannot revoke runtime-granted sites individually, so this is the place.
@@ -228,8 +220,16 @@ function SiteAccess() {
   }, []);
 
   /** Rules whose patterns mention this host (a hint, not an exact match). */
-  const usedBy = (host: string | null) =>
-    host ? (rules.data ?? []).filter((r) => r.target.patterns.some((p) => (typeof p === "string" ? p : p.value).replace(/\\/g, "").toLowerCase().includes(host.toLowerCase()))) : [];
+  const usedBy = (host: string) =>
+    (rules.data ?? []).filter((r) => r.target.patterns.some((p) => (typeof p === "string" ? p : p.value).replace(/\\/g, "").toLowerCase().includes(host.toLowerCase())));
+
+  const describe = (g: SiteGroup) => {
+    const schemes = g.schemes.length === 1 ? `${g.schemes[0]} only` : null;
+    if (g.kind === "all") return schemes ? `Every ${g.schemes[0]} site` : "Every http and https site";
+    if (g.kind === "file") return "Pages opened from your computer";
+    const used = usedBy(g.key.replace(/^\*\./, ""));
+    return [schemes, used.length ? `Used by: ${used.map((r) => r.name).join(", ")}` : "Not used by any rule"].filter(Boolean).join(" · ");
+  };
 
   const remove = async (list: string[], what: string) => {
     setError(null);
@@ -256,24 +256,23 @@ function SiteAccess() {
         // A stacked list, not a table: full site addresses cannot wrap nicely in
         // table cells and overflowed the narrow card.
         <div className="site-list">
-          {origins.map((o) => {
-            const { label, host } = siteLabel(o);
-            const used = usedBy(host);
-            return (
-              <div key={o} className="site-row">
-                <div className="site-main">
-                  <code className="site-origin">{label}</code>
-                  <span className="small muted">{used.length ? `Used by: ${used.map((r) => r.name).join(", ")}` : "Not used by any rule"}</span>
-                </div>
-                <button className="small" onClick={() => void remove([o], label)}>Remove</button>
+          {/* One row per site: Chrome keeps a pattern per scheme (all sites = http + https). */}
+          {groupOrigins(origins).map((g) => (
+            <div key={g.key} className="site-row">
+              <div className="site-main" title={g.origins.join("\n")}>
+                <code className="site-origin">{g.label}</code>
+                <span className="small muted">{describe(g)}</span>
               </div>
-            );
-          })}
+              <button className="small" onClick={() => void remove(g.origins, g.kind === "all" ? "all websites" : g.label)}>
+                Remove
+              </button>
+            </div>
+          ))}
         </div>
       )}
       <ErrorBox error={error} />
       <div className="row">
-        <button onClick={() => void requestOrigins(["http://*/*", "https://*/*"])}>Grant access to all sites</button>
+        {origins && !hasAllSites(origins) && <button onClick={() => void requestOrigins(ALL_SITE_PATTERNS)}>Grant access to all sites</button>}
         {origins && origins.length > 0 && <button onClick={() => void remove(origins, "all sites")}>Revoke all site access</button>}
       </div>
     </div>
