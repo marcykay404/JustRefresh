@@ -204,66 +204,101 @@ export function TabsView() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
-                const rt = r.runtime;
-                const running = rt && ["scheduled", "evaluating", "refreshing"].includes(rt.status);
-                return (
-                  <tr key={r.tab.id}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${r.tab.title}`}
-                        checked={selected.has(r.tab.id)}
-                        onChange={(e) => {
-                          const next = new Set(selected);
-                          if (e.target.checked) next.add(r.tab.id);
-                          else next.delete(r.tab.id);
-                          setSelected(next);
-                        }}
-                      />
-                    </td>
-                    <td style={{ maxWidth: 360 }}>
-                      <div className="truncate"><strong>{r.tab.title || "Untitled"}</strong></div>
-                      <div className="truncate muted small">{r.tab.url}</div>
-                    </td>
-                    <td>
-                      <StatusPill status={r.status} />
-                      {r.reason && <div className="small muted" style={{ maxWidth: 220 }}>{r.reason}</div>}
-                    </td>
-                    <td className="small">
-                      {r.controllerId?.startsWith("tab:") ? "Tab-specific" : r.controllerName ? <a href={`#/builder/${r.controllerId}`}>{r.controllerName}</a> : <span className="muted">—</span>}
-                    </td>
-                    <td className="mono">{nextRefreshAt(rt) !== Infinity ? formatDuration(nextRefreshAt(rt) - now) : "—"}</td>
-                    <td>{rt?.refreshCount ?? 0}</td>
-                    <td className="small">
-                      {rt?.lastEvaluation ? (
-                        <span title={rt.lastEvaluation.reason}>{rt.lastEvaluation.status} · {formatTime(rt.lastEvaluation.at)}</span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                      {rt?.lastError && <div style={{ color: "var(--error)" }}>{rt.lastError}</div>}
-                    </td>
-                    <td>
-                      <div className="row" style={{ flexWrap: "nowrap" }}>
-                        {!r.tab.restricted && !running && (
-                          <button className="small" onClick={() => (rt?.status === "paused_user" || rt?.status === "stopped" || rt?.status === "completed" || rt?.status?.startsWith("paused") ? act("resumeTab", { tabId: r.tab.id }) : act("startTab", { tabId: r.tab.id }))}>
-                            {rt?.status?.startsWith("paused") ? "Resume" : "Start"}
-                          </button>
-                        )}
-                        {running && <button className="small" onClick={() => act("pauseTab", { tabId: r.tab.id })}>Pause</button>}
-                        {running && <button className="small" onClick={() => act("stopTab", { tabId: r.tab.id })}>Stop</button>}
-                        {!r.tab.restricted && <button className="small" onClick={() => act("refreshNow", { tabId: r.tab.id })}>Refresh</button>}
-                        {r.controllerId?.startsWith("tab:") && <button className="small" onClick={() => act("clearTabOverride", { tabId: r.tab.id })} title="Remove tab-specific settings">Reset</button>}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {rows.map((r) => (
+                <TabRow
+                  key={r.tab.id}
+                  row={r}
+                  now={now}
+                  checked={selected.has(r.tab.id)}
+                  onSelect={(on) => {
+                    const next = new Set(selected);
+                    if (on) next.add(r.tab.id);
+                    else next.delete(r.tab.id);
+                    setSelected(next);
+                  }}
+                  act={act}
+                />
+              ))}
             </tbody>
           </table>
         )}
       </div>
     </>
+  );
+}
+
+type Act = (method: string, params?: unknown) => unknown;
+
+const RUNNING_STATES = ["scheduled", "evaluating", "refreshing"];
+const isTabOverride = (r: Row) => !!r.controllerId?.startsWith("tab:");
+/** Paused, stopped or finished: Start resumes the run instead of starting a new one. */
+const resumes = (status: string | undefined) => status === "stopped" || status === "completed" || !!status?.startsWith("paused");
+
+function ControllerCell({ row: r }: { row: Row }) {
+  if (isTabOverride(r)) return <>Tab-specific</>;
+  if (r.controllerName) return <a href={`#/builder/${r.controllerId}`}>{r.controllerName}</a>;
+  return <span className="muted">—</span>;
+}
+
+function LastEvaluation({ rt }: { rt: TabRuntime | null }) {
+  return (
+    <>
+      {rt?.lastEvaluation ? (
+        <span title={rt.lastEvaluation.reason}>{rt.lastEvaluation.status} · {formatTime(rt.lastEvaluation.at)}</span>
+      ) : (
+        <span className="muted">—</span>
+      )}
+      {rt?.lastError && <div style={{ color: "var(--error)" }}>{rt.lastError}</div>}
+    </>
+  );
+}
+
+function RowActions({ row: r, act }: { row: Row; act: Act }) {
+  const status = r.runtime?.status;
+  const running = !!status && RUNNING_STATES.includes(status);
+  const tabId = r.tab.id;
+  return (
+    <div className="row" style={{ flexWrap: "nowrap" }}>
+      {!r.tab.restricted && !running && (
+        <button className="small" onClick={() => act(resumes(status) ? "resumeTab" : "startTab", { tabId })}>
+          {status?.startsWith("paused") ? "Resume" : "Start"}
+        </button>
+      )}
+      {running && <button className="small" onClick={() => act("pauseTab", { tabId })}>Pause</button>}
+      {running && <button className="small" onClick={() => act("stopTab", { tabId })}>Stop</button>}
+      {!r.tab.restricted && <button className="small" onClick={() => act("refreshNow", { tabId })}>Refresh</button>}
+      {isTabOverride(r) && <button className="small" onClick={() => act("clearTabOverride", { tabId })} title="Remove tab-specific settings">Reset</button>}
+    </div>
+  );
+}
+
+function TabRow({ row: r, now, checked, onSelect, act }: { row: Row; now: number; checked: boolean; onSelect: (on: boolean) => void; act: Act }) {
+  const next = nextRefreshAt(r.runtime);
+  return (
+    <tr>
+      <td>
+        <input type="checkbox" aria-label={`Select ${r.tab.title}`} checked={checked} onChange={(e) => onSelect(e.target.checked)} />
+      </td>
+      <td style={{ maxWidth: 360 }}>
+        <div className="truncate"><strong>{r.tab.title || "Untitled"}</strong></div>
+        <div className="truncate muted small">{r.tab.url}</div>
+      </td>
+      <td>
+        <StatusPill status={r.status} />
+        {r.reason && <div className="small muted" style={{ maxWidth: 220 }}>{r.reason}</div>}
+      </td>
+      <td className="small">
+        <ControllerCell row={r} />
+      </td>
+      <td className="mono">{next !== Infinity ? formatDuration(next - now) : "—"}</td>
+      <td>{r.runtime?.refreshCount ?? 0}</td>
+      <td className="small">
+        <LastEvaluation rt={r.runtime} />
+      </td>
+      <td>
+        <RowActions row={r} act={act} />
+      </td>
+    </tr>
   );
 }
 

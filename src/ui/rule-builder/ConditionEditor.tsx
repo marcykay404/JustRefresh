@@ -126,33 +126,23 @@ export function isSimpleTree(node: ConditionNode | undefined): boolean {
   return !LOGICAL.has(node.type);
 }
 
+const nested = (n: ConditionNode, joiner: string) => (n.conditions as ConditionNode[]).map(describeCondition).join(joiner);
+
+const DESCRIBE: Record<string, (n: ConditionNode) => string> = {
+  all: (n) => nested(n, " AND "),
+  any: (n) => nested(n, " OR "),
+  not: (n) => `NOT (${describeCondition(n.condition as ConditionNode)})`,
+  "dom.exists": (n) => `${n.selector} exists`,
+  "dom.missing": (n) => `${n.selector} is missing`,
+  "dom.text": (n) => `${n.selector ?? "page"} text ${String(n.operator).replace(/_/g, " ")} "${n.value}"`,
+  "dom.attribute": (n) => `${n.selector}[${n.attribute}] ${n.operator}${n.value !== undefined ? ` "${n.value}"` : ""}`,
+  "url.match": (n) => `URL matches ${typeof n.pattern === "string" ? n.pattern : JSON.stringify(n.pattern)}`,
+  refreshCount: (n) => `refresh count ${n.operator} ${n.value}`,
+  "time.after": (n) => `time is after ${n.at}`,
+  "time.before": (n) => `time is before ${n.at}`,
+  "tab.status": (n) => `tab is ${n.value}`,
+};
+
 export function describeCondition(n: ConditionNode): string {
-  switch (n.type) {
-    case "all":
-      return (n.conditions as ConditionNode[]).map(describeCondition).join(" AND ");
-    case "any":
-      return (n.conditions as ConditionNode[]).map(describeCondition).join(" OR ");
-    case "not":
-      return `NOT (${describeCondition(n.condition as ConditionNode)})`;
-    case "dom.exists":
-      return `${n.selector} exists`;
-    case "dom.missing":
-      return `${n.selector} is missing`;
-    case "dom.text":
-      return `${n.selector ?? "page"} text ${String(n.operator).replace(/_/g, " ")} "${n.value}"`;
-    case "dom.attribute":
-      return `${n.selector}[${n.attribute}] ${n.operator}${n.value !== undefined ? ` "${n.value}"` : ""}`;
-    case "url.match":
-      return `URL matches ${typeof n.pattern === "string" ? n.pattern : JSON.stringify(n.pattern)}`;
-    case "refreshCount":
-      return `refresh count ${n.operator} ${n.value}`;
-    case "time.after":
-      return `time is after ${n.at}`;
-    case "time.before":
-      return `time is before ${n.at}`;
-    case "tab.status":
-      return `tab is ${n.value}`;
-    default:
-      return n.type;
-  }
+  return Object.hasOwn(DESCRIBE, n.type) ? DESCRIBE[n.type]!(n) : n.type;
 }

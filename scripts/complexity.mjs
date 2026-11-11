@@ -1,12 +1,12 @@
 // Complexity check with a ratchet.
 //
 // Every function in src/ must stay at or below the limits in eslint.config.js
-// (cyclomatic and cognitive complexity). Functions that were already over
-// when the check was introduced are listed in complexity-baseline.json with
-// their score, which may only go down.
+// (cyclomatic and cognitive complexity). complexity-baseline.json can list
+// functions allowed over the limit at their current score, which may only go
+// down. It is empty now: every function is within the limits.
 //
 //   node scripts/complexity.mjs          report (exit 1 on a problem)
-//   node scripts/complexity.mjs --update rewrite the baseline from the code
+//   node scripts/complexity.mjs --update lower the baseline to the code (never adds or raises an entry)
 //
 // tests/unit/complexity.test.ts runs the same check as part of `npm test`.
 import { ESLint } from "eslint";
@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 export const BASELINE_FILE = resolve(root, "complexity-baseline.json");
 const RULES = { complexity: "cyclomatic", "sonarjs/cognitive-complexity": "cognitive" };
+const KINDS = ["cyclomatic", "cognitive"];
 
 /** Current offenders: { cyclomatic: { key: score }, cognitive: { key: score } }. */
 export async function measure() {
@@ -62,19 +63,34 @@ export function readBaseline() {
 /** Problems comparing the code with the baseline (empty = OK). */
 export function compare(current, baseline) {
   const problems = [];
-  for (const kind of ["cyclomatic", "cognitive"]) {
+  for (const kind of KINDS) {
     const now = current[kind];
     const was = baseline[kind] ?? {};
     for (const [key, score] of Object.entries(now)) {
-      if (!(key in was)) problems.push(`${kind} ${score} (over the limit): ${key}. Split or simplify it.`);
+      if (!Object.hasOwn(was, key)) problems.push(`${kind} ${score} (over the limit): ${key}. Split or simplify it.`);
       else if (score > was[key]) problems.push(`${kind} rose from ${was[key]} to ${score}: ${key}. Simplify it back.`);
       else if (score < was[key]) problems.push(`${kind} fell from ${was[key]} to ${score}: ${key}. Lower the baseline (npm run complexity:update).`);
     }
     for (const key of Object.keys(was)) {
-      if (!(key in now)) problems.push(`${kind} is now within the limit: ${key}. Remove it from the baseline (npm run complexity:update).`);
+      if (!Object.hasOwn(now, key)) problems.push(`${kind} is now within the limit: ${key}. Remove it from the baseline (npm run complexity:update).`);
     }
   }
   return problems;
+}
+
+/**
+ * The baseline lowered to the code: an improved entry goes down, one within
+ * the limit goes away. A new offender is never added and a worse one never
+ * raised, so --update can't be used to accept more complexity.
+ */
+export function lowered(current, baseline) {
+  const out = { cyclomatic: {}, cognitive: {} };
+  for (const kind of KINDS) {
+    const was = baseline[kind] ?? {};
+    const keys = Object.keys(current[kind]).filter((k) => Object.hasOwn(was, k)).sort((a, b) => a.localeCompare(b));
+    for (const key of keys) out[kind][key] = Math.min(current[kind][key], was[key]);
+  }
+  return out;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
@@ -83,13 +99,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     console.error(errors.join("\n"));
     process.exit(1);
   }
+  const baseline = readBaseline();
   if (process.argv.includes("--update")) {
-    const sorted = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
-    writeFileSync(BASELINE_FILE, JSON.stringify({ cyclomatic: sorted(offenders.cyclomatic), cognitive: sorted(offenders.cognitive) }, null, 2) + "\n");
-    console.log(`Baseline: ${Object.keys(offenders.cyclomatic).length} cyclomatic, ${Object.keys(offenders.cognitive).length} cognitive offenders`);
-  } else {
-    const problems = compare(offenders, readBaseline());
-    console.log(problems.length ? problems.join("\n") : "Complexity OK");
-    process.exit(problems.length ? 1 : 0);
+    const next = lowered(offenders, baseline);
+    writeFileSync(BASELINE_FILE, JSON.stringify(next, null, 2) + "\n");
+    console.log(`Baseline: ${Object.keys(next.cyclomatic).length} cyclomatic, ${Object.keys(next.cognitive).length} cognitive entries`);
   }
+  const problems = compare(offenders, readBaseline());
+  console.log(problems.length ? problems.join("\n") : "Complexity OK");
+  process.exit(problems.length ? 1 : 0);
 }
