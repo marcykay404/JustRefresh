@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "monitor-availability",
+  "name": "Monitor availability",
+  "priority": 100,
+  "target": { "type": "url", "patterns": ["https://example.com/products/*"], "exclusions": [] },
+  "trigger": { "type": "interval", "seconds": 30 },
+  "stopWhen": {
+    "type": "any",
+    "conditions": [
+      { "type": "dom.text", "selector": "#status", "operator": "contains", "value": "Available" },
+      { "type": "dom.exists", "selector": ".buy-button" }
+    ]
+  },
+  "actions": {
+    "onMatched": [{ "type": "stopRefresh" }, { "type": "notify", "title": "In stock!" }],
+    "onNotMatched": [{ "type": "refresh" }]
+  },
+  "safety": { "pauseWhileTyping": true, "protectUnsavedChanges": true, "inactivityGraceSeconds": 60, "onUnknown": "pause" },
+  "limits": { "maxRefreshes": 100 }
+}

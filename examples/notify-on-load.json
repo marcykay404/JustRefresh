@@ -1,0 +1,7 @@
+{
+  "name": "Notify when a build page shows failure",
+  "target": { "patterns": ["https://ci.example.com/builds/*"] },
+  "trigger": { "type": "navigation" },
+  "stopWhen": { "type": "dom.exists", "selector": ".status-failed" },
+  "actions": { "onMatched": [{ "type": "notify", "title": "Build failed" }] }
+}

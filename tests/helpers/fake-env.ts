@@ -1,0 +1,120 @@
+import { RuleEngine, type AlarmPort, type BrowserPort, type PagePort } from "@/core/rule-engine";
+import type { ConditionNode, EvaluationResult, TabInfo } from "@/core/types";
+import type { ActivitySnapshot } from "@/shared/messaging-types";
+import { MemoryKV } from "@/storage/kv";
+import { AuditRepository, ConfigRepository, HistoryRepository, RuntimeRepository } from "@/storage/repositories";
+import { evaluateDomCondition } from "@/conditions/dom-eval";
+import { JSDOM } from "jsdom";
+
+export class FakeClock {
+  t = Date.UTC(2026, 0, 5, 12, 0, 0);
+  now = () => this.t;
+  random = () => 0.5;
+  advance(ms: number) {
+    this.t += ms;
+  }
+}
+
+export class FakeBrowser implements BrowserPort {
+  tabs = new Map<number, TabInfo>();
+  reloads: number[] = [];
+  notifications: { title: string; message: string }[] = [];
+  onReload?: (tabId: number) => void;
+
+  addTab(id: number, url: string, extra: Partial<TabInfo> = {}) {
+    this.tabs.set(id, { id, url, title: `Tab ${id}`, windowId: 1, index: id, active: false, discarded: false, status: "complete", restricted: false, ...extra });
+  }
+  async getTab(id: number) {
+    return this.tabs.get(id) ?? null;
+  }
+  async listTabs() {
+    return [...this.tabs.values()];
+  }
+  async reload(id: number) {
+    this.reloads.push(id);
+    this.onReload?.(id);
+  }
+  async notify(_id: string, title: string, message: string) {
+    this.notifications.push({ title, message });
+  }
+}
+
+export class FakeAlarms implements AlarmPort {
+  alarms = new Map<string, number>();
+  async set(name: string, when: number) {
+    this.alarms.set(name, when);
+  }
+  async clear(name: string) {
+    this.alarms.delete(name);
+  }
+  async getAll() {
+    return [...this.alarms.entries()].map(([name, scheduledTime]) => ({ name, scheduledTime }));
+  }
+}
+
+export const quietActivity = (over: Partial<ActivitySnapshot> = {}): ActivitySnapshot => ({
+  monitoringForMs: 10 * 60_000,
+  sinceKeyMs: null,
+  sinceInputMs: null,
+  sincePointerMs: null,
+  sinceScrollMs: null,
+  composing: false,
+  editing: false,
+  dirty: "clean",
+  readyState: "complete",
+  ...over,
+});
+
+/** Page port backed by per-tab jsdom documents (or an "unavailable" flag). */
+export class FakePage implements PagePort {
+  docs = new Map<number, Document>();
+  activityByTab = new Map<number, ActivitySnapshot | null>();
+  unavailable = new Set<number>();
+  evaluateCalls = 0;
+
+  setHtml(tabId: number, html: string) {
+    this.docs.set(tabId, new JSDOM(html).window.document);
+  }
+  async evaluate(tabId: number, leaves: ConditionNode[], includeText: boolean): Promise<EvaluationResult[]> {
+    this.evaluateCalls++;
+    if (this.unavailable.has(tabId)) throw new Error("Content script unavailable");
+    const doc = this.docs.get(tabId);
+    if (!doc) throw new Error("No document");
+    return leaves.map((l) => evaluateDomCondition(l, doc, { includeText }));
+  }
+  async activity(tabId: number) {
+    if (this.unavailable.has(tabId)) return { activity: null, reason: "Content script unavailable" };
+    return { activity: this.activityByTab.has(tabId) ? this.activityByTab.get(tabId)! : quietActivity() };
+  }
+}
+
+export function createEnv() {
+  const clock = new FakeClock();
+  const browser = new FakeBrowser();
+  const alarms = new FakeAlarms();
+  const page = new FakePage();
+  const local = new MemoryKV();
+  const session = new MemoryKV();
+  const config = new ConfigRepository(local);
+  const runtime = new RuntimeRepository(session);
+  const history = new HistoryRepository(local, config, clock.now);
+  const audit = new AuditRepository(local, clock.now);
+  const engine = new RuleEngine({ browser, alarms, page, clock, stores: { config, runtime, history } });
+  return {
+    clock, browser, alarms, page, local, session, config, runtime, history, audit, engine,
+    /** Fire every alarm that is due, like Chrome would. */
+    async fireDue() {
+      const due = [...alarms.alarms.entries()].filter(([, t]) => t <= clock.t).map(([n]) => n);
+      for (const n of due) {
+        alarms.alarms.delete(n);
+        await engine.handleAlarm(n);
+      }
+      return due.length;
+    },
+    /** Simulate our reload finishing. */
+    async completeNavigation(tabId: number) {
+      await engine.onTabUpdated(tabId, { status: "loading" });
+      await engine.onTabUpdated(tabId, { status: "complete" });
+    },
+  };
+}

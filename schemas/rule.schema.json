@@ -1,0 +1,833 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smart-auto-refresh.local/schemas/rule.schema.json",
+  "title": "Smart Auto Refresh rule",
+  "description": "Declarative auto-refresh rule. Runtime validation additionally checks URL pattern syntax, regex safety, condition depth (max 6) and node count (max 50).",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": -1000,
+      "maximum": 1000
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "url"
+        },
+        "patterns": {
+          "minItems": 1,
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "domain",
+                      "glob",
+                      "regex"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "type",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "exclusions": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "domain",
+                      "glob",
+                      "regex"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "type",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "patterns"
+      ],
+      "additionalProperties": false
+    },
+    "trigger": {
+      "$ref": "#/$defs/trigger"
+    },
+    "stopWhen": {
+      "$ref": "#/$defs/condition"
+    },
+    "actions": {
+      "type": "object",
+      "properties": {
+        "onMatched": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        },
+        "onNotMatched": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        },
+        "onUnknown": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "safety": {
+      "type": "object",
+      "properties": {
+        "pauseWhileTyping": {
+          "type": "boolean"
+        },
+        "protectUnsavedChanges": {
+          "type": "boolean"
+        },
+        "inactivityGraceSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "pauseOnMouse": {
+          "type": "boolean"
+        },
+        "pauseOnScroll": {
+          "type": "boolean"
+        },
+        "onUnknown": {
+          "type": "string",
+          "enum": [
+            "pause",
+            "skip",
+            "refresh",
+            "stop"
+          ]
+        },
+        "maxUnknownRetries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "onActivityUnavailable": {
+          "type": "string",
+          "enum": [
+            "pause",
+            "refresh"
+          ]
+        },
+        "maxRefreshes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "maxRefreshes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "maxDurationSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 31536000
+        },
+        "stopAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "schedule": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "maxItems": 7,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6
+          }
+        },
+        "startTime": {
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "endTime": {
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "name",
+    "target",
+    "trigger"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "condition": {
+      "oneOf": [
+        {
+          "title": "Element exists",
+          "description": "Matches when the selector matches at least `minCount` elements.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "dom.exists"
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "CSS selector evaluated in the top-level document"
+            },
+            "minCount": {
+              "description": "Minimum number of matching elements (default 1)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            }
+          },
+          "required": [
+            "type",
+            "selector"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Element missing",
+          "description": "Matches when no element matches the selector.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "dom.missing"
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "CSS selector evaluated in the top-level document"
+            }
+          },
+          "required": [
+            "type",
+            "selector"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Element text",
+          "description": "Compares the visible text of the first matching element (whitespace-normalized).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "dom.text"
+            },
+            "selector": {
+              "description": "CSS selector; first match is compared. Defaults to body",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "contains",
+                "not_contains",
+                "equals",
+                "not_equals",
+                "starts_with",
+                "ends_with",
+                "matches"
+              ]
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "caseSensitive": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "operator",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Element attribute",
+          "description": "Compares an attribute of the first matching element.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "dom.attribute"
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "CSS selector evaluated in the top-level document"
+            },
+            "attribute": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "exists",
+                "missing",
+                "equals",
+                "not_equals",
+                "contains",
+                "matches"
+              ]
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "type",
+            "selector",
+            "attribute",
+            "operator"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "URL matches",
+          "description": "Matches when the tab's current URL matches the pattern (exact, domain, glob or regex).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "url.match"
+            },
+            "pattern": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "exact",
+                        "domain",
+                        "glob",
+                        "regex"
+                      ]
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "pattern"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Time is after",
+          "description": "Matches once the current time is at or past the threshold (HH:MM is evaluated for the current local day).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "time.after"
+            },
+            "at": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "ISO-8601 timestamp (e.g. \"2026-12-01T09:00:00Z\") or local time of day \"HH:MM\""
+            }
+          },
+          "required": [
+            "type",
+            "at"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Time is before",
+          "description": "Matches while the current time is before the threshold.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "time.before"
+            },
+            "at": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "ISO-8601 timestamp (e.g. \"2026-12-01T09:00:00Z\") or local time of day \"HH:MM\""
+            }
+          },
+          "required": [
+            "type",
+            "at"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Refresh count",
+          "description": "Compares the number of refreshes performed by the current run.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "refreshCount"
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                ">=",
+                ">",
+                "<=",
+                "<",
+                "==",
+                "!="
+              ]
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "type",
+            "operator",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Tab status",
+          "description": "Matches the tab's loading status.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "tab.status"
+            },
+            "value": {
+              "type": "string",
+              "enum": [
+                "loading",
+                "complete"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "All of (AND)",
+          "description": "Matches when every child matches. Any not_matched → not_matched; otherwise any unknown → unknown.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "all"
+            },
+            "conditions": {
+              "minItems": 1,
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "conditions"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Any of (OR)",
+          "description": "Matches when at least one child matches. Otherwise any unknown → unknown.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "any"
+            },
+            "conditions": {
+              "minItems": 1,
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "conditions"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Not",
+          "description": "Inverts matched/not_matched. unknown stays unknown.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "not"
+            },
+            "condition": {
+              "$ref": "#/$defs/condition"
+            }
+          },
+          "required": [
+            "type",
+            "condition"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "trigger": {
+      "oneOf": [
+        {
+          "title": "Every interval",
+          "description": "Fires on a fixed (optionally randomized) interval using chrome.alarms. Minimum 30 seconds; timing is best-effort.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "interval"
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 604800
+            },
+            "randomMaxSeconds": {
+              "description": "If set, each interval is chosen uniformly in [seconds, randomMaxSeconds]",
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 604800
+            }
+          },
+          "required": [
+            "type",
+            "seconds"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Page load completed",
+          "description": "Evaluates when a page finishes loading. Cannot use the refresh action (it would loop).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "navigation"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "URL changed",
+          "description": "Evaluates when the tab URL changes (including in-page history changes).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "urlChange"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Extension startup",
+          "description": "Evaluates once when the extension starts (browser launch or update).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "startup"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Manual only",
+          "description": "Runs only when executed explicitly (Run now).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "manual"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "action": {
+      "oneOf": [
+        {
+          "title": "Refresh the tab",
+          "description": "Reloads the tab. Navigation completion is tracked separately.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "refresh"
+            },
+            "bypassCache": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Stop refreshing",
+          "description": "Ends the run for this tab.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "stopRefresh"
+            },
+            "as": {
+              "description": "Final status (default: completed)",
+              "type": "string",
+              "enum": [
+                "completed",
+                "stopped"
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Pause refreshing",
+          "description": "Pauses the run, optionally resuming automatically.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "pauseRefresh"
+            },
+            "minutes": {
+              "description": "Auto-resume after this many minutes",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 1440
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Resume refreshing",
+          "description": "Keeps the run scheduled (no-op if already running).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "resumeRefresh"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Notify me",
+          "description": "Shows a desktop notification.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "notify"
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Write to history",
+          "description": "Records a message in the execution history.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "log"
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "level": {
+              "type": "string",
+              "enum": [
+                "info",
+                "warn"
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
