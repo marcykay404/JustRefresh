@@ -14,11 +14,8 @@ import type { AuditEntry, Config, HistoryEntry, Rule, TabRuntime } from "../core
 import type { KeyValueStore } from "./kv";
 import { migrateConfig } from "./migrations";
 
-export const CONFIG_KEY = "config";
-export const CONFIG_BACKUP_KEY = "config.backup";
-export const HISTORY_KEY = "history";
-export const AUDIT_KEY = "audit";
-export const RUNTIME_PREFIX = "rt:";
+import { AUDIT_KEY, CONFIG_BACKUP_KEY, CONFIG_KEY, HISTORY_KEY, RUNTIME_PREFIX } from "./keys";
+export { AUDIT_KEY, CONFIG_BACKUP_KEY, CONFIG_KEY, HISTORY_KEY, RUNTIME_PREFIX };
 
 class Mutex {
   private tail: Promise<unknown> = Promise.resolve();

@@ -12,7 +12,7 @@ interface Data {
 }
 
 export function ExclusionsView() {
-  const { data, error, reload } = useApi<Data>("listExclusions", undefined, { pollMs: 5000 });
+  const { data, error, reload } = useApi<Data>("listExclusions", undefined, { live: ["config", "tabs"] });
   const [pattern, setPattern] = useState("");
   const [reason, setReason] = useState("");
   const [actionError, setActionError] = useState<unknown>(null);

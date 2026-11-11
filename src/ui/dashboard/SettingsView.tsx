@@ -11,7 +11,7 @@ import type { ImportReport } from "../../integrations/json-import";
 import { useDialog } from "../shared/dialog";
 
 export function SettingsView() {
-  const { data, error, reload } = useApi<{ settings: Settings }>("getOverview");
+  const { data, error, reload } = useApi<{ settings: Settings }>("getOverview", undefined, { live: ["config"] });
   const [actionError, setActionError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   const s = data?.settings;
@@ -132,10 +132,10 @@ export function SettingsView() {
         <div className="card col">
           <h2>History & privacy</h2>
           <Field label="Maximum history entries">
-            <input type="number" min={10} max={5000} defaultValue={s.historyLimit} onBlur={(e) => update({ historyLimit: Number(e.target.value) })} />
+            <input type="number" min={10} max={5000} key={s.historyLimit} defaultValue={s.historyLimit} onBlur={(e) => update({ historyLimit: Number(e.target.value) })} />
           </Field>
           <Field label="Keep history for (days)">
-            <input type="number" min={1} max={365} defaultValue={s.historyRetentionDays} onBlur={(e) => update({ historyRetentionDays: Number(e.target.value) })} />
+            <input type="number" min={1} max={365} key={s.historyRetentionDays} defaultValue={s.historyRetentionDays} onBlur={(e) => update({ historyRetentionDays: Number(e.target.value) })} />
           </Field>
           <Toggle checked={s.redactUrlsForAgents} onChange={(v) => update({ redactUrlsForAgents: v })} label="Hide URL query strings from agents" />
           <p className="small muted" style={{ margin: 0 }}>No analytics or telemetry. Everything is stored locally in this browser profile. Typed text and form values are never recorded.</p>
@@ -254,8 +254,8 @@ export function SiteAccess() {
   const [filter, setFilter] = useState("");
   const dialog = useDialog();
   const [expanded, setExpanded] = useState(false);
-  const rules = useApi<Rule[]>("listRules", undefined, { pollMs: 10_000 });
-  const overview = useApi<{ tabs: { tab: { url: string }; status: string }[] }>("getOverview", undefined, { pollMs: 5000 });
+  const rules = useApi<Rule[]>("listRules", undefined, { live: ["config"] });
+  const overview = useApi<{ tabs: { tab: { url: string }; status: string }[] }>("getOverview", undefined, { live: ["runtime", "config", "tabs"] });
 
   useEffect(() => {
     const load = () => void chrome.permissions.getAll().then((p) => setOrigins([...(p.origins ?? [])].sort()));

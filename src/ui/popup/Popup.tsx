@@ -71,11 +71,11 @@ export function Popup() {
     void chrome.tabs.query({ active: true, currentWindow: true }).then(([t]) => setTabId(t?.id ?? null));
   }, []);
 
-  const state = useApi<TabState>("getTabState", tabId !== null ? { tabId } : undefined, { skip: tabId === null, pollMs: 2000 });
-  const overview = useApi<Overview>("getOverview", undefined, { pollMs: 4000 });
+  const state = useApi<TabState>("getTabState", tabId !== null ? { tabId } : undefined, { skip: tabId === null, live: ["runtime", "config", "tabs", "access"] });
+  const overview = useApi<Overview>("getOverview", undefined, { live: ["runtime", "config", "tabs"] });
   const s = state.data;
   const ruleId = s?.resolution.source === "rule" ? s.resolution.controllerId : null;
-  const rule = useApi<Rule>("getRule", ruleId ? { id: ruleId } : undefined, { skip: !ruleId });
+  const rule = useApi<Rule>("getRule", ruleId ? { id: ruleId } : undefined, { skip: !ruleId, live: ["config"] });
 
   /** Interval picked in the chips (null = the tab's current one). */
   const [picked, setPicked] = useState<number | null>(null);

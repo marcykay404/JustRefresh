@@ -27,7 +27,7 @@ type SortKey = "title" | "status" | "next" | "count";
 
 export function TabsView() {
   const dialog = useDialog();
-  const { data, error, reload } = useApi<Overview>("getOverview", undefined, { pollMs: 2000 });
+  const { data, error, reload } = useApi<Overview>("getOverview", undefined, { live: ["runtime", "config", "tabs"] });
   const now = useNow(1000);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");

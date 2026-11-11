@@ -456,6 +456,45 @@ await test("a form page unloaded by Memory Saver and restored is still never rel
   await other.close();
 });
 
+await test("the dashboard updates on changes without polling the service worker", async () => {
+  // Nothing else may refresh meanwhile (an "all local pages" rule would).
+  const others = (await call("listRules")).filter((r) => r.enabled);
+  for (const r of others) await call("disableRule", { id: r.id });
+  const dash = await context.newPage();
+  // Count the dashboard's API calls (each one wakes the service worker).
+  await dash.addInitScript(() => {
+    const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+    window.__apiCalls = 0;
+    chrome.runtime.sendMessage = (...a) => ((window.__apiCalls += 1), send(...a));
+  });
+  await dash.goto(`chrome-extension://${extId}/dashboard.html#/tabs`);
+  await dash.getByRole("heading", { name: "Tabs" }).waitFor();
+  await new Promise((r) => setTimeout(r, 1000));
+  const settled = await dash.evaluate(() => window.__apiCalls);
+  await new Promise((r) => setTimeout(r, 6000));
+  assert.equal(await dash.evaluate(() => window.__apiCalls), settled, "no API calls while nothing changes");
+
+  // A new tab appears, and starting it shows up, both within a moment.
+  const page = await context.newPage();
+  await page.goto(`${base}/live-check`);
+  const row = dash.locator("tr", { hasText: `${base}/live-check` });
+  await row.waitFor({ timeout: 3000 });
+  const tabId = await tabIdFor(`${base}/live-check`);
+  await call("startTab", { tabId, intervalSeconds: 600 });
+  await row.getByText("Scheduled", { exact: true }).waitFor({ timeout: 3000 });
+  // A change to the tab's run state alone (storage.session, no config or tab event).
+  await sw.evaluate(async (id) => {
+    const rt = await globalThis.__sar.runtime.get(id);
+    await globalThis.__sar.runtime.put({ ...rt, refreshCount: 42 });
+  }, tabId);
+  await row.getByText("42", { exact: true }).waitFor({ timeout: 3000 });
+  await call("stopTab", { tabId });
+  await row.getByText("Stopped", { exact: true }).waitFor({ timeout: 3000 });
+  await page.close();
+  await dash.close();
+  for (const r of others) await call("enableRule", { id: r.id });
+});
+
 await test("popup and dashboard render", async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 900 });

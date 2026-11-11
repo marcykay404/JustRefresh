@@ -41,11 +41,11 @@ const OUTCOME_LABEL: Record<AuditEntry["outcome"], string> = { ok: "Done", pendi
 
 export function AgentsView() {
   const dialog = useDialog();
-  const { data, error, reload } = useApi<AgentsData>("listAgents", undefined, { pollMs: 3000 });
-  const audit = useApi<AuditEntry[]>("getAudit", undefined, { pollMs: 5000 });
-  const rules = useApi<Rule[]>("listRules", undefined, { pollMs: 5000 });
-  const overview = useApi<{ settings: Settings }>("getOverview");
-  const bridge = useApi<{ connected: boolean; wanted: boolean; restartRequired: boolean }>("bridgeStatus", undefined, { pollMs: 3000 });
+  const { data, error, reload } = useApi<AgentsData>("listAgents", undefined, { live: ["config"] });
+  const audit = useApi<AuditEntry[]>("getAudit", undefined, { live: ["audit"] });
+  const rules = useApi<Rule[]>("listRules", undefined, { live: ["config"] });
+  const overview = useApi<{ settings: Settings }>("getOverview", undefined, { live: ["config"] });
+  const bridge = useApi<{ connected: boolean; wanted: boolean; restartRequired: boolean }>("bridgeStatus", undefined, { live: ["bridge", "config"] });
   const [actionError, setActionError] = useState<unknown>(null);
 
   const act = async (method: string, params: unknown) => {

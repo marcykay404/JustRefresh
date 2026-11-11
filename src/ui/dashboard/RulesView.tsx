@@ -9,7 +9,7 @@ import { useDialog } from "../shared/dialog";
 
 export function RulesView() {
   const dialog = useDialog();
-  const { data, error, reload } = useApi<Rule[]>("listRules", undefined, { pollMs: 5000 });
+  const { data, error, reload } = useApi<Rule[]>("listRules", undefined, { live: ["config"] });
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState<"priority" | "name" | "updated">("priority");

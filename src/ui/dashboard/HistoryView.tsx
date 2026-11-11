@@ -8,7 +8,7 @@ import { useDialog } from "../shared/dialog";
 
 export function HistoryView() {
   const dialog = useDialog();
-  const { data, error, reload } = useApi<HistoryEntry[]>("getHistory", { limit: 500 }, { pollMs: 4000 });
+  const { data, error, reload } = useApi<HistoryEntry[]>("getHistory", { limit: 500 }, { live: ["history"] });
   const [search, setSearch] = useState("");
   const [outcome, setOutcome] = useState("all");
   const [actor, setActor] = useState("all");
