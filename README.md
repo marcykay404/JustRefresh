@@ -61,13 +61,14 @@ conditions); you can also grant all sites in Dashboard → Settings.
 ## Development
 
 ```bash
-npm test                  # unit + integration tests (vitest), including the complexity check
+npm test                  # unit + integration tests (vitest), including the complexity and format checks
 npm run typecheck
 npm run build             # → dist/
 npm run test:e2e          # builds, loads dist/ into Chromium via Playwright
 npm run gen:schema        # regenerate schemas/*.json after changing handlers
 npm run complexity        # cyclomatic + cognitive complexity (max 15 each)
 npm run complexity:update # lower the baseline after simplifying a listed function
+npm run format            # format everything with Prettier (npm run format:check to only check)
 npm run bundle:report     # what the service worker bundle is made of (budget 200 KB)
 npm run check             # typecheck + tests + build + bundle budget
 ```
@@ -80,6 +81,14 @@ inline comment. `complexity-baseline.json` is a ratchet for exceptions: a
 listed function may only get simpler, and `complexity:update` only lowers or
 removes entries, never adds one. A test keeps it empty, so every function is
 within the limits.
+
+**Formatting.** Prettier (pinned in `package.json`, settings in
+`.prettierrc.json`, generated files skipped in `.prettierignore`) formats
+every file it understands; `npm test` fails on an unformatted file. The
+commit that first formatted the codebase is listed in
+`.git-blame-ignore-revs`: run
+`git config blame.ignoreRevsFile .git-blame-ignore-revs` once so `git blame`
+skips it (GitHub does this on its own).
 
 **Bundle.** The service worker uses `zod/mini` (via `src/core/zod.ts`) and
 ships the generated JSON Schemas as package files read on demand, instead of
