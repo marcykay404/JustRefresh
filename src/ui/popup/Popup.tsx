@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
 import { useApi, useNow } from "../shared/hooks";
 import { formatDuration, formatTime } from "../shared/format";
-import { ErrorBox, StatusPill, Toggle } from "../shared/components";
-import { FAST_INTERVAL_PRESETS, INTERVAL_PRESETS } from "../../core/defaults";
-import type { SafetyConfig, Settings, TabInfo, TabOverride, TabRuntime } from "../../core/types";
+import { ErrorBox, Toggle } from "../shared/components";
+import type { Rule, SafetyConfig, Settings, TabInfo, TabOverride, TabRuntime } from "../../core/types";
 import { useDialog } from "../shared/dialog";
+import { describeRule, intervalChips, intervalLabel, untilRule, type UntilMode } from "./describe";
 
 interface TabState {
   tab: TabInfo;
@@ -33,12 +33,20 @@ interface Overview {
 }
 
 const UNITS = [
-  { label: "sec", factor: 1 },
-  { label: "min", factor: 60 },
-  { label: "hr", factor: 3600 },
+  { label: "seconds", factor: 1 },
+  { label: "minutes", factor: 60 },
+  { label: "hours", factor: 3600 },
 ];
 
-/** "while you're typing or have unsaved form changes", from whichever protections are on. */
+/** Statuses in which the tab is being looked after (counting down, checking or waiting). */
+const RUNNING = ["scheduled", "evaluating", "refreshing", "paused_activity", "paused_unsaved", "paused_unknown", "paused_user"];
+
+function openDashboard(hash = "/tabs") {
+  void chrome.tabs.create({ url: chrome.runtime.getURL(`dashboard.html#${hash}`) });
+  window.close();
+}
+
+/** "while you're typing or you have unsaved form changes", from whichever protections are on. */
 export function protectedWhile(safety: Pick<SafetyConfig, "pauseWhileTyping" | "protectUnsavedChanges" | "pauseOnMouse" | "pauseOnScroll">): string {
   const parts = [
     safety.pauseWhileTyping && "you're typing",
@@ -51,15 +59,9 @@ export function protectedWhile(safety: Pick<SafetyConfig, "pauseWhileTyping" | "
   return `while ${list}`;
 }
 
-function openDashboard(hash = "/tabs") {
-  void chrome.tabs.create({ url: chrome.runtime.getURL(`dashboard.html#${hash}`) });
-  window.close();
-}
-
 export function Popup() {
   const [tabId, setTabId] = useState<number | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const now = useNow(1000);
   const dialog = useDialog();
 
@@ -70,17 +72,23 @@ export function Popup() {
   const state = useApi<TabState>("getTabState", tabId !== null ? { tabId } : undefined, { skip: tabId === null, pollMs: 2000 });
   const overview = useApi<Overview>("getOverview", undefined, { pollMs: 4000 });
   const s = state.data;
+  const ruleId = s?.resolution.source === "rule" ? s.resolution.controllerId : null;
+  const rule = useApi<Rule>("getRule", ruleId ? { id: ruleId } : undefined, { skip: !ruleId });
 
+  /** Interval picked in the chips (null = the tab's current one). */
+  const [picked, setPicked] = useState<number | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
   const [customValue, setCustomValue] = useState("");
   const [customUnit, setCustomUnit] = useState(60);
-  /** Interval picked while auto refresh is off: applied when the user turns it on. */
-  const [chosenInterval, setChosenInterval] = useState<number | null>(null);
+  /** Changing the interval of a tab that is already refreshing. */
+  const [changing, setChanging] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [view, setView] = useState<"main" | "until">("main");
   /** The site-access prompt was declined for the interval in here. */
   const [declinedFor, setDeclinedFor] = useState<number | null>(null);
 
   const run = async (method: string, params?: unknown) => {
     setError(null);
-    setMessage(null);
     try {
       const r = await api(method, params);
       await Promise.all([state.reload(), overview.reload()]);
@@ -91,39 +99,59 @@ export function Popup() {
     }
   };
 
+  const header = <Header overview={overview.data} onToggleGlobal={() => void run(overview.data?.settings.paused ? "resumeAll" : "pauseAll")} />;
   if (tabId === null || !s) {
     return (
       <div className="popup-root">
-        <Header overview={overview.data} onToggleGlobal={() => undefined} />
+        {header}
         {state.error ? <ErrorBox error={state.error} /> : <div className="muted">Loading…</div>}
       </div>
     );
   }
 
   const rt = s.runtime;
-  const status = rt?.status ?? (s.resolution.kind.endsWith("excluded") || s.resolution.kind === "restricted" ? "excluded" : "idle");
+  const source = s.resolution.source;
   const restricted = s.resolution.kind === "restricted";
-  const active = !!rt && ["scheduled", "evaluating", "refreshing"].includes(rt.status) || (rt?.status.startsWith("paused") ?? false);
   const tabExcluded = s.override?.mode === "excluded";
+  const running = !!rt && RUNNING.includes(rt.status);
   const currentInterval = s.override?.intervalSeconds ?? s.interval ?? overview.data?.settings.defaultIntervalSeconds ?? 300;
-  const shownInterval = active ? currentInterval : (chosenInterval ?? currentInterval);
   const origin = originOf(s.tab.url);
-  const unprotected = !s.hostAccess && s.safety.onActivityUnavailable === "refresh";
+  const siteName = origin === "file:///*" ? "local files" : hostLabel(s.tab.url);
   const protectionOn = s.safety.pauseWhileTyping || s.safety.protectUnsavedChanges || s.safety.pauseOnMouse || s.safety.pauseOnScroll;
-  const siteName = origin === "file:///*" ? "local files" : (() => { try { return new URL(s.tab.url).hostname.replace(/^www\./, ""); } catch { return "this site"; } })();
+  const unprotected = !s.hostAccess && s.safety.onActivityUnavailable === "refresh";
   // Without site access the default safety policy pauses every refresh: say so and offer a choice.
-  const blockedByAccess =
-    declinedFor !== null || (!s.hostAccess && rt?.status === "paused_activity" && s.safety.onActivityUnavailable !== "refresh");
+  const blockedByAccess = declinedFor !== null || (!s.hostAccess && rt?.status === "paused_activity" && s.safety.onActivityUnavailable !== "refresh");
+
+  const fastAllowed = overview.data?.settings.allowFastIntervals === true;
+  const minSeconds = fastAllowed ? 5 : 30;
+  const chips = intervalChips(fastAllowed);
+  const customSeconds = customOpen && customValue ? Math.round(Number(customValue) * customUnit) : null;
+  const chosen = customSeconds ?? picked ?? currentInterval;
+  const chosenValid = Number.isFinite(chosen) && chosen >= minSeconds;
+  const tooShort = !chosenValid
+    ? fastAllowed
+      ? "The shortest interval is 5 seconds."
+      : "The shortest interval is 30 seconds. Shorter ones can be turned on in Dashboard → Settings → Advanced."
+    : null;
+
+  const resetPicker = () => {
+    setPicked(null);
+    setCustomOpen(false);
+    setCustomValue("");
+  };
 
   /**
-   * Enabling requests site access in the same click (user gesture). If the
-   * user declines, nothing starts silently: the popup explains and offers to
-   * refresh without protection instead.
+   * Starting requests site access in the same click (user gesture) when
+   * protection needs it. If the user declines, nothing starts silently: the
+   * popup explains and offers to refresh without protection instead.
    */
-  const enable = (intervalSeconds: number) => {
+  const start = (intervalSeconds: number) => {
     // No protection means nothing reads the page, so there is nothing to ask for.
     if (s.hostAccess || !origin || !protectionOn) {
-      void run("startTab", { tabId, intervalSeconds });
+      void run("startTab", { tabId, intervalSeconds }).then(() => {
+        resetPicker();
+        setChanging(false);
+      });
       return;
     }
     void requestOrigins([origin])
@@ -131,7 +159,10 @@ export function Popup() {
       .then((granted) => {
         if (granted) {
           setDeclinedFor(null);
-          void run("startTab", { tabId, intervalSeconds });
+          void run("startTab", { tabId, intervalSeconds }).then(() => {
+            resetPicker();
+            setChanging(false);
+          });
         } else {
           setDeclinedFor(intervalSeconds);
         }
@@ -139,28 +170,8 @@ export function Popup() {
   };
 
   const startUnprotected = async () => {
-    await run("startTab", { tabId, intervalSeconds: declinedFor ?? shownInterval, safety: { onActivityUnavailable: "refresh" } });
+    await run("startTab", { tabId, intervalSeconds: declinedFor ?? chosen, safety: { onActivityUnavailable: "refresh" } });
     setDeclinedFor(null);
-  };
-
-  const fastAllowed = overview.data?.settings.allowFastIntervals === true;
-  const minSeconds = fastAllowed ? 5 : 30;
-  const presets = fastAllowed ? [...FAST_INTERVAL_PRESETS, ...INTERVAL_PRESETS] : INTERVAL_PRESETS;
-
-  /** Changing the interval applies at once only while auto refresh is on. */
-  const setInterval = (seconds: number) => {
-    if (seconds < minSeconds) {
-      setError(
-        new Error(
-          fastAllowed
-            ? "The minimum interval is 5 seconds"
-            : "The minimum interval is 30 seconds (shorter intervals can be enabled in Dashboard → Settings → Advanced)",
-        ),
-      );
-      return;
-    }
-    if (active) enable(seconds);
-    else setChosenInterval(seconds);
   };
 
   const refreshNow = async () => {
@@ -172,221 +183,560 @@ export function Popup() {
         confirmLabel: "Refresh anyway",
         danger: true,
       });
-      if (ok) {
-        await run("refreshNow", { tabId, force: true });
-      }
+      if (ok) await run("refreshNow", { tabId, force: true });
     }
   };
 
-  const toggleProtection = (on: boolean) =>
-    run("setTabSafety", { tabId, safety: { pauseWhileTyping: on, protectUnsavedChanges: on } });
+  const toggleProtection = (on: boolean) => run("setTabSafety", { tabId, safety: { pauseWhileTyping: on, protectUnsavedChanges: on } });
 
-  const countdown = rt?.nextDueAt ? rt.nextDueAt - now : null;
+  const countdown = rt?.nextDueAt ? Math.max(0, rt.nextDueAt - now) : null;
+  const ruleInterval = (rule.data?.trigger as { seconds?: number } | undefined)?.seconds ?? null;
+  const total = (source === "rule" ? ruleInterval : currentInterval) ?? null;
+  const progress = countdown !== null && total ? Math.min(100, Math.max(0, 100 - (countdown / (total * 1000)) * 100)) : 0;
+
+  const picker = (
+    <IntervalPicker
+      chips={chips}
+      value={chosen}
+      customOpen={customOpen}
+      customValue={customValue}
+      customUnit={customUnit}
+      minSeconds={minSeconds}
+      onPick={(v) => {
+        setPicked(v);
+        setCustomOpen(false);
+      }}
+      onCustom={() => {
+        setCustomOpen(true);
+        if (!customValue) {
+          const unit = chosen % 3600 === 0 ? 3600 : chosen % 60 === 0 ? 60 : 1;
+          setCustomUnit(unit);
+          setCustomValue(String(chosen / unit));
+        }
+      }}
+      onCustomValue={setCustomValue}
+      onCustomUnit={setCustomUnit}
+    />
+  );
+
+  /* ---------- main card ---------- */
+  let card: ReactNode;
+  if (restricted) {
+    card = <p className="muted" style={{ margin: 0 }}>Chrome doesn't let extensions refresh this page.</p>;
+  } else if (tabExcluded) {
+    card = (
+      <>
+        <span>This tab is set to never auto-refresh, so rules skip it.</span>
+        <button onClick={() => void run("includeTab", { tabId })}>Allow auto-refresh again</button>
+      </>
+    );
+  } else if (view === "until") {
+    card = (
+      <UntilForm
+        site={siteName}
+        picker={picker}
+        canStart={chosenValid}
+        problem={tooShort}
+        onCancel={() => setView("main")}
+        onStart={async (text, mode) => {
+          setError(null);
+          if (!s.hostAccess && origin) {
+            const granted = await requestOrigins([origin]).catch(() => false);
+            if (!granted) {
+              setError(new Error(`JustRefresh needs access to ${siteName} to read the page. Nothing was set up.`));
+              return;
+            }
+          }
+          const created = await run("createRule", { rule: untilRule({ url: s.tab.url, site: siteName, seconds: chosen, text, mode }) });
+          if (!created) return;
+          // A tab-specific timer outranks rules, so hand the tab over to the new rule.
+          if (s.override?.mode === "custom") await run("clearTabOverride", { tabId });
+          await run("runNow", { tabId });
+          resetPicker();
+          setView("main");
+        }}
+      />
+    );
+  } else if (source === "rule") {
+    card = (
+      <RuleCard
+        name={s.resolution.controllerName ?? rule.data?.name ?? "Rule"}
+        summary={rule.data ? describeRule(rule.data) : null}
+        onEdit={() => openDashboard(`/builder/${ruleId}`)}
+        rt={rt}
+        countdown={countdown}
+        progress={progress}
+        onCheckNow={() => void run("runNow", { tabId })}
+        onStop={() => void run("stopTab", { tabId })}
+        onRestart={() => void run("resumeTab", { tabId })}
+      />
+    );
+  } else if (running && !changing) {
+    card = (
+      <>
+        <CountdownRow title={`Refreshing every ${intervalLabel(currentInterval)}`} rt={rt} countdown={countdown} />
+        <div className="progress" aria-hidden>
+          <div style={{ width: `${progress}%` }} />
+        </div>
+        {rt?.status === "paused_user" ? (
+          <button className="primary big" onClick={() => void run("resumeTab", { tabId })}>Resume</button>
+        ) : (
+          <div className="row">
+            <button className="big grow" onClick={() => void run("stopTab", { tabId })}>Stop</button>
+            <button className="big" onClick={() => setChanging(true)}>Change interval</button>
+          </div>
+        )}
+        {rt && <Stats rt={rt} />}
+      </>
+    );
+  } else {
+    card = (
+      <>
+        <span className="card-title">{changing ? "Change the interval" : "Refresh this tab every"}</span>
+        {picker}
+        {tooShort && <span className="small field-error">{tooShort}</span>}
+        <button className="primary big" disabled={!chosenValid} onClick={() => start(chosen)}>
+          {changing ? `Refresh every ${intervalLabel(chosen)}` : `Start refreshing every ${intervalLabel(chosen)}`}
+        </button>
+        {changing && (
+          <button className="link small" style={{ alignSelf: "center" }} onClick={() => { resetPicker(); setChanging(false); }}>
+            Cancel
+          </button>
+        )}
+        {rt?.status === "completed" && <span className="small muted">{rt.reason ?? "Finished."}</span>}
+      </>
+    );
+  }
 
   return (
     <div className="popup-root">
-      <Header
-        overview={overview.data}
-        onToggleGlobal={() => void run(overview.data?.settings.paused ? "resumeAll" : "pauseAll")}
-      />
+      {header}
 
-      <div className="card col">
-        <div className="col" style={{ gap: 2 }}>
-          <strong className="truncate" title={s.tab.title}>{s.tab.title || "Untitled tab"}</strong>
-          <span className="muted small truncate" title={s.tab.url}>{s.tab.url}</span>
-        </div>
-
-        <div className="row">
-          <StatusPill status={status} />
-          {s.resolution.source === "rule" && (
-            <span className="small">
-              Rule: <a href="#" onClick={(e) => { e.preventDefault(); openDashboard(`/builder/${s.resolution.controllerId}`); }}>{s.resolution.controllerName}</a>
-            </span>
-          )}
-          {s.resolution.source === "tab" && <span className="small muted">Tab-specific settings</span>}
-          {s.resolution.source === "tab" && s.resolution.candidates.length > 0 && (
-            <span className="small muted">(overrides {s.resolution.candidates[0].name})</span>
-          )}
-        </div>
-        {(rt?.reason || (!rt && s.resolution.reason)) && <div className="small muted">{rt?.reason ?? s.resolution.reason}</div>}
-
-        {restricted ? (
-          <div className="notice small">This page cannot be refreshed by extensions.</div>
-        ) : (
-          <>
-            <div className="row">
-              <Toggle
-                checked={active}
-                disabled={tabExcluded}
-                label="Auto refresh"
-                onChange={(on) => {
-                  // A rule-controlled tab is resumed under its rule (keeping its conditions);
-                  // only uncontrolled tabs get tab-specific settings.
-                  if (on && s.resolution.source === "rule" && chosenInterval === null) void run("resumeTab", { tabId });
-                  else if (on) enable(shownInterval);
-                  else void run("stopTab", { tabId });
-                }}
-              />
-              <span className="spacer" />
-              {countdown !== null && active && rt?.status !== "refreshing" && (
-                <span className="countdown" title={`Next refresh at ${formatTime(rt?.nextDueAt)}`}>{formatDuration(countdown)}</span>
-              )}
-              {rt?.status === "refreshing" && <span className="muted">Refreshing…</span>}
-            </div>
-
-            <div className="row">
-              <select
-                aria-label="Refresh interval"
-                value={presets.some((p) => p.seconds === shownInterval) ? shownInterval : "custom"}
-                onChange={(e) => e.target.value !== "custom" && setInterval(Number(e.target.value))}
-              >
-                {presets.map((p) => (
-                  <option key={p.seconds} value={p.seconds}>Every {p.label}</option>
-                ))}
-                {!presets.some((p) => p.seconds === shownInterval) && <option value="custom">Every {shownInterval}s</option>}
-              </select>
-              <input
-                aria-label="Custom interval"
-                style={{ width: 64 }}
-                type="number"
-                min={customUnit === 1 ? minSeconds : 1}
-                placeholder="Custom"
-                value={customValue}
-                onChange={(e) => setCustomValue(e.target.value)}
-              />
-              <select aria-label="Custom interval unit" value={customUnit} onChange={(e) => setCustomUnit(Number(e.target.value))}>
-                {UNITS.map((u) => <option key={u.factor} value={u.factor}>{u.label}</option>)}
-              </select>
-              <button className="small" disabled={!customValue} onClick={() => setInterval(Math.round(Number(customValue) * customUnit))}>Set</button>
-            </div>
-            {!active && chosenInterval !== null && <div className="small muted">Turn on Auto refresh to start with this interval.</div>}
-            {s.resolution.source === "rule" && <div className="small muted">Changing the interval creates a tab-specific override of the rule.</div>}
-
-            {blockedByAccess && origin && (
-              <div className="notice small col">
-                <span>
-                  JustRefresh can't see inside <strong>{siteName}</strong>, so it can't tell whether you're typing or have unsaved form changes. To be safe, it
-                  won't refresh this page until you allow access.
-                </span>
-                <div className="row">
-                  <button className="small" onClick={() => void requestOrigins([origin]).then((ok) => ok && (declinedFor !== null ? enable(declinedFor) : void run("resumeTab", { tabId })))}>
-                    Allow access
-                  </button>
-                  <button className="small" onClick={() => void startUnprotected()}>Refresh without protection</button>
-                </div>
-              </div>
-            )}
-            {unprotected && active && !blockedByAccess && (
-              <div className="small muted">Refreshing without activity protection (no site access): typing and unsaved forms on this page are not detected.</div>
-            )}
-
-            <div className="btn-grid">
-              {rt?.status === "paused_user" ? (
-                <button onClick={() => run("resumeTab", { tabId })}>Resume</button>
-              ) : (
-                <button disabled={!active} onClick={() => run("pauseTab", { tabId })}>Pause</button>
-              )}
-              <button onClick={refreshNow}>Refresh now</button>
-              {tabExcluded ? (
-                <button onClick={() => run("includeTab", { tabId })}>Include tab</button>
-              ) : (
-                <button onClick={() => run("excludeTab", { tabId })} title="Temporarily exclude this tab from all rules">Exclude tab</button>
-              )}
-              {rt && ["paused_unknown", "paused_activity", "completed", "stopped", "error"].includes(rt.status) ? (
-                <button onClick={() => run("resumeTab", { tabId })}>{rt.status === "completed" || rt.status === "stopped" ? "Restart" : "Retry now"}</button>
-              ) : (
-                <button disabled={!s.resolution.controllerId} onClick={() => run("runNow", { tabId })} title="Evaluate conditions and run actions now">Run rule now</button>
-              )}
-            </div>
-
-            {rt?.status === "paused_unsaved" && (
-              <div className="notice small row">
-                <span>Possible unsaved changes on this page.</span>
-                <button className="small" onClick={async () =>
-                    (await dialog.confirm({
-                      title: "Refresh anyway?",
-                      message: "This page may have unsaved changes. Refreshing will lose them.",
-                      confirmLabel: "Refresh anyway",
-                      danger: true,
-                    })) && run("allowUnsavedOnce", { tabId })
-                  }>Refresh anyway</button>
-              </div>
-            )}
-
-            <Toggle
-              checked={s.safety.pauseWhileTyping && s.safety.protectUnsavedChanges}
-              onChange={toggleProtection}
-              disabled={s.resolution.source === "rule"}
-              label={<span>Smart activity protection <span className="muted small">(pause while typing, protect unsaved forms)</span></span>}
-            />
-
-            {/* Site access only matters while something reads the page: protection,
-                or a rule (which may have page conditions). With protection off on a
-                tab-specific timer it does nothing, so the prompt is hidden, not greyed out. */}
-            {!s.hostAccess && origin && !blockedByAccess && !unprotected && (protectionOn || s.resolution.source === "rule") && (
-              <div className="info small row">
-                <span>
-                  JustRefresh can't see inside <strong>{siteName}</strong> yet. Allow it so refreshes wait while you're typing or have unsaved form changes
-                  {s.resolution.source === "rule" ? ", and so this rule can check the page's content." : "."}
-                </span>
-                <button className="small" onClick={() => void requestOrigins([origin]).then(() => state.reload())}>Allow access</button>
-              </div>
-            )}
-            {/* Confirms protection actually works here, once the access prompt is gone.
-                Paused-for-unsaved-changes has its own notice above. */}
-            {s.hostAccess && protectionOn && active && rt?.status !== "paused_unsaved" && (
-              <div className="small ok-line">✓ Protected on {siteName}: refresh waits {protectedWhile(s.safety)}</div>
-            )}
-
-            {rt && (
-              <div className="small muted">
-                Refreshes: {rt.refreshCount} · Last attempt: {formatTime(rt.lastAttemptAt)}
-                {rt.lastEvaluation && <> · Condition: {rt.lastEvaluation.status}</>}
-                {rt.lastError && <div style={{ color: "var(--error)" }}>{rt.lastError}</div>}
-              </div>
-            )}
-          </>
-        )}
+      <div className="col" style={{ gap: 2 }}>
+        <strong className="popup-site truncate">{siteName || s.tab.title || "This tab"}</strong>
+        <span className="muted small truncate" title={s.tab.url}>
+          {s.tab.title ? `${s.tab.title} · ` : ""}
+          {shortUrl(s.tab.url)}
+        </span>
       </div>
+
+      <section className="card col popup-card">{card}</section>
+
+      {!restricted && view === "main" && (
+        <>
+          <WaitingNotice
+            rt={rt}
+            grace={s.safety.inactivityGraceSeconds}
+            onRefreshAnyway={async () =>
+              (await dialog.confirm({
+                title: "Refresh anyway?",
+                message: "This page may have unsaved changes. Refreshing will lose them.",
+                confirmLabel: "Refresh anyway",
+                danger: true,
+              })) && run("allowUnsavedOnce", { tabId })
+            }
+            onRetry={() => void run("resumeTab", { tabId })}
+            hidden={blockedByAccess}
+          />
+
+          {blockedByAccess && origin && (
+            <div className="notice small col">
+              <span>
+                JustRefresh can't see inside <strong>{siteName}</strong>, so it can't tell whether you're typing or have unsaved form changes. To be safe,
+                it won't refresh this page until you allow access.
+              </span>
+              <div className="row">
+                <button className="small" onClick={() => void requestOrigins([origin]).then((ok) => ok && (declinedFor !== null ? start(declinedFor) : void run("resumeTab", { tabId })))}>
+                  Allow access
+                </button>
+                <button className="small" onClick={() => void startUnprotected()}>Refresh without protection</button>
+              </div>
+            </div>
+          )}
+
+          {!tabExcluded && !blockedByAccess && (
+            <ProtectionLine
+              site={siteName}
+              safety={s.safety}
+              protectionOn={protectionOn}
+              hostAccess={s.hostAccess}
+              unprotected={unprotected}
+              running={running}
+              byRule={source === "rule"}
+              needsAccessForRule={source === "rule" && !s.hostAccess}
+              onToggle={toggleProtection}
+              onAllow={() => origin && void requestOrigins([origin]).then(() => state.reload())}
+              showAllow={!!origin}
+            />
+          )}
+
+          <div className="btn-grid">
+            <button onClick={refreshNow}>
+              <RefreshIcon /> Refresh now
+            </button>
+            <button aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)}>
+              More <Chevron up={moreOpen} />
+            </button>
+          </div>
+
+          {moreOpen && (
+            <nav className="menu" aria-label="More actions">
+              {source !== "rule" && !tabExcluded && origin && origin !== "file:///*" && (
+                <button onClick={() => { setView("until"); setMoreOpen(false); }}>
+                  <strong>Refresh until something appears…</strong>
+                  <span>e.g. stop and notify me when “In stock” shows up</span>
+                </button>
+              )}
+              {!tabExcluded && (
+                <button onClick={() => { void run("excludeTab", { tabId }); setMoreOpen(false); }}>
+                  <strong>Never auto-refresh this tab</strong>
+                  <span>Rules for this site will skip it until you allow it again</span>
+                </button>
+              )}
+              <button onClick={() => openDashboard(`/builder?url=${encodeURIComponent(s.tab.url)}`)}>
+                <strong>Make a rule for {siteName || "this page"}…</strong>
+                <span>Opens the Rule Builder for more options</span>
+              </button>
+            </nav>
+          )}
+        </>
+      )}
 
       <ErrorBox error={error} />
-      {message && <div className="info small">{message}</div>}
 
-      <div className="row">
-        <button onClick={() => openDashboard(`/builder?url=${encodeURIComponent(s.tab.url)}`)}>Create rule for this page</button>
-        <span className="spacer" />
-        <button onClick={() => openDashboard()}>Dashboard</button>
-      </div>
+      <Footer overview={overview.data} />
     </div>
   );
 }
 
+/* ------------------------------------------------------------------ */
+
+function hostLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/** "youtube.com/watch?v=…" without the scheme. */
+function shortUrl(url: string): string {
+  return url.replace(/^https?:\/\/(www\.)?/, "");
+}
+
 function Header({ overview, onToggleGlobal }: { overview: Overview | null; onToggleGlobal: () => void }) {
-  const pending = (overview?.pendingApprovals ?? 0) + (overview?.pendingAgents ?? 0);
+  const paused = !!overview?.settings.paused;
   return (
-    <div className="col" style={{ gap: 6 }}>
-      <div className="popup-header">
-        <img src="icons/icon32.png" alt="" />
-        <strong>JustRefresh</strong>
-        <span className="spacer" />
-        {overview && (
-          <button className="small" onClick={onToggleGlobal} title="Pause or resume all refreshing">
-            {overview.settings.paused ? "Resume all" : "Pause all"}
-          </button>
-        )}
-      </div>
+    <div className="popup-header">
+      <img src="icons/icon32.png" alt="" />
+      <strong>JustRefresh</strong>
+      {paused && <span className="pill pill-warn">All paused</span>}
+      {overview && !overview.settings.enabled && <span className="pill pill-muted">Off</span>}
+      <span className="spacer" />
       {overview && (
-        <div className="row small muted">
-          <span>{overview.counts.running} running</span>·<span>{overview.counts.paused} paused</span>·<span>{overview.counts.stopped} stopped</span>
-          {!overview.settings.enabled && <span className="pill pill-muted">Disabled</span>}
-          {overview.settings.paused && <span className="pill pill-warn">All paused</span>}
-          {pending > 0 && (
-            <a href="#" onClick={(e) => { e.preventDefault(); openDashboard("/agents"); }}>
-              <span className="badge">{pending}</span> agent request{pending > 1 ? "s" : ""}
-            </a>
+        <button className="icon-btn" onClick={onToggleGlobal} aria-label={paused ? "Resume all refreshing" : "Pause all refreshing"} title={paused ? "Resume all refreshing" : "Pause all refreshing"}>
+          {paused ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z" fill="currentColor" /></svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
           )}
+        </button>
+      )}
+      <button className="icon-btn" onClick={() => openDashboard()} aria-label="Open dashboard" title="Open dashboard">
+        <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function Footer({ overview }: { overview: Overview | null }) {
+  if (!overview) return null;
+  const { running, paused } = overview.counts;
+  const pending = overview.pendingApprovals + overview.pendingAgents;
+  return (
+    <footer className="popup-footer small muted">
+      <span>
+        {running} tab{running === 1 ? "" : "s"} refreshing{paused ? ` · ${paused} waiting` : ""}
+      </span>
+      {pending > 0 && (
+        <a href="#" onClick={(e) => { e.preventDefault(); openDashboard("/agents"); }}>
+          <span className="badge">{pending}</span> agent request{pending > 1 ? "s" : ""}
+        </a>
+      )}
+      <span className="spacer" />
+      <a href="#" onClick={(e) => { e.preventDefault(); openDashboard(); }}>Open dashboard</a>
+    </footer>
+  );
+}
+
+function IntervalPicker(p: {
+  chips: number[];
+  value: number;
+  customOpen: boolean;
+  customValue: string;
+  customUnit: number;
+  minSeconds: number;
+  onPick: (v: number) => void;
+  onCustom: () => void;
+  onCustomValue: (v: string) => void;
+  onCustomUnit: (v: number) => void;
+}) {
+  const isChip = !p.customOpen && p.chips.includes(p.value);
+  return (
+    <>
+      <div className="chips" role="group" aria-label="Refresh interval">
+        {p.chips.map((c) => (
+          <button type="button" key={c} className={`chip${isChip && p.value === c ? " selected" : ""}`} aria-pressed={isChip && p.value === c} onClick={() => p.onPick(c)}>
+            {intervalLabel(c)}
+          </button>
+        ))}
+        <button type="button" className={`chip${!isChip ? " selected" : ""}`} aria-pressed={!isChip} onClick={p.onCustom}>
+          {!isChip && !p.customOpen ? intervalLabel(p.value) : "Custom…"}
+        </button>
+      </div>
+      {p.customOpen && (
+        <div className="row">
+          <label htmlFor="custom-interval" className="muted">Every</label>
+          <input
+            id="custom-interval"
+            type="number"
+            min={p.customUnit === 1 ? p.minSeconds : 1}
+            style={{ width: 80 }}
+            value={p.customValue}
+            onChange={(e) => p.onCustomValue(e.target.value)}
+            autoFocus
+          />
+          <select aria-label="Unit" value={p.customUnit} onChange={(e) => p.onCustomUnit(Number(e.target.value))}>
+            {UNITS.map((u) => <option key={u.factor} value={u.factor}>{u.label}</option>)}
+          </select>
         </div>
       )}
+    </>
+  );
+}
+
+function CountdownRow({ title, rt, countdown, subtitle }: { title: ReactNode; rt: TabRuntime | null; countdown: number | null; subtitle?: ReactNode }) {
+  const waiting = rt?.status.startsWith("paused") && rt.status !== "paused_user";
+  return (
+    <div className="countdown-row">
+      <div className="col" style={{ gap: 0, minWidth: 0 }}>
+        <span className="card-title">{title}</span>
+        <span className={`small ${waiting ? "warn-text" : "muted"}`}>
+          {subtitle ??
+            (rt?.status === "refreshing"
+              ? "Refreshing now…"
+              : rt?.status === "evaluating"
+                ? "Checking the page…"
+                : rt?.status === "paused_user"
+                  ? "Paused"
+                  : waiting
+                    ? "Waiting for you"
+                    : "Next refresh in")}
+        </span>
+      </div>
+      <span className="spacer" />
+      {countdown !== null && !waiting && rt?.status !== "refreshing" && rt?.status !== "paused_user" && (
+        <span className="countdown" title={`Next refresh at ${formatTime(rt?.nextDueAt)}`}>{formatDuration(countdown)}</span>
+      )}
     </div>
+  );
+}
+
+function Stats({ rt, rule }: { rt: TabRuntime; rule?: boolean }) {
+  const last = rt.lastAttemptAt ? ` · last at ${formatTime(rt.lastAttemptAt)}` : "";
+  if (rule) {
+    const found = rt.lastEvaluation?.status === "matched" ? "found" : rt.lastEvaluation?.status === "unknown" ? "couldn't check" : "not found yet";
+    return <span className="small muted">Refreshed {rt.refreshCount} time{rt.refreshCount === 1 ? "" : "s"} · {found}{last}</span>;
+  }
+  return <span className="small muted">Refreshed {rt.refreshCount} time{rt.refreshCount === 1 ? "" : "s"}{last}</span>;
+}
+
+function RuleCard(p: {
+  name: string;
+  summary: string | null;
+  onEdit: () => void;
+  rt: TabRuntime | null;
+  countdown: number | null;
+  progress: number;
+  onCheckNow: () => void;
+  onStop: () => void;
+  onRestart: () => void;
+}) {
+  const rt = p.rt;
+  const active = !!rt && RUNNING.includes(rt.status);
+  return (
+    <>
+      <div className="row" style={{ flexWrap: "nowrap" }}>
+        <span className="pill pill-done">Rule</span>
+        <strong className="truncate grow">{p.name}</strong>
+        <a href="#" className="small" onClick={(e) => { e.preventDefault(); p.onEdit(); }}>Edit rule</a>
+      </div>
+      {active ? (
+        <>
+          <CountdownRow title={p.summary ?? "Refreshing"} rt={rt} countdown={p.countdown} />
+          <div className="progress" aria-hidden>
+            <div style={{ width: `${p.progress}%` }} />
+          </div>
+          {rt && <Stats rt={rt} rule />}
+          <div className="row">
+            <button className="big grow" onClick={p.onCheckNow}>Check now</button>
+            <button className="big grow" onClick={p.onStop}>Stop on this tab</button>
+          </div>
+        </>
+      ) : (
+        <>
+          {p.summary && <span>{p.summary}</span>}
+          <span className="small muted">
+            {rt?.status === "completed" ? (rt.reason ?? "Finished: the condition was found.") : rt?.status === "stopped" ? "Stopped on this tab." : (rt?.reason ?? "Not running on this tab yet.")}
+          </span>
+          <button className="primary big" onClick={p.onRestart}>
+            {rt?.status === "completed" || rt?.status === "stopped" ? "Start again" : "Start"}
+          </button>
+        </>
+      )}
+    </>
+  );
+}
+
+/** One plain sentence when JustRefresh is holding back, with the override right there. */
+function WaitingNotice(p: { rt: TabRuntime | null; grace: number; onRefreshAnyway: () => void; onRetry: () => void; hidden: boolean }) {
+  const rt = p.rt;
+  if (!rt || p.hidden) return null;
+  if (rt.status === "paused_unsaved") {
+    return (
+      <div className="notice col small">
+        <span>This page may have a form you've started filling in. It won't refresh until you submit it, so nothing you typed is lost.</span>
+        <button className="small" style={{ alignSelf: "flex-start" }} onClick={p.onRefreshAnyway}>Refresh anyway</button>
+      </div>
+    );
+  }
+  if (rt.status === "paused_activity") {
+    return (
+      <div className="notice small">
+        {rt.reason ? `${rt.reason}. ` : ""}It refreshes once the page has been quiet for {intervalLabel(p.grace)}.
+      </div>
+    );
+  }
+  if (rt.status === "paused_unknown" || rt.status === "error") {
+    return (
+      <div className="notice col small">
+        <span>{rt.status === "error" ? "Something went wrong" : "Couldn't check the page"}{rt.reason ? `: ${rt.reason}` : "."}</span>
+        <button className="small" style={{ alignSelf: "flex-start" }} onClick={p.onRetry}>Try again now</button>
+      </div>
+    );
+  }
+  return null;
+}
+
+function ProtectionLine(p: {
+  site: string;
+  safety: SafetyConfig;
+  protectionOn: boolean;
+  hostAccess: boolean;
+  unprotected: boolean;
+  running: boolean;
+  byRule: boolean;
+  needsAccessForRule: boolean;
+  onToggle: (on: boolean) => void;
+  onAllow: () => void;
+  showAllow: boolean;
+}) {
+  const allow = p.showAllow ? (
+    <button className="small" onClick={p.onAllow}>Allow access</button>
+  ) : null;
+  let text: ReactNode;
+  let ok = false;
+  if (p.protectionOn && p.hostAccess) {
+    ok = true;
+    text = `${p.running ? "Protected: waits" : "Will wait"} ${protectedWhile(p.safety)}`;
+  } else if (p.protectionOn && p.unprotected) {
+    text = <>Refreshing without protection: JustRefresh can't see inside <strong>{p.site}</strong>, so typing isn't detected.</>;
+  } else if (p.protectionOn || p.needsAccessForRule) {
+    text = (
+      <>
+        JustRefresh can't see inside <strong>{p.site}</strong> yet. Allow it so refreshes wait while you're typing or have unsaved form changes
+        {p.byRule ? ", and so this rule can check the page's content." : "."}
+      </>
+    );
+  } else {
+    text = <span className="muted">Protection off: refreshes even while you're typing.</span>;
+  }
+  const showAllow = !p.hostAccess && (p.protectionOn || p.needsAccessForRule);
+  return (
+    <div className="protection-line small">
+      {ok && (
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="ok-icon">
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      )}
+      <div className="col grow" style={{ gap: 6 }}>
+        <span>
+          {text}
+          {p.byRule && p.protectionOn && p.hostAccess && <span className="muted"> (set by the rule)</span>}
+        </span>
+        {showAllow && allow && <div>{allow}</div>}
+      </div>
+      {!p.byRule && <Toggle checked={p.safety.pauseWhileTyping && p.safety.protectUnsavedChanges} onChange={p.onToggle} label={<span className="sr-only">Wait while I'm typing or have unsaved form changes</span>} />}
+    </div>
+  );
+}
+
+function UntilForm(p: { site: string; picker: ReactNode; canStart: boolean; problem: string | null; onCancel: () => void; onStart: (text: string, mode: UntilMode) => Promise<void> }) {
+  const [text, setText] = useState("");
+  const [mode, setMode] = useState<UntilMode>("appears");
+  const [busy, setBusy] = useState(false);
+  const ready = text.trim().length > 0 && p.canStart && !busy;
+  return (
+    <form
+      className="col"
+      style={{ gap: 10 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!ready) return;
+        setBusy(true);
+        void p.onStart(text, mode).finally(() => setBusy(false));
+      }}
+    >
+      <span className="card-title">Refresh until something appears</span>
+      <label className="col" style={{ gap: 4 }}>
+        <span className="small muted">Stop when this text</span>
+        <div className="seg" role="group" aria-label="Appears or disappears">
+          <button type="button" className={mode === "appears" ? "selected" : ""} aria-pressed={mode === "appears"} onClick={() => setMode("appears")}>appears</button>
+          <button type="button" className={mode === "disappears" ? "selected" : ""} aria-pressed={mode === "disappears"} onClick={() => setMode("disappears")}>disappears</button>
+        </div>
+      </label>
+      <input aria-label="Text to look for" placeholder="e.g. In stock" value={text} maxLength={200} onChange={(e) => setText(e.target.value)} autoFocus />
+      <span className="small muted">Checking every</span>
+      {p.picker}
+      {p.problem && <span className="small field-error">{p.problem}</span>}
+      <span className="small muted">
+        It looks anywhere on this page (ignoring upper/lower case), then stops refreshing and notifies you with a sound. You'll find it under Rules in the
+        dashboard.
+      </span>
+      <button type="submit" className="primary big" disabled={!ready}>
+        {busy ? "Setting up…" : "Start watching"}
+      </button>
+      <button type="button" className="link small" style={{ alignSelf: "center" }} onClick={p.onCancel}>Cancel</button>
+    </form>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 1 1-3-6.7" />
+      <path d="M21 4v5h-5" />
+    </svg>
+  );
+}
+
+function Chevron({ up }: { up: boolean }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d={up ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6"} />
+    </svg>
   );
 }

@@ -25,11 +25,13 @@ writeFileSync(join(extDir, "manifest.json"), JSON.stringify(manifest));
 // ---- test server ----
 const loads = new Map();
 let statusText = "Sold out";
+let stockText = "Sold out";
 const server = http.createServer((req, res) => {
   const path = req.url.split("?")[0];
   loads.set(path, (loads.get(path) ?? 0) + 1);
   res.setHeader("content-type", "text/html");
   if (path === "/form") return res.end(`<title>Form</title><form><input id="q" value=""><button>Save</button></form>`);
+  if (path === "/stock") return res.end(`<title>Stock</title><p>Item 42</p><div>${stockText}</div>`);
   if (path === "/status") return res.end(`<title>Status</title><div id="status">${statusText}</div>`);
   // A page that keeps running JS, so a debugger pause takes effect at once.
   if (path === "/stall") return res.end(`<title>Stall</title><script>setInterval(() => { window.tick = (window.tick || 0) + 1; }, 20);</script><h1>Stall</h1>`);
@@ -229,6 +231,62 @@ await test("service worker restart: no lost or duplicate alarms", async () => {
   assert.equal(new Set(names).size, names.length, "no duplicate alarms");
   assert.ok(names.includes(`sar:tab:${tabId}`));
   assert.equal(after.length, before.length);
+  await page.close();
+});
+
+/** The real popup, pointed at `tabId` (a popup opened as a page would otherwise see itself as the active tab). */
+async function openPopupFor(tabId, file) {
+  const popup = await context.newPage();
+  await popup.addInitScript((id) => {
+    chrome.tabs.query = async () => [{ id }];
+  }, tabId);
+  await popup.setViewportSize({ width: 380, height: 640 });
+  await popup.goto(`chrome-extension://${extId}/popup.html`);
+  await popup.getByText("JustRefresh").first().waitFor();
+  return popup;
+}
+
+await test("popup: start a timer with one tap, then 'Refresh until' hands the tab to a new rule that stops when the text appears", async () => {
+  stockText = "Sold out";
+  // Earlier tests leave rules covering every local page; switch them off so this tab starts uncontrolled.
+  const others = (await call("listRules")).filter((r) => r.enabled);
+  for (const r of others) await call("disableRule", { id: r.id });
+  const page = await context.newPage();
+  await page.goto(`${base}/stock`);
+  const tabId = await tabIdFor(`${base}/stock`);
+
+  let popup = await openPopupFor(tabId);
+  await popup.getByRole("button", { name: "1 min", exact: true }).click();
+  await popup.getByRole("button", { name: "Start refreshing every 1 min" }).click();
+  await waitFor(async () => (await runtime(tabId))?.status === "scheduled", "tab timer scheduled");
+  assert.equal((await runtime(tabId)).controllerId, `tab:${tabId}`);
+  await popup.getByText("Next refresh in").waitFor();
+  await popup.getByText(/Protected: waits while you're typing/).waitFor();
+  await popup.screenshot({ path: join(root, "test-results", "popup-running.png") });
+
+  await popup.getByRole("button", { name: /More/ }).click();
+  await popup.getByRole("button", { name: /Refresh until something appears/ }).click();
+  await popup.getByLabel("Text to look for").fill("In stock");
+  await popup.getByRole("button", { name: "30 sec", exact: true }).click();
+  await popup.screenshot({ path: join(root, "test-results", "popup-until.png") });
+  await popup.getByRole("button", { name: "Start watching" }).click();
+
+  // The tab is now run by the new rule, which checked the page straight away.
+  const rule = await waitFor(async () => (await call("listRules")).find((r) => r.name.includes("“In stock”")), "rule created");
+  assert.deepEqual(rule.target.patterns, [{ type: "exact", value: `${base}/stock` }]);
+  await waitFor(async () => (await runtime(tabId))?.controllerId === rule.id, "rule took over the tab");
+  await waitFor(async () => (await runtime(tabId))?.lastEvaluation?.status === "not_matched", "first check: not found yet");
+  await popup.close();
+  popup = await openPopupFor(tabId);
+  await popup.getByText("Refreshing every 30 sec until “In stock” appears, then notify me").waitFor();
+  await popup.screenshot({ path: join(root, "test-results", "popup-rule.png") });
+  await popup.close();
+
+  stockText = "Back In Stock";
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "completed", "completed when the text appears");
+  await call("deleteRule", { id: rule.id, expectedRevision: rule.meta.revision });
+  for (const r of others) await call("enableRule", { id: r.id });
   await page.close();
 });
 

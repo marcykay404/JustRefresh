@@ -5,9 +5,10 @@ user activity and programmable conditions — with a declarative, versioned
 rule engine that the popup, a visual rule builder, JSON import and external
 AI agents all drive through **one** Rule Management API.
 
-* **Quick controls** — per-tab refresh from the popup: presets (30 s – 1 h; down
-  to 5 s with the opt-in fast intervals setting) or
-  custom intervals, countdown, pause/resume, refresh now, exclude tab.
+* **Quick controls** — per-tab refresh from the popup: one-tap intervals
+  (30 s – 1 h; down to 5 s with the opt-in fast intervals setting) or a
+  custom one, countdown, stop, refresh now, never-refresh this tab, and
+  **refresh until text appears/disappears** (then stop and notify with a sound).
 * **URL rules** — exact / domain / glob / regex patterns, exclusions,
   priorities with deterministic tie-breaking, conflict hints, pattern tester.
 * **Conditional refresh** — "refresh until `#status` contains *Available*",
@@ -43,8 +44,10 @@ conditions); you can also grant all sites in Dashboard → Settings.
 
 ## Using it
 
-* **Popup** — toggle auto refresh for the current tab, pick an interval,
-  pause/resume, refresh now, exclude the tab, see which rule applies.
+* **Popup** — tap an interval and Start; Stop or change it while it runs;
+  Refresh now. Under **More**: "Refresh until something appears…" (creates a
+  rule for this exact page), "Never auto-refresh this tab", and "Make a rule
+  for this site…". A tab run by a rule shows the rule in words, with Check now.
 * **Dashboard** (popup → Dashboard, or the extension's Options page):
   Tabs · Rules · Rule Builder · Exclusions · History · Agent Integrations · Settings.
 * Example rules: [`examples/`](examples) — import them in Settings.
