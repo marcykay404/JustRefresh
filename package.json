@@ -1,5 +1,5 @@
 {
-  "name": "smart-auto-refresh",
+  "name": "justrefresh",
   "version": "0.1.0",
   "private": true,
   "description": "Rule-driven, agent-programmable auto refresh for Chrome (Manifest V3)",

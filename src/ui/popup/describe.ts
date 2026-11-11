@@ -3,7 +3,7 @@
  * a one-line summary of a rule, and the rule that "Refresh until something
  * appears" creates. Pure functions, so they are unit tested.
  */
-import type { ConditionNode, Rule, RuleInput, UrlPatternInput } from "../../core/types";
+import type { ActionConfig, ConditionNode, Rule, RuleInput, UrlPatternInput } from "../../core/types";
 
 /** "No limit", "20 min", "1 hour", "24 hours" for a stop-after choice in minutes. */
 export function stopAfterLabel(minutes: number | null): string {
@@ -73,14 +73,67 @@ export function describeCondition(c: ConditionNode): string {
 export function describeRule(rule: Pick<Rule, "trigger" | "stopWhen" | "actions">, effectiveSeconds?: number | null): string {
   const t = rule.trigger as { type: string; seconds?: number };
   const seconds = effectiveSeconds ?? t.seconds;
-  const notifies = rule.actions.onMatched.some((a) => a.type === "notify");
-  // Page-load rules check the page but never refresh it themselves.
-  if (t.type === "navigation") {
-    return rule.stopWhen ? `Checking each time the page loads${notifies ? `: notify me when ${describeCondition(rule.stopWhen)}` : ""}` : "Runs each time the page loads";
+  const when =
+    t.type === "interval" && seconds
+      ? `every ${intervalLabel(seconds)}`
+      : t.type === "startup"
+        ? "once when the browser starts"
+        : t.type === "manual"
+          ? "only when you run it"
+          : t.type === "navigation"
+            ? "each time the page loads"
+            : t.type === "urlChange"
+              ? "each time the address changes"
+              : `on its ${t.type} trigger`;
+  const { onMatched, onNotMatched, onUnknown } = rule.actions;
+  const has = (list: readonly ActionConfig[], type: string) => list.some((a) => a.type === type);
+  const without = (list: readonly ActionConfig[], type: string) => list.filter((a) => a.type !== type);
+  const unknown = onUnknown?.length ? `; if the page can't be checked: ${actionsPhrase(onUnknown)}` : "";
+  const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
+
+  // Without a condition every run counts as "not matched".
+  if (!rule.stopWhen) {
+    if (!onNotMatched.length) return `Runs ${when}${unknown}`;
+    const others = without(onNotMatched, "refresh");
+    if (has(onNotMatched, "refresh")) return `Refreshing ${when}${others.length ? `, and each time: ${actionsPhrase(others)}` : ""}${unknown}`;
+    return `${cap(when)}: ${actionsPhrase(onNotMatched)} (no refresh)${unknown}`;
   }
-  const every = t.type === "interval" && seconds ? `every ${intervalLabel(seconds)}` : `on its ${t.type} trigger`;
-  if (!rule.stopWhen) return `Refreshing ${every}`;
-  return `Refreshing ${every} until ${describeCondition(rule.stopWhen)}${notifies ? ", then notify me" : ""}`;
+  const cond = describeCondition(rule.stopWhen);
+  // The usual shape: refresh until the condition matches, then stop (and notify).
+  if (has(onNotMatched, "refresh") && without(onNotMatched, "refresh").length === 0 && has(onMatched, "stopRefresh") && !has(onMatched, "refresh")) {
+    const then = without(onMatched, "stopRefresh");
+    return `Refreshing ${when} until ${cond}${then.length ? `, then ${actionsPhrase(then)}` : ""}${unknown}`;
+  }
+  // Rules that only look at the page (page loads can't refresh).
+  if (!onNotMatched.length && onMatched.length && !has(onMatched, "refresh")) {
+    return `Checking ${when}: ${actionsPhrase(onMatched)} when ${cond}${unknown}`;
+  }
+  return `${cap(when)}: when ${cond}, ${actionsPhrase(onMatched)}; otherwise ${actionsPhrase(onNotMatched)}${unknown}`;
+}
+
+/** "refresh", "notify me and stop", … ("do nothing" for none). */
+export function actionsPhrase(list: readonly ActionConfig[]): string {
+  const words = list.map((a) => {
+    const x = a as ActionConfig & { minutes?: number };
+    switch (a.type) {
+      case "refresh":
+        return "refresh";
+      case "stopRefresh":
+        return "stop";
+      case "pauseRefresh":
+        return x.minutes ? `pause for ${intervalLabel(x.minutes * 60)}` : "pause";
+      case "resumeRefresh":
+        return "resume";
+      case "notify":
+        return "notify me";
+      case "log":
+        return "note it in History";
+      default:
+        return a.type;
+    }
+  });
+  if (!words.length) return "do nothing";
+  return words.length === 1 ? words[0]! : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
 }
 
 export type UntilMode = "appears" | "disappears";

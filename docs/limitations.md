@@ -8,7 +8,8 @@
   a 30 s alarm as backstop: if Chrome terminates the worker, the next fast
   refresh can be up to 30 s late, then the timer resumes. A fast tab keeps the
   worker awake while it is scheduled. To limit load on sites, at most one fast
-  automatic refresh per site (host) happens every 5 s across all tabs.
+  automatic refresh per site (host) happens every 5 s across all tabs; tabs
+  on the same site take turns, the one that has waited longest first.
   Turning the setting off keeps fast rules but runs them every 30 s.
 * **Service-worker lifetime.** The worker is terminated when idle; all state
   is persisted and alarms wake it. The in-memory per-tab lock exists only

@@ -3,6 +3,7 @@
  * most one fast automatic refresh per site every 5 s across tabs.
  */
 import { createApiEnv } from "../helpers/api-env";
+import { quietActivity } from "../helpers/fake-env";
 import { alarmName } from "@/core/rule-engine";
 import { validateRule } from "@/core/rule-schema";
 import { ConfigRepository } from "@/storage/repositories";
@@ -101,4 +102,70 @@ describe("fast intervals: per-site limit", () => {
     await env.fireDue();
     expect(env.browser.reloads.sort()).toEqual([1, 2]);
   });
+});
+
+describe("fast intervals: fairness over several rounds", () => {
+  it("tabs on one site take turns: none is starved, and the site never gets more than one refresh per 5 s", async () => {
+    const env = createApiEnv();
+    await env.service.call(env.user, "updateSettings", { allowFastIntervals: true });
+    const ids = [1, 2, 3];
+    for (const id of ids) env.browser.addTab(id, `https://shop.test/${id}`);
+    for (const id of ids) await env.service.call(env.user, "startTab", { tabId: id, intervalSeconds: 5 });
+
+    const times: number[] = [];
+    const start = env.clock.t;
+    while (env.clock.t < start + 120_000) {
+      env.clock.advance(1_000);
+      const before = env.browser.reloads.length;
+      await env.fireDue();
+      for (const id of env.browser.reloads.slice(before)) {
+        times.push(env.clock.t);
+        await env.completeNavigation(id);
+      }
+    }
+    const per = ids.map((id) => env.browser.reloads.filter((x) => x === id).length);
+    // 120 s at one refresh per 5 s for the whole site: about 24, shared out.
+    expect(per.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(20);
+    expect(per.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(25);
+    expect(Math.min(...per)).toBeGreaterThanOrEqual(Math.floor(Math.max(...per) / 2)); // nobody starved
+    for (let i = 1; i < times.length; i++) expect(times[i]! - times[i - 1]!).toBeGreaterThanOrEqual(5_000);
+  });
+});
+
+it("a waiting tab that gets paused for typing doesn't hold up the others", async () => {
+  const env = createApiEnv();
+  await env.service.call(env.user, "updateSettings", { allowFastIntervals: true });
+  for (const id of [1, 2]) env.browser.addTab(id, `https://shop.test/${id}`);
+  for (const id of [1, 2]) await env.service.call(env.user, "startTab", { tabId: id, intervalSeconds: 5 });
+  env.clock.advance(5_000);
+  await env.fireDue(); // tab 1 refreshes, tab 2 waits
+  await env.completeNavigation(1);
+  env.page.activityByTab.set(2, quietActivity({ sinceKeyMs: 500, editing: true }));
+  env.clock.advance(5_000);
+  await env.fireDue(); // tab 2 is paused for typing; tab 1 goes ahead
+  expect((await env.runtime.get(2))?.status).toBe("paused_activity");
+  env.clock.advance(1_000);
+  await env.fireDue(); // tab 1 had yielded to tab 2; it looks again a second later
+  expect(env.browser.reloads).toEqual([1, 1]);
+});
+
+it("a waiting tab that is stopped gives up its place at once (no gap on the site)", async () => {
+  const env = createApiEnv();
+  await env.service.call(env.user, "updateSettings", { allowFastIntervals: true });
+  for (const id of [1, 2, 3]) env.browser.addTab(id, `https://shop.test/${id}`);
+  for (const id of [1, 2, 3]) await env.service.call(env.user, "startTab", { tabId: id, intervalSeconds: 5 });
+  const start = env.clock.t;
+  const times: number[] = [];
+  while (env.clock.t < start + 40_000) {
+    env.clock.advance(1_000);
+    if (env.clock.t === start + 7_000) await env.service.call(env.user, "stopTab", { tabId: 2 });
+    const before = env.browser.reloads.length;
+    await env.fireDue();
+    for (const id of env.browser.reloads.slice(before)) {
+      times.push(env.clock.t - start);
+      await env.completeNavigation(id);
+    }
+  }
+  expect(env.browser.reloads.slice(1)).not.toContain(2);
+  for (let i = 1; i < times.length; i++) expect(times[i]! - times[i - 1]!).toBeLessThanOrEqual(6_000);
 });

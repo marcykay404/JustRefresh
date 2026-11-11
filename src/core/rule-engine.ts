@@ -115,6 +115,8 @@ export const tabIdFromAlarm = (name: string): number | null =>
   name.startsWith(ALARM_PREFIX) ? Number(name.slice(ALARM_PREFIX.length)) : null;
 
 export { FORM_RESULT_REASON } from "./safety";
+/** Reason while a fast tab waits for its site's turn (see performReload). */
+export const FAST_WAIT_REASON = "Waiting: at most one fast refresh per site every 5 seconds";
 
 class SafetyBlock extends Error {
   constructor(
@@ -144,6 +146,8 @@ export class RuleEngine {
   private readonly locks = new Map<number, Promise<unknown>>();
   /** Last fast-interval automatic reload per host (in memory; resets with the worker). */
   private readonly lastFastReloadByHost = new Map<string, number>();
+  /** Tabs deferred by the per-site fast limit: host → tab → when it first had to wait, and when it last asked. */
+  private readonly fastWaitingByHost = new Map<string, Map<number, { since: number; seen: number }>>();
   private readonly timeouts: EngineTimeouts;
   /** Page port with bounded waits: a stalled page yields "unavailable"/"unknown", never a hang. */
   private readonly page: PagePort;
@@ -287,7 +291,7 @@ export class RuleEngine {
     const nextDueAt = intervalDue === null ? null : opts.restoring ? restoredDueAt(null, intervalDue, now, opts.slot ?? 0) : intervalDue;
     return transition(fresh, "scheduled", {
       nextDueAt,
-      reason: nextDueAt === null ? `Waiting for ${rule.trigger.type} trigger` : undefined,
+      reason: nextDueAt === null ? waitingReason(rule) : undefined,
     });
   }
 
@@ -347,13 +351,19 @@ export class RuleEngine {
       const config = await this.deps.stores.config.get();
       const rt = await this.deps.stores.runtime.get(tabId);
       const next = this.sync(rt, tab, resolveTab(tab, config), config);
+      if (next.reason !== FAST_WAIT_REASON) this.leaveFastQueue(tabId);
       await this.deps.stores.runtime.put(next);
       await this.setAlarm(next);
       return next;
     });
   }
 
+  private leaveFastQueue(tabId: number) {
+    for (const waiting of this.fastWaitingByHost.values()) waiting.delete(tabId);
+  }
+
   async forgetTab(tabId: number) {
+    this.leaveFastQueue(tabId);
     await this.deps.stores.runtime.delete(tabId);
     await this.deps.alarms.clear(alarmName(tabId));
   }
@@ -478,6 +488,10 @@ export class RuleEngine {
       } else if (cur.status === "refreshing") {
         cur = transition(cur, "scheduled", { reason: undefined });
       }
+      // A rule without a timer had only a watchdog for the reload: it loaded, so drop it.
+      if (cur.status === "scheduled" && this.nextDue(rule, now) === null) {
+        cur = { ...cur, nextDueAt: null, reason: waitingReason(rule) };
+      }
       await this.deps.stores.runtime.put(cur);
       await this.setAlarm(cur);
       return true;
@@ -503,6 +517,8 @@ export class RuleEngine {
       const prev = await this.deps.stores.runtime.get(tabId);
       let rt = this.sync(prev, tab, res, config);
       const save = async (r: TabRuntime) => {
+        // Only a tab still waiting for its fast turn keeps its place in the queue.
+        if (r.reason !== FAST_WAIT_REASON) this.leaveFastQueue(tabId);
         await this.deps.stores.runtime.put(r);
         await this.setAlarm(r);
         return { status: r.status, reason: r.reason };
@@ -527,14 +543,41 @@ export class RuleEngine {
         return save(transition(rt, "completed", { reason: rule.stopWhen ? `${limit.reason}; the condition wasn't met` : limit.reason, nextDueAt: null }));
       };
 
-      if (event !== "manual" && !trigger.events.includes(event)) {
-        // Not our trigger: keep state, but make sure the alarm is consistent.
-        // A time limit still ends the run: a paused startup or manual rule only
-        // wakes on an alarm at its deadline.
-        if (event === "alarm" && !isTerminal(rt.status) && !rt.pendingReload) {
-          const ended = await endOnLimit();
-          if (ended) return ended;
+      // An alarm for a rule that isn't run by a timer (page load, startup,
+      // manual) is one the engine set itself: a time limit, a postponed refresh,
+      // a timed pause, or active hours opening.
+      const ownAlarm = event === "alarm" && !trigger.events.includes(event);
+      if (ownAlarm && !isTerminal(rt.status) && !rt.pendingReload) {
+        // A time limit still ends the run, e.g. a paused startup rule wakes at its deadline.
+        const ended = await endOnLimit();
+        if (ended) return ended;
+      }
+      // A refresh postponed for typing or unsaved changes is retried on its
+      // alarm, whatever started it.
+      const postponed = ownAlarm && (rt.status === "paused_activity" || rt.status === "paused_unsaved") && !rt.pendingReload;
+      if (event !== "manual" && !trigger.events.includes(event) && !postponed) {
+        const waiting = waitingReason(rule);
+        // The watchdog of a reload or check that never finished (worker killed,
+        // page never loaded): recover without running the rule again.
+        const stalledReload = !!rt.pendingReload && now - rt.pendingReload.startedAt >= NAVIGATION_TIMEOUT_MS;
+        if (ownAlarm && (stalledReload || rt.status === "evaluating")) {
+          const reason = stalledReload ? "Previous reload did not complete in time" : "Previous evaluation did not finish";
+          this.log({ ruleId: rule.id, tabId, url: tab.url, trigger: event, action: "recover", outcome: "ok", reason });
+          const cleared = { ...rt, pendingReload: null, ...(stalledReload ? { lastError: reason } : {}) };
+          const back = cleared.status === "refreshing" || cleared.status === "evaluating" ? transition(cleared, "scheduled", { reason: waiting }) : cleared;
+          return save({ ...back, nextDueAt: null });
         }
+        if (ownAlarm && rt.pendingReload) return save({ ...rt, nextDueAt: rt.pendingReload.startedAt + NAVIGATION_TIMEOUT_MS });
+        if (ownAlarm && rt.nextDueAt !== null && rt.nextDueAt <= now) {
+          // Nothing else to do at this time: don't re-arm a past alarm (it would
+          // fire every 30 s forever). A timed pause that is over ends here; the
+          // rule then waits for its own trigger.
+          if (rt.status === "paused_user" && rt.resumeAt !== null && rt.resumeAt <= now) {
+            return save(transition(rt, "scheduled", { resumeAt: null, reason: waiting, nextDueAt: null }));
+          }
+          return save({ ...rt, nextDueAt: null, ...(rt.status === "scheduled" ? { reason: waiting } : {}) });
+        }
+        // Not our trigger: keep state, but make sure the alarm is consistent.
         return save(rt);
       }
 
@@ -649,7 +692,7 @@ export class RuleEngine {
       rt = await this.runActions(rule, tab, rt, rule.actions.onNotMatched, event, status, { allowRefresh: true });
       if (rt.status === "evaluating") {
         rt = transition(rt, "scheduled", {
-          reason: this.nextDue(rule, now) === null ? `Waiting for ${rule.trigger.type} trigger` : undefined,
+          reason: this.nextDue(rule, now) === null ? waitingReason(rule) : undefined,
           nextDueAt: this.nextDue(rule, now),
         });
       }
@@ -767,6 +810,7 @@ export class RuleEngine {
       fallbackRetryMs: this.intervalMs(rule),
     });
     if (!decision.allowed) {
+      this.leaveFastQueue(tab.id); // paused for you: others on the site needn't wait for it
       throw new SafetyBlock(decision.status, decision.reason, now + Math.max(decision.retryInMs, MIN_ALARM_DELAY_MS));
     }
     // Fast intervals (< 30 s): at most one automatic refresh per site per
@@ -777,9 +821,21 @@ export class RuleEngine {
     const fast = intervalMs !== null && intervalMs < MIN_INTERVAL_SECONDS * 1000 && host !== null;
     if (fast) {
       const last = this.lastFastReloadByHost.get(host) ?? -Infinity;
-      if (now - last < FAST_SITE_SPACING_MS) {
-        throw new SafetyBlock("scheduled", "Waiting: at most one fast refresh per site every 5 seconds", last + FAST_SITE_SPACING_MS, true);
-      }
+      const waiting = this.fastWaitingByHost.get(host) ?? new Map<number, { since: number; seen: number }>();
+      this.fastWaitingByHost.set(host, waiting);
+      // Forget tabs that stopped asking (stopped, closed, left the site).
+      for (const [id, w] of waiting) if (now - w.seen > 3 * FAST_SITE_SPACING_MS) waiting.delete(id);
+      const mine = waiting.get(tab.id)?.since ?? now;
+      // Take turns: when the slot is free, the tab that has waited longest goes first.
+      const ahead = [...waiting].some(([id, w]) => id !== tab.id && w.since < mine);
+      const wait = (retryAt: number) => {
+        waiting.set(tab.id, { since: mine, seen: now });
+        return new SafetyBlock("scheduled", FAST_WAIT_REASON, retryAt, true);
+      };
+      if (now - last < FAST_SITE_SPACING_MS) throw wait(last + FAST_SITE_SPACING_MS);
+      // Yielding: look again shortly, in case the one ahead no longer wants the slot.
+      if (ahead) throw wait(now + 1_000);
+      waiting.delete(tab.id);
       this.lastFastReloadByHost.set(host, now);
     }
     if (this.deps.throttle) await this.deps.throttle();
@@ -845,6 +901,7 @@ export class RuleEngine {
       }
       // Leaving a form-page pause (which kept the form page's address): follow the tab.
       rt = { ...rt, url: tab.url };
+      this.leaveFastQueue(tabId);
       await this.deps.stores.runtime.put(rt);
       await this.setAlarm(rt);
       return rt;
@@ -963,6 +1020,22 @@ export class RuleEngine {
   }
 
   isPausedStatus = isPaused;
+}
+
+/** Status line for a rule that waits for its trigger (not a timer). */
+function waitingReason(rule: Rule): string {
+  switch (rule.trigger.type) {
+    case "startup":
+      return "Runs again next time the browser starts";
+    case "manual":
+      return "Runs when you run it";
+    case "navigation":
+      return "Runs each time the page loads";
+    case "urlChange":
+      return "Runs each time the address changes";
+    default:
+      return `Waiting for ${rule.trigger.type} trigger`;
+  }
 }
 
 function withoutHash(url: string): string {
