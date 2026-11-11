@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "../core/zod";
 import type { TriggerHandler } from "../registries/contracts";
 
 export const navigationSchema = z.strictObject({ type: z.literal("navigation") });

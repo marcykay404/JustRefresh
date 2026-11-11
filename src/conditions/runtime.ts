@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "../core/zod";
 import type { ConditionHandler } from "../registries/contracts";
 import { schemaValidator } from "../registries/contracts";
 
@@ -25,7 +25,7 @@ export function compareNumbers(a: number, op: ComparisonOperator, b: number): bo
 export const refreshCountSchema = z.strictObject({
   type: z.literal("refreshCount"),
   operator: z.enum(comparisonOperators),
-  value: z.number().int().min(0).max(1_000_000),
+  value: z.int().check(z.gte(0), z.lte(1_000_000)),
 });
 export type RefreshCount = z.infer<typeof refreshCountSchema>;
 

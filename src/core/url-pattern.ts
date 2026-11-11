@@ -57,50 +57,62 @@ export function detectPattern(input: UrlPatternInput): { type: PatternType; valu
 export function checkRegexSafety(source: string): string | null {
   if (source.length > MAX_PATTERN_LENGTH) return "Regular expression is too long";
   if (/\\[1-9]/.test(source) || /\\k</.test(source)) return "Backreferences are not allowed";
-  // Walk the pattern tracking groups that contain quantifiers / alternation.
-  const stack: { hasQuant: boolean; hasAlt: boolean }[] = [{ hasQuant: false, hasAlt: false }];
-  let inClass = false;
-  for (let i = 0; i < source.length; i++) {
-    const c = source[i];
-    if (c === "\\") {
-      i++;
-      continue;
-    }
-    if (inClass) {
-      if (c === "]") inClass = false;
-      continue;
-    }
-    if (c === "[") {
-      inClass = true;
-      continue;
-    }
-    if (c === "(") {
-      stack.push({ hasQuant: false, hasAlt: false });
-      continue;
-    }
-    if (c === "|") {
-      stack[stack.length - 1].hasAlt = true;
-      continue;
-    }
-    if (c === ")") {
-      const group = stack.pop();
-      if (!group || stack.length === 0) return "Unbalanced parentheses";
-      const next = source[i + 1];
-      const quantified = next === "*" || next === "+" || next === "{" || next === "?";
-      const repeating = next === "*" || next === "+" || (next === "{" && !/^\{1\}/.test(source.slice(i + 1)));
-      if (repeating && group.hasQuant) return "Nested quantifiers are not allowed (risk of catastrophic backtracking)";
-      if (repeating && group.hasAlt) return "Repeated alternation groups are not allowed (risk of catastrophic backtracking)";
-      if (group.hasQuant || quantified) stack[stack.length - 1].hasQuant = true;
-      continue;
-    }
-    if (c === "*" || c === "+" || c === "{") stack[stack.length - 1].hasQuant = true;
-  }
-  if (stack.length !== 1) return "Unbalanced parentheses";
+  const problem = findBacktrackingRisk(source);
+  if (problem) return problem;
   try {
     new RegExp(source);
   } catch (e) {
     return `Invalid regular expression: ${(e as Error).message}`;
   }
+  return null;
+}
+
+/** A group being scanned: whether it contains a quantifier or an alternation. */
+interface Group {
+  hasQuant: boolean;
+  hasAlt: boolean;
+}
+
+/** Walk the pattern tracking groups that contain quantifiers / alternation. */
+function findBacktrackingRisk(source: string): string | null {
+  const stack: Group[] = [{ hasQuant: false, hasAlt: false }];
+  let inClass = false;
+  for (let i = 0; i < source.length; i++) {
+    const c = source[i];
+    if (c === "\\") {
+      i++;
+    } else if (inClass) {
+      inClass = c !== "]";
+    } else if (c === "[") {
+      inClass = true;
+    } else {
+      const problem = scanChar(stack, source, i);
+      if (problem) return problem;
+    }
+  }
+  return stack.length === 1 ? null : "Unbalanced parentheses";
+}
+
+function scanChar(stack: Group[], source: string, i: number): string | null {
+  const c = source[i];
+  const top = stack[stack.length - 1];
+  if (c === "(") stack.push({ hasQuant: false, hasAlt: false });
+  else if (c === "|") top.hasAlt = true;
+  else if (c === ")") return closeGroup(stack, source, i);
+  else if (c === "*" || c === "+" || c === "{") top.hasQuant = true;
+  return null;
+}
+
+/** A group closes: a repeated group may not contain a quantifier or an alternation. */
+function closeGroup(stack: Group[], source: string, i: number): string | null {
+  const group = stack.pop();
+  if (!group || stack.length === 0) return "Unbalanced parentheses";
+  const next = source[i + 1];
+  const quantified = next === "*" || next === "+" || next === "{" || next === "?";
+  const repeating = next === "*" || next === "+" || (next === "{" && !/^\{1\}/.test(source.slice(i + 1)));
+  if (repeating && group.hasQuant) return "Nested quantifiers are not allowed (risk of catastrophic backtracking)";
+  if (repeating && group.hasAlt) return "Repeated alternation groups are not allowed (risk of catastrophic backtracking)";
+  if (group.hasQuant || quantified) stack[stack.length - 1].hasQuant = true;
   return null;
 }
 
@@ -156,76 +168,57 @@ export function compilePattern(input: UrlPatternInput): CompiledPattern {
 function compileUncached(type: PatternType, value: string): CompiledPattern {
   if (!value) throw new PatternError("Pattern is empty", "pattern_empty");
   if (value.length > MAX_PATTERN_LENGTH) throw new PatternError("Pattern is too long", "pattern_too_long");
+  const compilers: Record<PatternType, (v: string) => (url: string) => boolean> = { regex: compileRegex, exact: compileExact, glob: compileGlob, domain: compileDomain };
+  if (!Object.hasOwn(compilers, type)) throw new PatternError(`Unknown pattern type "${type}"`, "pattern_invalid");
+  return { type, source: value, test: compilers[type](value) };
+}
 
-  switch (type) {
-    case "regex": {
-      const problem = checkRegexSafety(value);
-      if (problem) throw new PatternError(problem, "regex_unsafe");
-      const re = new RegExp(value);
-      return {
-        type,
-        source: value,
-        test: (url) => url.length <= MAX_URL_LENGTH && re.test(url),
-      };
-    }
-    case "exact": {
-      const target = normalizeUrl(value);
-      if (!target) throw new PatternError(`"${value}" is not a valid URL`, "url_invalid");
-      const keepHash = value.includes("#");
-      const expected = keepHash ? target.href : withoutFragment(target);
-      return {
-        type,
-        source: value,
-        test: (url) => {
-          const u = normalizeUrl(url);
-          if (!u) return false;
-          return (keepHash ? u.href : withoutFragment(u)) === expected;
-        },
-      };
-    }
-    case "glob": {
-      const m = /^([a-z*][a-z0-9+.\-*]*):\/\/([^/?#]*)(.*)$/i.exec(value);
-      if (!m) throw new PatternError(`"${value}" is not a valid URL glob`, "glob_invalid");
-      const [, scheme, hostPort, rest] = m;
-      const schemeRe = scheme === "*" ? /^https?$/ : globToRegex(scheme.toLowerCase());
-      const hostMatcher = compileHost(hostPort);
-      const restRaw = rest === "" ? "/" : rest;
-      const keepHash = restRaw.includes("#");
-      const restRe = globToRegex(restRaw);
-      return {
-        type,
-        source: value,
-        test: (url) => {
-          const u = normalizeUrl(url);
-          if (!u) return false;
-          if (!schemeRe.test(u.protocol.slice(0, -1))) return false;
-          if (!hostMatcher(u)) return false;
-          const tail = u.pathname + u.search + (keepHash ? u.hash : "");
-          return restRe.test(tail);
-        },
-      };
-    }
-    case "domain": {
-      const m = /^([^/?#]+)(.*)$/.exec(value);
-      if (!m) throw new PatternError(`"${value}" is not a valid domain pattern`, "domain_invalid");
-      const [, hostPort, rest] = m;
-      const hostMatcher = compileHost(hostPort);
-      const keepHash = rest.includes("#");
-      const restRe = rest ? globToRegex(rest) : null;
-      return {
-        type,
-        source: value,
-        test: (url) => {
-          const u = normalizeUrl(url);
-          if (!u) return false;
-          if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-          if (!hostMatcher(u)) return false;
-          if (!restRe) return true;
-          return restRe.test(u.pathname + u.search + (keepHash ? u.hash : ""));
-        },
-      };
-    }
-  }
+function compileRegex(value: string): (url: string) => boolean {
+  const problem = checkRegexSafety(value);
+  if (problem) throw new PatternError(problem, "regex_unsafe");
+  const re = new RegExp(value);
+  return (url) => url.length <= MAX_URL_LENGTH && re.test(url);
+}
+
+function compileExact(value: string): (url: string) => boolean {
+  const target = normalizeUrl(value);
+  if (!target) throw new PatternError(`"${value}" is not a valid URL`, "url_invalid");
+  const keepHash = value.includes("#");
+  const expected = keepHash ? target.href : withoutFragment(target);
+  return (url) => {
+    const u = normalizeUrl(url);
+    return !!u && (keepHash ? u.href : withoutFragment(u)) === expected;
+  };
+}
+
+function compileGlob(value: string): (url: string) => boolean {
+  const m = /^([a-z*][a-z0-9+.\-*]*):\/\/([^/?#]*)(.*)$/i.exec(value);
+  if (!m) throw new PatternError(`"${value}" is not a valid URL glob`, "glob_invalid");
+  const [, scheme, hostPort, rest] = m;
+  const schemeRe = scheme === "*" ? /^https?$/ : globToRegex(scheme.toLowerCase());
+  const hostMatcher = compileHost(hostPort);
+  const restRaw = rest === "" ? "/" : rest;
+  const keepHash = restRaw.includes("#");
+  const restRe = globToRegex(restRaw);
+  return (url) => {
+    const u = normalizeUrl(url);
+    if (!u || !schemeRe.test(u.protocol.slice(0, -1)) || !hostMatcher(u)) return false;
+    return restRe.test(u.pathname + u.search + (keepHash ? u.hash : ""));
+  };
+}
+
+function compileDomain(value: string): (url: string) => boolean {
+  const m = /^([^/?#]+)(.*)$/.exec(value);
+  if (!m) throw new PatternError(`"${value}" is not a valid domain pattern`, "domain_invalid");
+  const [, hostPort, rest] = m;
+  const hostMatcher = compileHost(hostPort);
+  const keepHash = rest.includes("#");
+  const restRe = rest ? globToRegex(rest) : null;
+  return (url) => {
+    const u = normalizeUrl(url);
+    if (!u || (u.protocol !== "http:" && u.protocol !== "https:") || !hostMatcher(u)) return false;
+    return !restRe || restRe.test(u.pathname + u.search + (keepHash ? u.hash : ""));
+  };
 }
 
 /**

@@ -1,0 +1,18 @@
+{
+  "cyclomatic": {
+    "src/content/form-post.ts | export function detectFormResult(": 24,
+    "src/content/form-post.ts | win.addEventListener(\"submit\", (e) => {": 17,
+    "src/core/schedule.ts | export function inActiveWindow(w: ActiveWindow | undefined, now: number): boolean {": 19,
+    "src/ui/dashboard/AgentsView.tsx | export function AgentsView() {": 24,
+    "src/ui/dashboard/Dashboard.tsx | export function Dashboard() {": 22,
+    "src/ui/dashboard/SettingsView.tsx | export function SiteAccess() {": 23,
+    "src/ui/dashboard/TabsView.tsx | {rows.map((r) => {": 24,
+    "src/ui/rule-builder/ConditionEditor.tsx | export function describeCondition(n: ConditionNode): string {": 16,
+    "src/ui/rule-builder/SchemaForm.tsx | {fields.map(([k, s]) => {": 18
+  },
+  "cognitive": {
+    "src/integrations/json-import.ts | export function parseImport(": 20,
+    "src/ui/dashboard/SettingsView.tsx | export function SiteAccess() {": 19,
+    "src/ui/shared/site-access.ts | export function groupOrigins(origins: readonly string[]): SiteGroup[] {": 23
+  }
+}

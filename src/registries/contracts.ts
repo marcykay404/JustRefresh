@@ -4,7 +4,7 @@
  * Adding a new capability = implementing one of these interfaces and
  * registering it. The scheduler, engine and UI contracts do not change.
  */
-import type { z } from "zod";
+import type { z } from "../core/zod";
 import type {
   ConditionNode,
   Diagnostic,
@@ -38,7 +38,7 @@ export interface ConditionHandler<TConfig extends ConditionNode = ConditionNode>
   /** Where the condition executes. */
   context: "page" | "browser" | "logical";
   /** Shape of the configuration (strict; unknown keys are rejected). */
-  schema: z.ZodType<TConfig>;
+  schema: z.ZodMiniType<TConfig>;
   permissions: RequiredPermission[];
   /** Extra semantic validation beyond the schema. */
   check?(config: TConfig, ctx: ValidationContext): Diagnostic[];
@@ -55,7 +55,7 @@ export interface TriggerHandler<TConfig extends { type: string } = { type: strin
   type: string;
   title: string;
   description: string;
-  schema: z.ZodType<TConfig>;
+  schema: z.ZodMiniType<TConfig>;
   /** Events that fire this trigger. "manual" is always accepted. */
   events: TriggerEvent[];
   /** For scheduled triggers: the next due timestamp. */
@@ -99,7 +99,7 @@ export interface ActionHandler<TConfig extends { type: string } = { type: string
   type: string;
   title: string;
   description: string;
-  schema: z.ZodType<TConfig>;
+  schema: z.ZodMiniType<TConfig>;
   permissions: RequiredPermission[];
   /** Disruptive actions mutate tabs or external systems. */
   disruptive: boolean;
@@ -107,6 +107,6 @@ export interface ActionHandler<TConfig extends { type: string } = { type: string
 }
 
 /** Helper: make a `validate()` from a schema. */
-export function schemaValidator<T>(schema: z.ZodType<T>): (input: unknown) => T {
+export function schemaValidator<T>(schema: z.ZodMiniType<T>): (input: unknown) => T {
   return (input) => schema.parse(input);
 }

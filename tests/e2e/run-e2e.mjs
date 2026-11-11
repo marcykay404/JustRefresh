@@ -495,6 +495,15 @@ await test("the dashboard updates on changes without polling the service worker"
   for (const r of others) await call("enableRule", { id: r.id });
 });
 
+await test("capabilities carry the JSON Schemas, read from the extension package", async () => {
+  const caps = await call("getCapabilities");
+  assert.ok(caps.ruleSchema?.$defs?.condition, "rule schema with condition definitions");
+  const text = caps.conditions.find((c) => c.type === "dom.text");
+  assert.equal(text?.schema?.properties?.type?.const, "dom.text");
+  const interval = caps.triggers.find((t) => t.type === "interval");
+  assert.match(interval?.schema?.properties?.seconds?.description ?? "", /Seconds between refreshes/);
+});
+
 await test("popup and dashboard render", async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 900 });

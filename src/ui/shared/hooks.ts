@@ -60,7 +60,6 @@ export function useApi<T>(method: string, params?: unknown, opts: { pollMs?: num
     } finally {
       if (current()) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method, key, opts.skip]);
 
   const visible = usePageVisible();

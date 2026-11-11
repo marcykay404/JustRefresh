@@ -1,12 +1,17 @@
 import { readFileSync } from "node:fs";
-import { z } from "zod";
-import { buildRuleJsonSchema } from "@/api/json-schema";
+import { z } from "@/core/zod";
+import { buildHandlerSchemas, buildRuleJsonSchema } from "@/api/json-schema";
 import { createRegistries } from "@/registries";
 import { validateRule } from "@/core/rule-schema";
 import { evaluateConditionTree } from "@/core/evaluator";
 import type { ConditionHandler } from "@/registries/contracts";
 import { handleAgentMessage, RateLimiter } from "@/integrations/external-messaging";
 import { createApiEnv } from "../helpers/api-env";
+
+it("schemas/handler-schemas.json is in sync with the code (run npm run gen:schema)", () => {
+  const committed = JSON.parse(readFileSync("schemas/handler-schemas.json", "utf8"));
+  expect(committed).toEqual(JSON.parse(JSON.stringify(buildHandlerSchemas())));
+});
 
 it("schemas/rule.schema.json is in sync with the code (run npm run gen:schema)", () => {
   const committed = JSON.parse(readFileSync("schemas/rule.schema.json", "utf8"));
@@ -15,7 +20,7 @@ it("schemas/rule.schema.json is in sync with the code (run npm run gen:schema)",
 
 it("new condition types plug in without touching the engine", async () => {
   const registries = createRegistries();
-  const schema = z.strictObject({ type: z.literal("navigationCount"), atLeast: z.number().int() });
+  const schema = z.strictObject({ type: z.literal("navigationCount"), atLeast: z.int() });
   const handler: ConditionHandler<z.infer<typeof schema>> = {
     type: "navigationCount",
     title: "Navigation count",

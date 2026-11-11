@@ -71,44 +71,49 @@ export function describeCondition(c: ConditionNode): string {
  * rule's own (fast intervals run at 30 s while they're turned off).
  */
 export function describeRule(rule: Pick<Rule, "trigger" | "stopWhen" | "actions">, effectiveSeconds?: number | null): string {
-  const t = rule.trigger as { type: string; seconds?: number };
-  const seconds = effectiveSeconds ?? t.seconds;
-  const when =
-    t.type === "interval" && seconds
-      ? `every ${intervalLabel(seconds)}`
-      : t.type === "startup"
-        ? "once when the browser starts"
-        : t.type === "manual"
-          ? "only when you run it"
-          : t.type === "navigation"
-            ? "each time the page loads"
-            : t.type === "urlChange"
-              ? "each time the address changes"
-              : `on its ${t.type} trigger`;
-  const { onMatched, onNotMatched, onUnknown } = rule.actions;
-  const has = (list: readonly ActionConfig[], type: string) => list.some((a) => a.type === type);
-  const without = (list: readonly ActionConfig[], type: string) => list.filter((a) => a.type !== type);
+  const when = triggerPhrase(rule.trigger as { type: string; seconds?: number }, effectiveSeconds);
+  const { onUnknown } = rule.actions;
   const unknown = onUnknown?.length ? `; if the page can't be checked: ${actionsPhrase(onUnknown)}` : "";
-  const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
+  const main = rule.stopWhen ? withCondition(when, describeCondition(rule.stopWhen), rule.actions) : withoutCondition(when, rule.actions.onNotMatched);
+  return main + unknown;
+}
 
-  // Without a condition every run counts as "not matched".
-  if (!rule.stopWhen) {
-    if (!onNotMatched.length) return `Runs ${when}${unknown}`;
-    const others = without(onNotMatched, "refresh");
-    if (has(onNotMatched, "refresh")) return `Refreshing ${when}${others.length ? `, and each time: ${actionsPhrase(others)}` : ""}${unknown}`;
-    return `${cap(when)}: ${actionsPhrase(onNotMatched)} (no refresh)${unknown}`;
-  }
-  const cond = describeCondition(rule.stopWhen);
+const TRIGGER_PHRASES: Record<string, string> = {
+  startup: "once when the browser starts",
+  manual: "only when you run it",
+  navigation: "each time the page loads",
+  urlChange: "each time the address changes",
+};
+
+/** "every 5 min", "each time the page loads", … */
+function triggerPhrase(t: { type: string; seconds?: number }, effectiveSeconds?: number | null): string {
+  const seconds = effectiveSeconds ?? t.seconds;
+  if (t.type === "interval" && seconds) return `every ${intervalLabel(seconds)}`;
+  return Object.hasOwn(TRIGGER_PHRASES, t.type) ? TRIGGER_PHRASES[t.type]! : `on its ${t.type} trigger`;
+}
+
+const has = (list: readonly ActionConfig[], type: string) => list.some((a) => a.type === type);
+const without = (list: readonly ActionConfig[], type: string) => list.filter((a) => a.type !== type);
+const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
+
+/** Without a condition every run counts as "not matched". */
+function withoutCondition(when: string, onNotMatched: readonly ActionConfig[]): string {
+  if (!onNotMatched.length) return `Runs ${when}`;
+  const others = without(onNotMatched, "refresh");
+  if (has(onNotMatched, "refresh")) return `Refreshing ${when}${others.length ? `, and each time: ${actionsPhrase(others)}` : ""}`;
+  return `${cap(when)}: ${actionsPhrase(onNotMatched)} (no refresh)`;
+}
+
+function withCondition(when: string, cond: string, { onMatched, onNotMatched }: Rule["actions"]): string {
   // The usual shape: refresh until the condition matches, then stop (and notify).
-  if (has(onNotMatched, "refresh") && without(onNotMatched, "refresh").length === 0 && has(onMatched, "stopRefresh") && !has(onMatched, "refresh")) {
+  const refreshesOnly = has(onNotMatched, "refresh") && without(onNotMatched, "refresh").length === 0;
+  if (refreshesOnly && has(onMatched, "stopRefresh") && !has(onMatched, "refresh")) {
     const then = without(onMatched, "stopRefresh");
-    return `Refreshing ${when} until ${cond}${then.length ? `, then ${actionsPhrase(then)}` : ""}${unknown}`;
+    return `Refreshing ${when} until ${cond}${then.length ? `, then ${actionsPhrase(then)}` : ""}`;
   }
   // Rules that only look at the page (page loads can't refresh).
-  if (!onNotMatched.length && onMatched.length && !has(onMatched, "refresh")) {
-    return `Checking ${when}: ${actionsPhrase(onMatched)} when ${cond}${unknown}`;
-  }
-  return `${cap(when)}: when ${cond}, ${actionsPhrase(onMatched)}; otherwise ${actionsPhrase(onNotMatched)}${unknown}`;
+  if (!onNotMatched.length && onMatched.length && !has(onMatched, "refresh")) return `Checking ${when}: ${actionsPhrase(onMatched)} when ${cond}`;
+  return `${cap(when)}: when ${cond}, ${actionsPhrase(onMatched)}; otherwise ${actionsPhrase(onNotMatched)}`;
 }
 
 /** "refresh", "notify me and stop", … ("do nothing" for none). */

@@ -6,7 +6,7 @@
  * the schema automatically. `schemas/rule.schema.json` is generated from the
  * same sources (see scripts/gen-schema.ts) for external agents and tooling.
  */
-import { z } from "zod";
+import { z } from "./zod";
 import type { Registries } from "../registries";
 import { defaultRegistries } from "../registries";
 import type { ValidationContext } from "../registries/contracts";
@@ -22,60 +22,59 @@ export const MAX_CONDITION_NODES = 50;
 export const MAX_ACTIONS = 10;
 export const RULE_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 
-const node = z.looseObject({ type: z.string().min(1).max(64) });
+const node = z.looseObject({ type: z.string().check(z.minLength(1), z.maxLength(64)) });
 
 export const safetyInputSchema = z.strictObject({
-  pauseWhileTyping: z.boolean().optional(),
-  protectUnsavedChanges: z.boolean().optional(),
-  inactivityGraceSeconds: z.number().int().min(0).max(24 * 3600).optional(),
-  pauseOnMouse: z.boolean().optional(),
-  pauseOnScroll: z.boolean().optional(),
-  onUnknown: z.enum(["pause", "skip", "refresh", "stop"]).optional(),
-  maxUnknownRetries: z.number().int().min(0).max(100).optional(),
-  onActivityUnavailable: z.enum(["pause", "refresh"]).optional(),
+  pauseWhileTyping: z.optional(z.boolean()),
+  protectUnsavedChanges: z.optional(z.boolean()),
+  inactivityGraceSeconds: z.optional(z.int().check(z.gte(0), z.lte(24 * 3600))),
+  pauseOnMouse: z.optional(z.boolean()),
+  pauseOnScroll: z.optional(z.boolean()),
+  onUnknown: z.optional(z.enum(["pause", "skip", "refresh", "stop"])),
+  maxUnknownRetries: z.optional(z.int().check(z.gte(0), z.lte(100))),
+  onActivityUnavailable: z.optional(z.enum(["pause", "refresh"])),
   /** Accepted for compatibility; normalized into `limits.maxRefreshes`. */
-  maxRefreshes: z.number().int().min(1).max(1_000_000).optional(),
+  maxRefreshes: z.optional(z.int().check(z.gte(1), z.lte(1_000_000))),
 });
 
 export const limitsSchema = z.strictObject({
-  maxRefreshes: z.number().int().min(1).max(1_000_000).optional(),
-  maxDurationSeconds: z.number().int().min(30).max(365 * 24 * 3600).optional(),
-  stopAt: z.iso.datetime({ offset: true }).optional(),
+  maxRefreshes: z.optional(z.int().check(z.gte(1), z.lte(1_000_000))),
+  maxDurationSeconds: z.optional(z.int().check(z.gte(30), z.lte(365 * 24 * 3600))),
+  stopAt: z.optional(z.iso.datetime({ offset: true })),
 });
 
-const timeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
+const timeOfDay = z.string().check(z.regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM"));
 export const scheduleSchema = z.strictObject({
-  days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
-  startTime: timeOfDay.optional(),
-  endTime: timeOfDay.optional(),
+  days: z.optional(z.array(z.int().check(z.gte(0), z.lte(6))).check(z.maxLength(7))),
+  startTime: z.optional(timeOfDay),
+  endTime: z.optional(timeOfDay),
 });
 
 export const ruleInputSchema = z.strictObject({
-  schemaVersion: z.literal(RULE_SCHEMA_VERSION).optional(),
-  id: z.string().regex(RULE_ID_PATTERN, "IDs may contain letters, digits, '.', '_' and '-' (max 64)").optional(),
-  name: z.string().trim().min(1).max(100),
-  description: z.string().max(500).optional(),
-  enabled: z.boolean().optional(),
-  priority: z.number().int().min(-1000).max(1000).optional(),
+  schemaVersion: z.optional(z.literal(RULE_SCHEMA_VERSION)),
+  id: z.optional(z.string().check(z.regex(RULE_ID_PATTERN, "IDs may contain letters, digits, '.', '_' and '-' (max 64)"))),
+  name: z.string().check(z.trim(), z.minLength(1), z.maxLength(100)),
+  description: z.optional(z.string().check(z.maxLength(500))),
+  enabled: z.optional(z.boolean()),
+  priority: z.optional(z.int().check(z.gte(-1000), z.lte(1000))),
   target: z.strictObject({
-    type: z.literal("url").optional(),
-    patterns: z.array(urlPatternSchema).min(1).max(50),
-    exclusions: z.array(urlPatternSchema).max(50).optional(),
+    type: z.optional(z.literal("url")),
+    patterns: z.array(urlPatternSchema).check(z.minLength(1), z.maxLength(50)),
+    exclusions: z.optional(z.array(urlPatternSchema).check(z.maxLength(50))),
   }),
   trigger: node,
-  stopWhen: node.optional(),
-  actions: z
+  stopWhen: z.optional(node),
+  actions: z.optional(z
     .strictObject({
-      onMatched: z.array(node).max(MAX_ACTIONS).optional(),
-      onNotMatched: z.array(node).max(MAX_ACTIONS).optional(),
-      onUnknown: z.array(node).max(MAX_ACTIONS).optional(),
-    })
-    .optional(),
-  safety: safetyInputSchema.optional(),
-  limits: limitsSchema.optional(),
-  schedule: scheduleSchema.optional(),
+      onMatched: z.optional(z.array(node).check(z.maxLength(MAX_ACTIONS))),
+      onNotMatched: z.optional(z.array(node).check(z.maxLength(MAX_ACTIONS))),
+      onUnknown: z.optional(z.array(node).check(z.maxLength(MAX_ACTIONS))),
+    })),
+  safety: z.optional(safetyInputSchema),
+  limits: z.optional(limitsSchema),
+  schedule: z.optional(scheduleSchema),
   /** Managed by the API; ignored on input. */
-  meta: z.unknown().optional(),
+  meta: z.optional(z.unknown()),
 });
 
 export type ParsedRuleInput = z.infer<typeof ruleInputSchema>;
@@ -89,7 +88,7 @@ export function issuePath(path: PropertyKey[], prefix = ""): string {
   return out || "$";
 }
 
-export function zodDiagnostics(error: z.ZodError, prefix = ""): Diagnostic[] {
+export function zodDiagnostics(error: z.core.$ZodError, prefix = ""): Diagnostic[] {
   return error.issues.map((i) => {
     let message = i.message;
     if (i.code === "unrecognized_keys") message = `Unknown field(s): ${i.keys.join(", ")}`;
@@ -159,84 +158,98 @@ export function validateRule(input: unknown, opts: ValidateOptions = {}): Valida
   const envelope = ruleInputSchema.safeParse(input);
   if (!envelope.success) return { valid: false, diagnostics: zodDiagnostics(envelope.error) };
   const r = envelope.data;
-  const out: Diagnostic[] = [];
-
-  // Patterns
-  r.target.patterns.forEach((p, i) => {
-    const problem = validatePattern(p);
-    if (problem) out.push(diag(`target.patterns[${i}]`, "pattern_invalid", problem));
-  });
-  (r.target.exclusions ?? []).forEach((p, i) => {
-    const problem = validatePattern(p);
-    if (problem) out.push(diag(`target.exclusions[${i}]`, "pattern_invalid", problem));
-  });
-
-  // Trigger
+  const now = opts.now ?? Date.now();
   const trigger = registries.triggers.get(r.trigger.type);
-  if (!trigger) {
-    out.push(diag("trigger.type", "unknown_trigger", `Unknown trigger type "${r.trigger.type}". Supported: ${registries.triggers.types().join(", ")}`));
-  } else {
-    const parsed = trigger.schema.safeParse(r.trigger);
-    if (!parsed.success) out.push(...zodDiagnostics(parsed.error, "trigger"));
-    else if (trigger.check) out.push(...trigger.check(parsed.data, "trigger", { allowFastIntervals: opts.allowFastIntervals }));
-  }
+  const actions = actionLists(r, trigger);
+  const out: Diagnostic[] = [
+    ...checkPatterns(r),
+    ...checkTrigger(r, registries, opts.allowFastIntervals),
+    ...(r.stopWhen ? validateCondition(r.stopWhen, "stopWhen", registries) : []),
+    ...checkActions(r, actions, registries, trigger),
+    ...checkScheduleAndLimits(r, now),
+    ...permissionHints(r, registries),
+  ];
+  if (out.some((d) => d.severity === "error")) return { valid: false, diagnostics: out };
+  return { valid: true, diagnostics: out, normalized: normalizeRule(r, actions, opts.defaultSafety, now) };
+}
 
-  // Conditions
-  if (r.stopWhen) out.push(...validateCondition(r.stopWhen, "stopWhen", registries));
+type TriggerHandlerOf<R extends Registries> = ReturnType<R["triggers"]["get"]>;
 
-  // Actions
-  const actions = {
+function checkPatterns(r: ParsedRuleInput): Diagnostic[] {
+  const check = (list: ParsedRuleInput["target"]["patterns"], key: string) =>
+    list.flatMap((p, i) => {
+      const problem = validatePattern(p);
+      return problem ? [diag(`target.${key}[${i}]`, "pattern_invalid", problem)] : [];
+    });
+  return [...check(r.target.patterns, "patterns"), ...check(r.target.exclusions ?? [], "exclusions")];
+}
+
+function checkTrigger(r: ParsedRuleInput, registries: Registries, allowFastIntervals: boolean | undefined): Diagnostic[] {
+  const trigger = registries.triggers.get(r.trigger.type);
+  if (!trigger) return [diag("trigger.type", "unknown_trigger", `Unknown trigger type "${r.trigger.type}". Supported: ${registries.triggers.types().join(", ")}`)];
+  const parsed = trigger.schema.safeParse(r.trigger);
+  if (!parsed.success) return zodDiagnostics(parsed.error, "trigger");
+  return trigger.check ? trigger.check(parsed.data, "trigger", { allowFastIntervals }) : [];
+}
+
+/** The rule's action lists, with defaults: stop and notify on a match; refresh otherwise (when the trigger may refresh). */
+function actionLists(r: ParsedRuleInput, trigger: TriggerHandlerOf<Registries>): Rule["actions"] {
+  return {
     onMatched: (r.actions?.onMatched ?? (r.stopWhen ? [{ type: "stopRefresh" }, { type: "notify" }] : [])) as ActionConfig[],
     onNotMatched: (r.actions?.onNotMatched ?? (trigger?.allowsRefresh === false ? [] : [{ type: "refresh" }])) as ActionConfig[],
     ...(r.actions?.onUnknown ? { onUnknown: r.actions.onUnknown as ActionConfig[] } : {}),
   };
+}
+
+function checkActions(r: ParsedRuleInput, actions: Rule["actions"], registries: Registries, trigger: TriggerHandlerOf<Registries>): Diagnostic[] {
+  const out: Diagnostic[] = [];
   for (const key of ["onMatched", "onNotMatched", "onUnknown"] as const) {
-    (actions[key] ?? []).forEach((a, i) => {
-      const p = `actions.${key}[${i}]`;
-      const h = registries.actions.get(a.type);
-      if (!h) {
-        out.push(diag(`${p}.type`, "unknown_action", `Unknown action type "${a.type}". Supported: ${registries.actions.types().join(", ")}`));
-        return;
-      }
-      const parsed = h.schema.safeParse(a);
-      if (!parsed.success) out.push(...zodDiagnostics(parsed.error, p));
-      if (a.type === "refresh" && trigger && !trigger.allowsRefresh) {
-        out.push(diag(p, "refresh_loop", `The "${trigger.type}" trigger cannot use the refresh action (it would reload in a loop)`));
-      }
-    });
+    (actions[key] ?? []).forEach((a, i) => out.push(...checkAction(a, `actions.${key}[${i}]`, registries, trigger)));
   }
-  if (r.actions?.onMatched && r.stopWhen === undefined && r.actions.onMatched.length > 0) {
+  if (r.actions?.onMatched?.length && r.stopWhen === undefined) {
     out.push(diag("actions.onMatched", "unused_actions", "onMatched actions never run without a stopWhen condition", "warning"));
   }
   if (r.stopWhen && !actions.onMatched.some((a) => a.type === "stopRefresh" || a.type === "pauseRefresh")) {
     out.push(diag("actions.onMatched", "no_terminal_action", "The rule keeps running after its condition matches", "warning"));
   }
+  return out;
+}
 
-  // Schedule & limits
+function checkAction(a: ActionConfig, p: string, registries: Registries, trigger: TriggerHandlerOf<Registries>): Diagnostic[] {
+  const h = registries.actions.get(a.type);
+  if (!h) return [diag(`${p}.type`, "unknown_action", `Unknown action type "${a.type}". Supported: ${registries.actions.types().join(", ")}`)];
+  const parsed = h.schema.safeParse(a);
+  const out = parsed.success ? [] : zodDiagnostics(parsed.error, p);
+  if (a.type === "refresh" && trigger && !trigger.allowsRefresh) {
+    out.push(diag(p, "refresh_loop", `The "${trigger.type}" trigger cannot use the refresh action (it would reload in a loop)`));
+  }
+  return out;
+}
+
+function checkScheduleAndLimits(r: ParsedRuleInput, now: number): Diagnostic[] {
+  const out: Diagnostic[] = [];
   if (r.schedule && (r.schedule.startTime === undefined) !== (r.schedule.endTime === undefined)) {
     out.push(diag("schedule", "schedule_incomplete", "startTime and endTime must be given together"));
   }
-  const now = opts.now ?? Date.now();
   if (r.limits?.stopAt && Date.parse(r.limits.stopAt) <= now) {
     out.push(diag("limits.stopAt", "stop_in_past", "stopAt is in the past; the rule will not run", "warning"));
   }
+  return out;
+}
 
-  // Permission hints
-  if (r.stopWhen) {
-    let needsHost = false;
-    walkConditions(r.stopWhen as ConditionNode, (n) => {
-      if (registries.conditions.get(n.type)?.permissions.includes("host")) needsHost = true;
-    }, registries);
-    if (needsHost) {
-      out.push(diag("stopWhen", "requires_host_permission", "DOM conditions require site access for the target pages", "warning"));
-    }
-  }
+/** DOM conditions need site access for the pages: say so up front. */
+function permissionHints(r: ParsedRuleInput, registries: Registries): Diagnostic[] {
+  if (!r.stopWhen) return [];
+  let needsHost = false;
+  walkConditions(r.stopWhen as ConditionNode, (n) => {
+    if (registries.conditions.get(n.type)?.permissions.includes("host")) needsHost = true;
+  }, registries);
+  return needsHost ? [diag("stopWhen", "requires_host_permission", "DOM conditions require site access for the target pages", "warning")] : [];
+}
 
-  const errors = out.filter((d) => d.severity === "error");
-  if (errors.length) return { valid: false, diagnostics: out };
-
+function normalizeRule(r: ParsedRuleInput, actions: Rule["actions"], defaultSafety: SafetyConfig | undefined, now: number): Rule {
   const { maxRefreshes: legacyMax, ...safetyInput } = r.safety ?? {};
-  const normalized: Rule = {
+  return {
     schemaVersion: RULE_SCHEMA_VERSION,
     id: r.id ?? "",
     name: r.name,
@@ -247,10 +260,9 @@ export function validateRule(input: unknown, opts: ValidateOptions = {}): Valida
     trigger: r.trigger as Rule["trigger"],
     ...(r.stopWhen ? { stopWhen: r.stopWhen as ConditionNode } : {}),
     actions,
-    safety: { ...(opts.defaultSafety ?? DEFAULT_SAFETY), ...safetyInput },
+    safety: { ...(defaultSafety ?? DEFAULT_SAFETY), ...safetyInput },
     limits: { ...(legacyMax !== undefined ? { maxRefreshes: legacyMax } : {}), ...(r.limits ?? {}) },
     ...(r.schedule ? { schedule: r.schedule } : {}),
     meta: { createdAt: now, updatedAt: now, revision: 0, origin: { type: "user" }, draft: false },
   };
-  return { valid: true, diagnostics: out, normalized };
 }

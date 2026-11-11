@@ -47,23 +47,34 @@ export function topicsForStorage(keys: readonly string[], area: string): Topic[]
   return [...out];
 }
 
+/** Title and address changes matter (lists show them); loading progress alone doesn't. */
+function shownTabChange(info: { url?: string; title?: string; status?: string; discarded?: boolean }): boolean {
+  return info.url !== undefined || info.title !== undefined || info.status === "complete" || info.discarded !== undefined;
+}
+
+/** Add a listener when the API exists (tests and non-extension pages have no chrome.*). */
+function listen<F extends (...args: never[]) => void>(event: { addListener(fn: F): void } | undefined, fn: F) {
+  event?.addListener(fn);
+}
+
 function wire() {
   if (wired) return;
   wired = true;
   const c = (globalThis as { chrome?: typeof chrome }).chrome;
-  c?.storage?.onChanged?.addListener((changes, area) => {
+  if (!c) return;
+  listen(c.storage?.onChanged, (changes: Record<string, unknown>, area: string) => {
     for (const t of topicsForStorage(Object.keys(changes), area)) emit(t);
   });
   const tabs = () => emit("tabs");
-  // Title and address changes matter (lists show them); loading progress alone doesn't.
-  c?.tabs?.onUpdated?.addListener((_id, info) => {
-    if (info.url !== undefined || info.title !== undefined || info.status === "complete" || info.discarded !== undefined) tabs();
+  listen(c.tabs?.onUpdated, (_id: number, info: chrome.tabs.OnUpdatedInfo) => {
+    if (shownTabChange(info)) tabs();
   });
-  c?.tabs?.onCreated?.addListener(tabs);
-  c?.tabs?.onRemoved?.addListener(tabs);
-  c?.tabs?.onReplaced?.addListener(tabs);
-  c?.permissions?.onAdded?.addListener(() => emit("access"));
-  c?.permissions?.onRemoved?.addListener(() => emit("access"));
+  listen(c.tabs?.onCreated, tabs);
+  listen(c.tabs?.onRemoved, tabs);
+  listen(c.tabs?.onReplaced, tabs);
+  const access = () => emit("access");
+  listen(c.permissions?.onAdded, access);
+  listen(c.permissions?.onRemoved, access);
 }
 
 /** Call `fn` when any of `topics` changes. Returns an unsubscribe function. */

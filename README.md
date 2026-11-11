@@ -61,13 +61,27 @@ conditions); you can also grant all sites in Dashboard → Settings.
 ## Development
 
 ```bash
-npm test            # unit + integration tests (vitest)
+npm test                  # unit + integration tests (vitest), including the complexity check
 npm run typecheck
-npm run build       # → dist/
-npm run test:e2e    # builds, loads dist/ into Chromium via Playwright
-npm run gen:schema  # regenerate schemas/rule.schema.json after changing handlers
-npm run check       # typecheck + tests + build
+npm run build             # → dist/
+npm run test:e2e          # builds, loads dist/ into Chromium via Playwright
+npm run gen:schema        # regenerate schemas/*.json after changing handlers
+npm run complexity        # cyclomatic + cognitive complexity against the baseline
+npm run complexity:update # lower the baseline after simplifying a listed function
+npm run bundle:report     # what the service worker bundle is made of (budget 200 KB)
+npm run check             # typecheck + tests + build + bundle budget
 ```
+
+**Complexity.** Every function in `src/` stays at or below 15 for both
+cyclomatic complexity (ESLint `complexity`) and cognitive complexity
+(`sonarjs/cognitive-complexity`); see `eslint.config.js`. Functions that were
+over when the check was introduced are listed in `complexity-baseline.json`
+and may only get simpler: the test fails if one gets worse, a new one
+appears, or one improves without the baseline being lowered.
+
+**Bundle.** The service worker uses `zod/mini` (via `src/core/zod.ts`) and
+ships the generated JSON Schemas as package files read on demand, instead of
+zod's JSON Schema converter.
 
 ## Documentation
 
@@ -88,18 +102,20 @@ builder's forms pick it up automatically; the scheduler does not change.
 ## Project layout
 
 ```
-src/core/          types, schema/validation, URL patterns, resolver, evaluator, engine, state machine, safety, scheduling
+src/core/          types, schema/validation, URL patterns, resolver, evaluator, state machine, safety, scheduling
+src/core/engine/   the engine in layers: ports, base (locks, sync), cycle (one refresh cycle), fast-site limit
 src/registries/    registry + handler contracts
 src/conditions/    dom.*, url.match, time.*, refreshCount, tab.status, all/any/not
 src/triggers/      interval, navigation, urlChange, startup, manual
 src/actions/       refresh, stopRefresh, pauseRefresh, resumeRefresh, notify, log
 src/background/    service worker, Chrome adapters, host access, tab restoration
 src/content/       activity monitor + DOM evaluation (top frame)
-src/api/           Rule Management API, authorization, capabilities, JSON Schema
+src/api/           Rule Management API (dispatch, permissions), capabilities, JSON Schema (build time)
+src/api/methods/   the API's methods by area: rules, tabs, settings, agents
 src/integrations/  JSON import/export, external messaging, native bridge client
 src/storage/       repositories, migrations
 src/ui/            popup, dashboard, rule builder (React)
 bridge/            optional MCP ⇄ Native Messaging bridge (Node, no deps)
-schemas/           generated JSON Schema
+schemas/           generated JSON Schemas (rule, and each condition/trigger/action)
 tests/             unit, integration, e2e
 ```
