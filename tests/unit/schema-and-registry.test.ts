@@ -52,15 +52,15 @@ describe("external messaging", () => {
     const limiter = new RateLimiter(2, 60_000);
     const id = { id: "ext:abc", name: "Ext", transport: "extension" as const, extensionId: "abc" };
     expect(await handleAgentMessage(env.service, limiter, id, { method: "listRules" })).toMatchObject({ ok: false, error: { code: "invalid_params" } });
-    expect(await handleAgentMessage(env.service, limiter, id, { protocol: "sar-agent/1", method: "pair", name: "My agent" })).toMatchObject({
+    expect(await handleAgentMessage(env.service, limiter, id, { protocol: "justrefresh-agent/1", method: "pair", name: "My agent" })).toMatchObject({
       ok: true,
       result: { status: "pending" },
     });
-    expect(await handleAgentMessage(env.service, limiter, id, { protocol: "sar-agent/1", method: "listRules" })).toMatchObject({
+    expect(await handleAgentMessage(env.service, limiter, id, { protocol: "justrefresh-agent/1", method: "listRules" })).toMatchObject({
       ok: false,
       error: { code: "pairing_required" },
     });
-    expect(await handleAgentMessage(env.service, limiter, id, { protocol: "sar-agent/1", method: "listRules" })).toMatchObject({
+    expect(await handleAgentMessage(env.service, limiter, id, { protocol: "justrefresh-agent/1", method: "listRules" })).toMatchObject({
       ok: false,
       error: { message: "Rate limit exceeded" },
     });

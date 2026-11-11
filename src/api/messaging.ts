@@ -14,7 +14,7 @@ export function isExtensionPage(sender: chrome.runtime.MessageSender): boolean {
 }
 
 export function isApiRequest(msg: unknown): msg is ApiRequest {
-  return !!msg && typeof msg === "object" && (msg as ApiRequest).channel === "sar-api" && typeof (msg as ApiRequest).method === "string";
+  return !!msg && typeof msg === "object" && (msg as ApiRequest).channel === "justrefresh-api" && typeof (msg as ApiRequest).method === "string";
 }
 
 export function toErrorResponse(e: unknown): ApiResponse {

@@ -7,7 +7,7 @@ import { CONTENT_PROTOCOL, type ContentRequest, type ContentResponse } from "../
 import { ActivityMonitor } from "./activity-monitor";
 import { currentNavigation, detectFormResult, watchFormPosts } from "./form-post";
 
-const FLAG = "__smartAutoRefreshContent__";
+const FLAG = "__justRefreshContent__";
 const g = globalThis as unknown as Record<string, unknown>;
 
 if (!g[FLAG]) {

@@ -51,7 +51,7 @@ export abstract class EngineBase {
     // Bound the operation's own run time (not its wait in the queue).
     const run = () =>
       withTimeout(fn(), this.timeouts.lockMs, `Operation on tab ${tabId}`).catch((e) => {
-        if (e instanceof TimeoutError) console.warn(`[sar] ${e.message}; releasing the tab lock`);
+        if (e instanceof TimeoutError) console.warn(`JustRefresh: ${e.message}; releasing the tab lock`);
         throw e;
       });
     const next = prev.then(run, run);
@@ -171,7 +171,7 @@ export abstract class EngineBase {
    */
   protected async notifyStopped(config: Config, rule: Rule, tab: TabInfo, message: string) {
     if (!config.settings.notificationsEnabled) return;
-    await this.deps.browser.notify(`sar:${rule.id}:${tab.id}:${this.now()}`, `Monitoring stopped: ${rule.name}`, message);
+    await this.deps.browser.notify(`justrefresh:${rule.id}:${tab.id}:${this.now()}`, `Monitoring stopped: ${rule.name}`, message);
   }
 
   protected async evaluate(rule: Rule, tab: TabInfo, rt: TabRuntime) {

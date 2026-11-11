@@ -214,4 +214,4 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 registerExternalMessaging(service, async (id) => (await config.get()).settings.allowedExtensionIds.includes(id));
 
 /* Debug/test hook (no privileged surface beyond what the worker already has). */
-(globalThis as unknown as { __sar: unknown }).__sar = { engine, service, config, runtime, ready };
+(globalThis as unknown as { __justrefresh: unknown }).__justrefresh = { engine, service, config, runtime, ready };

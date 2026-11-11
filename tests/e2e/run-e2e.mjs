@@ -16,7 +16,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 
 const root = resolve(import.meta.dirname, "../..");
-const extDir = mkdtempSync(join(tmpdir(), "sar-ext-"));
+const extDir = mkdtempSync(join(tmpdir(), "justrefresh-ext-"));
 cpSync(join(root, "dist"), extDir, { recursive: true });
 const manifest = JSON.parse(readFileSync(join(extDir, "manifest.json"), "utf8"));
 manifest.host_permissions = ["http://127.0.0.1/*"];
@@ -49,7 +49,7 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;
 
-const userDataDir = mkdtempSync(join(tmpdir(), "sar-profile-"));
+const userDataDir = mkdtempSync(join(tmpdir(), "justrefresh-profile-"));
 const context = await chromium.launchPersistentContext(userDataDir, {
   channel: "chromium",
   headless: true,
@@ -58,13 +58,13 @@ const context = await chromium.launchPersistentContext(userDataDir, {
 
 let sw = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
 const extId = sw.url().split("/")[2];
-await sw.evaluate(() => globalThis.__sar.ready);
+await sw.evaluate(() => globalThis.__justrefresh.ready);
 
-const call = (method, params) => sw.evaluate(([m, p]) => globalThis.__sar.service.call({ type: "user" }, m, p), [method, params]);
+const call = (method, params) => sw.evaluate(([m, p]) => globalThis.__justrefresh.service.call({ type: "user" }, m, p), [method, params]);
 const tabIdFor = (url) => sw.evaluate(async (u) => (await chrome.tabs.query({})).find((t) => t.url === u)?.id, url);
-const runtime = (tabId) => sw.evaluate((id) => globalThis.__sar.runtime.get(id), tabId);
+const runtime = (tabId) => sw.evaluate((id) => globalThis.__justrefresh.runtime.get(id), tabId);
 const badge = (tabId) => sw.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId);
-const fireAlarm = (tabId) => sw.evaluate((id) => globalThis.__sar.engine.handleAlarm(`sar:tab:${id}`), tabId);
+const fireAlarm = (tabId) => sw.evaluate((id) => globalThis.__justrefresh.engine.handleAlarm(`justrefresh:tab:${id}`), tabId);
 const waitFor = async (fn, what, timeout = 10_000) => {
   const start = Date.now();
   for (;;) {
@@ -95,7 +95,7 @@ await test("per-tab refresh: alarm reloads the tab and navigation completion is 
   const tabId = await tabIdFor(`${base}/basic`);
   await call("startTab", { tabId, intervalSeconds: 30 });
   await waitFor(async () => (await badge(tabId)) === "ON", "toolbar badge ON");
-  const alarm = await sw.evaluate((id) => chrome.alarms.get(`sar:tab:${id}`), tabId);
+  const alarm = await sw.evaluate((id) => chrome.alarms.get(`justrefresh:tab:${id}`), tabId);
   assert.ok(alarm && alarm.scheduledTime > Date.now() + 25_000, "alarm scheduled ~30s out");
   await fireAlarm(tabId);
   await waitFor(async () => (await runtime(tabId))?.navigationCount === 1, "navigation count");
@@ -238,11 +238,11 @@ await test("service worker restart: no lost or duplicate alarms", async () => {
   sw =
     context.serviceWorkers()[0] ??
     (await Promise.race([context.waitForEvent("serviceworker"), page.reload().then(() => context.waitForEvent("serviceworker"))]));
-  await sw.evaluate(() => globalThis.__sar.ready);
+  await sw.evaluate(() => globalThis.__justrefresh.ready);
   const after = await sw.evaluate(() => chrome.alarms.getAll());
   const names = after.map((a) => a.name);
   assert.equal(new Set(names).size, names.length, "no duplicate alarms");
-  assert.ok(names.includes(`sar:tab:${tabId}`));
+  assert.ok(names.includes(`justrefresh:tab:${tabId}`));
   assert.equal(after.length, before.length);
   await page.close();
 });
@@ -352,7 +352,7 @@ await test("a page reached by submitting a form is never reloaded; Open this pag
   await call("startTab", { tabId, intervalSeconds: 30 });
   await fireAlarm(tabId);
   await waitFor(async () => (await runtime(tabId))?.status === "paused_resubmit", "paused on the form result");
-  assert.equal(await sw.evaluate((id) => chrome.alarms.get(`sar:tab:${id}`), tabId), undefined, "no timer while paused on the form page");
+  assert.equal(await sw.evaluate((id) => chrome.alarms.get(`justrefresh:tab:${id}`), tabId), undefined, "no timer while paused on the form page");
   const refresh = await call("refreshNow", { tabId });
   assert.equal(refresh.formResult, true);
   await new Promise((r) => setTimeout(r, 500));
@@ -410,7 +410,7 @@ await test("a tab paused on a form page resumes by itself when you go to another
   await waitFor(async () => (await runtime(tabId))?.status === "paused_resubmit", "paused on the form result");
   await page.goto(`${base}/stock`);
   await waitFor(async () => (await runtime(tabId))?.status === "scheduled", "resumed after going to another page");
-  assert.ok(await sw.evaluate((id) => chrome.alarms.get(`sar:tab:${id}`), tabId), "timer set again");
+  assert.ok(await sw.evaluate((id) => chrome.alarms.get(`justrefresh:tab:${id}`), tabId), "timer set again");
   await call("stopTab", { tabId });
   await page.close();
 });
@@ -493,8 +493,8 @@ await test("the dashboard updates on changes without polling the service worker"
   await row.getByText("Scheduled", { exact: true }).waitFor({ timeout: 3000 });
   // A change to the tab's run state alone (storage.session, no config or tab event).
   await sw.evaluate(async (id) => {
-    const rt = await globalThis.__sar.runtime.get(id);
-    await globalThis.__sar.runtime.put({ ...rt, refreshCount: 42 });
+    const rt = await globalThis.__justrefresh.runtime.get(id);
+    await globalThis.__justrefresh.runtime.put({ ...rt, refreshCount: 42 });
   }, tabId);
   await row.getByText("42", { exact: true }).waitFor({ timeout: 3000 });
   await call("stopTab", { tabId });

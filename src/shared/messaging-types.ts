@@ -57,7 +57,7 @@ export type ContentResponse =
 
 /** Requests from extension pages (popup/dashboard) to the service worker. */
 export interface ApiRequest {
-  channel: "sar-api";
+  channel: "justrefresh-api";
   method: string;
   params?: unknown;
 }

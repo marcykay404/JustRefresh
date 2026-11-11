@@ -13,7 +13,7 @@ export class ApiClientError extends Error {
 }
 
 export async function api<T = unknown>(method: string, params?: unknown): Promise<T> {
-  const res = (await chrome.runtime.sendMessage({ channel: "sar-api", method, params })) as ApiResponse<T> | undefined;
+  const res = (await chrome.runtime.sendMessage({ channel: "justrefresh-api", method, params })) as ApiResponse<T> | undefined;
   if (!res) throw new ApiClientError("internal", "No response from the extension");
   if (!res.ok) throw new ApiClientError(res.error.code, res.error.message, res.error.diagnostics as Diagnostic[] | undefined);
   return res.result;

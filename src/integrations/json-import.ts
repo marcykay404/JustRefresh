@@ -2,7 +2,7 @@
  * JSON import/export (Agent integration Level 1).
  *
  * Accepted import shapes:
- *  - an export bundle: { format: "smart-auto-refresh", version, rules, exclusions?, settings? }
+ *  - an export bundle: { format: "justrefresh", version, rules, exclusions?, settings? }
  *  - a single rule object
  *  - an array of rule objects
  */
@@ -14,7 +14,10 @@ import { validatePattern } from "../core/url-pattern";
 import type { Config, Diagnostic, Exclusion, Rule, SafetyConfig, Settings } from "../core/types";
 import { CONFIG_SCHEMA_VERSION } from "../core/types";
 
-export const BUNDLE_FORMAT = "smart-auto-refresh";
+export const BUNDLE_FORMAT = "justrefresh";
+/** Exports made before the rename to JustRefresh carry this tag; they still import. */
+const LEGACY_BUNDLE_FORMAT = "smart-auto-refresh";
+const BUNDLE_FORMATS: readonly unknown[] = [BUNDLE_FORMAT, LEGACY_BUNDLE_FORMAT];
 
 export interface ExportBundle {
   format: typeof BUNDLE_FORMAT;
@@ -49,7 +52,7 @@ export function exportBundle(config: Config, opts: { includeSettings: boolean; r
 }
 
 const bundleSchema = z.looseObject({
-  format: z.literal(BUNDLE_FORMAT),
+  format: z.literal([BUNDLE_FORMAT, LEGACY_BUNDLE_FORMAT]),
   version: z.int(),
   rules: z.array(z.unknown()).check(z.maxLength(1000)),
   exclusions: z.optional(
@@ -120,7 +123,7 @@ function readBundle(data: unknown, warnings: string[]): ImportSource | Diagnosti
 function readSource(data: unknown, warnings: string[]): ImportSource | Diagnostic[] {
   if (Array.isArray(data)) return { rawRules: data, exclusions: [] };
   if (!data || typeof data !== "object") return [importError("$", "shape_invalid", "Expected a rule, an array of rules, or an export bundle")];
-  if ((data as { format?: unknown }).format === BUNDLE_FORMAT) return readBundle(data, warnings);
+  if (BUNDLE_FORMATS.includes((data as { format?: unknown }).format)) return readBundle(data, warnings);
   return { rawRules: [data], exclusions: [] };
 }
 

@@ -9,7 +9,7 @@
 import { normalizeUrl } from "../core/url-pattern";
 import { withTimeout } from "../core/timeout";
 
-export const CONTENT_SCRIPT_ID = "sar-content";
+export const CONTENT_SCRIPT_ID = "justrefresh-content";
 
 export function originPattern(url: string): string | null {
   const u = normalizeUrl(url);
@@ -37,7 +37,12 @@ export async function grantedOrigins(): Promise<string[]> {
 /** Keep the registered content script's matches in sync with granted origins. */
 export async function syncContentScripts(): Promise<void> {
   const origins = await grantedOrigins();
-  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [CONTENT_SCRIPT_ID] });
+  const registered = await chrome.scripting.getRegisteredContentScripts();
+  // Registrations persist across updates: drop any this version doesn't use
+  // (e.g. one registered under an older id), or the page would get two copies.
+  const stale = registered.map((s) => s.id).filter((id) => id !== CONTENT_SCRIPT_ID);
+  if (stale.length) await chrome.scripting.unregisterContentScripts({ ids: stale });
+  const existing = registered.filter((s) => s.id === CONTENT_SCRIPT_ID);
   if (!origins.length) {
     if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: [CONTENT_SCRIPT_ID] });
     return;

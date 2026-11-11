@@ -28,8 +28,8 @@ describe("MCP handler → extension API (end to end, in memory)", () => {
     const limiter = new RateLimiter(1000, 60_000);
     const identity = { id: "native:claude", name: "Claude", transport: "native" as const };
     const handle = createMcpHandler({
-      callApi: (method: string, params: unknown) => handleAgentMessage(env.service, limiter, identity, { protocol: "sar-agent/1", method, params }),
-      onInitialize: () => handleAgentMessage(env.service, limiter, identity, { protocol: "sar-agent/1", method: "pair", name: "Claude" }),
+      callApi: (method: string, params: unknown) => handleAgentMessage(env.service, limiter, identity, { protocol: "justrefresh-agent/1", method, params }),
+      onInitialize: () => handleAgentMessage(env.service, limiter, identity, { protocol: "justrefresh-agent/1", method: "pair", name: "Claude" }),
     });
     return { env, handle };
   }
@@ -37,7 +37,7 @@ describe("MCP handler → extension API (end to end, in memory)", () => {
   it("initialize pairs; tools are listed with strict schemas", async () => {
     const { env, handle } = await setup();
     const init = await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "Claude" } } });
-    expect(init.result.serverInfo.name).toBe("smart-auto-refresh");
+    expect(init.result.serverInfo.name).toBe("justrefresh");
     expect((await env.config.get()).agents["native:claude"].status).toBe("pending");
     const list = await handle({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     expect(list.result.tools.map((t: { name: string }) => t.name)).toEqual(TOOLS.map((t: { name: string }) => t.name));

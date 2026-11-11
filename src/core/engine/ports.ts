@@ -84,7 +84,7 @@ export const DEFAULT_TIMEOUTS: EngineTimeouts = {
   watchdogMs: 60_000,
 };
 
-export const ALARM_PREFIX = "sar:tab:";
+export const ALARM_PREFIX = "justrefresh:tab:";
 export const NAVIGATION_TIMEOUT_MS = 60_000;
 
 export const alarmName = (tabId: number) => `${ALARM_PREFIX}${tabId}`;

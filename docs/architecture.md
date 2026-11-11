@@ -99,7 +99,7 @@ Exactly one controller per tab, so rules never cause duplicate reloads.
 
 ## Scheduling & recovery
 
-- Only `chrome.alarms` (`sar:tab:<id>`), no long-lived timers.
+- Only `chrome.alarms` (`justrefresh:tab:<id>`), no long-lived timers.
 - Worker start: if `storage.session` has no boot marker → **browser start**:
   re-associate tab overrides by URL (ambiguous matches dropped), register
   content scripts, reconcile with staggered first runs (≥30 s, +2 s per tab).

@@ -336,6 +336,18 @@ describe("Scenario F & recovery: restart, wake, storms", () => {
     expect(Math.min(...times)).toBeGreaterThanOrEqual(env.clock.t + 30_000);
   });
 
+  it("after an update, clears alarms under names this version doesn't use and sets its own", async () => {
+    const env = await setup();
+    env.browser.addTab(1, "https://example.com/1");
+    await env.engine.syncTab(1);
+    // As left by a version that named its alarms differently (Chrome keeps them across updates).
+    env.alarms.alarms.clear();
+    env.alarms.alarms.set("old:tab:1", env.clock.t + 5_000);
+    env.alarms.alarms.set("old:tab:99", env.clock.t + 5_000);
+    await env.engine.reconcileAll("startup");
+    expect([...env.alarms.alarms.keys()]).toEqual([alarmName(1)]);
+  });
+
   it("recreates missing alarms after service-worker restart without duplicates", async () => {
     const env = await setup();
     env.browser.addTab(1, "https://example.com/1");

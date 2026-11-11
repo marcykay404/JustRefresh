@@ -4,10 +4,10 @@ The Chrome extension works without this. The bridge lets local MCP clients
 (desktop AI agents) call the extension's Rule Management API.
 
 ```
-MCP client ──stdio──▶ sar-bridge.mjs mcp ──local socket + token──▶ sar-bridge.mjs native-host ◀──Native Messaging── extension
+MCP client ──stdio──▶ justrefresh-bridge.mjs mcp ──local socket + token──▶ justrefresh-bridge.mjs native-host ◀──Native Messaging── extension
 ```
 
-- No network port is opened. The socket lives in `~/.smart-auto-refresh/`
+- No network port is opened. The socket lives in `~/.justrefresh/`
   (directory `0700`, socket `0600`); a random token, rewritten every time
   Chrome starts the host, must be presented on connect.
 - Every MCP client is a separate agent in the extension and must be approved
@@ -29,7 +29,7 @@ MCP client ──stdio──▶ sar-bridge.mjs mcp ──local socket + token─
    worker that started with the permission. Rules and schedules are kept.
 4. Add the MCP server printed by the installer to your MCP client config:
    ```json
-   { "mcpServers": { "smart-auto-refresh": { "command": "node", "args": ["/path/to/bridge/sar-bridge.mjs", "mcp"] } } }
+   { "mcpServers": { "justrefresh": { "command": "node", "args": ["/path/to/bridge/justrefresh-bridge.mjs", "mcp"] } } }
    ```
 5. Start the agent; approve it in the dashboard when the pairing request appears.
 
