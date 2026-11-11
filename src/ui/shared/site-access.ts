@@ -53,3 +53,66 @@ export function hasAllSites(origins: readonly string[]): boolean {
 }
 
 export { ALL_SITE_PATTERNS };
+
+/** What the usage check needs from a tab row (getOverview) and a rule. */
+export interface UsageTab {
+  url: string;
+  /** Status from getOverview: "idle" / "excluded" / "stopped" etc. mean nothing runs there. */
+  status: string;
+}
+export interface UsageRule {
+  name: string;
+  patterns: readonly (string | { value: string })[];
+}
+export interface SiteUsage {
+  tabs: number;
+  rules: string[];
+}
+
+const ACTIVE_TAB = (status: string) => !["idle", "excluded", "stopped", "completed"].includes(status);
+
+function hostMatches(groupHost: string, hostname: string): boolean {
+  if (groupHost.startsWith("*.")) {
+    const base = groupHost.slice(2);
+    return hostname === base || hostname.endsWith(`.${base}`);
+  }
+  return hostname === groupHost;
+}
+
+/**
+ * Which running tabs and rules use a site. Tabs match by host exactly; rules
+ * by their patterns mentioning the host (a hint: patterns can be regexes).
+ * "All websites" is used by anything running anywhere.
+ */
+export function siteUsage(g: SiteGroup, tabs: readonly UsageTab[], rules: readonly UsageRule[]): SiteUsage {
+  const running = tabs.filter((t) => ACTIVE_TAB(t.status));
+  if (g.kind === "all") {
+    return { tabs: running.filter((t) => /^https?:/.test(t.url)).length, rules: rules.map((r) => r.name) };
+  }
+  if (g.kind === "file") {
+    const usedByRule = (r: UsageRule) => r.patterns.some((p) => (typeof p === "string" ? p : p.value).startsWith("file:"));
+    return { tabs: running.filter((t) => t.url.startsWith("file:")).length, rules: rules.filter(usedByRule).map((r) => r.name) };
+  }
+  const tabCount = running.filter((t) => {
+    try {
+      return hostMatches(g.key, new URL(t.url).hostname);
+    } catch {
+      return false;
+    }
+  }).length;
+  const host = g.key.replace(/^\*\./, "").toLowerCase();
+  const ruleNames = rules
+    .filter((r) => r.patterns.some((p) => (typeof p === "string" ? p : p.value).replace(/\\/g, "").toLowerCase().includes(host)))
+    .map((r) => r.name);
+  return { tabs: tabCount, rules: ruleNames };
+}
+
+export const inUse = (u: SiteUsage) => u.tabs > 0 || u.rules.length > 0;
+
+/** "Used by 2 tabs and rule “Stock”" / "Not in use". */
+export function describeUsage(u: SiteUsage): string {
+  const parts: string[] = [];
+  if (u.tabs) parts.push(`${u.tabs} tab${u.tabs === 1 ? "" : "s"}`);
+  if (u.rules.length) parts.push(`${u.rules.length === 1 ? "rule" : "rules"} ${u.rules.map((n) => `“${n}”`).join(", ")}`);
+  return parts.length ? `Used by ${parts.join(" and ")}` : "Not in use";
+}
