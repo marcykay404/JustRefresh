@@ -36,7 +36,7 @@ export function TemplatesView() {
             <p style={{ margin: 0 }}>{t.description}</p>
             <p className="small muted" style={{ margin: 0 }}>You fill in: {t.fills}</p>
             <span className="spacer" />
-            <button className={t.badge ? "primary" : ""} style={{ alignSelf: "flex-start" }} onClick={() => { setCreated(null); setOpen(t); }}>
+            <button style={{ alignSelf: "flex-start" }} onClick={() => { setCreated(null); setOpen(t); }}>
               Use template
             </button>
           </article>
