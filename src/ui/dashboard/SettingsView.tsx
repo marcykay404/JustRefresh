@@ -361,8 +361,8 @@ export function SiteAccess() {
       )}
       <ErrorBox error={error} />
       <div className="row">
-        {origins && !hasAllSites(origins) && <button onClick={() => void requestOrigins(ALL_SITE_PATTERNS)}>Grant access to all sites</button>}
-        {origins && origins.length > 0 && <button onClick={() => void remove(origins, "all sites")}>Revoke all</button>}
+        {origins && !hasAllSites(origins) && <button onClick={() => void requestOrigins(ALL_SITE_PATTERNS)}>Allow access to all sites</button>}
+        {origins && origins.length > 0 && <button onClick={() => void remove(origins, "all sites")}>Remove all</button>}
       </div>
     </div>
   );
