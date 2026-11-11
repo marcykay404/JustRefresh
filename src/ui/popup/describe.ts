@@ -3,7 +3,7 @@
  * a one-line summary of a rule, and the rule that "Refresh until something
  * appears" creates. Pure functions, so they are unit tested.
  */
-import type { ConditionNode, Rule, RuleInput } from "../../core/types";
+import type { ConditionNode, Rule, RuleInput, UrlPatternInput } from "../../core/types";
 
 /** "No limit", "20 min", "1 hour", "24 hours" for a stop-after choice in minutes. */
 export function stopAfterLabel(minutes: number | null): string {
@@ -104,6 +104,45 @@ export function pageName(url: string): string {
   }
 }
 
+/** Whether the address has a "?…" part (which some sites change on every load). */
+export function hasQuery(url: string): boolean {
+  try {
+    return new URL(url).search.length > 1;
+  } catch {
+    return false;
+  }
+}
+
+/** The address without its "?…" and "#…" parts. */
+export function withoutQuery(url: string): string {
+  try {
+    // Not origin + pathname: a file: URL's origin is "null".
+    const u = new URL(url);
+    u.search = "";
+    u.hash = "";
+    return u.href;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * URL patterns for one page. `anyQuery`: the page whatever comes after "?"
+ * (the address without it, or with any "?…"); otherwise exactly this address.
+ */
+export function pagePatterns(url: string, anyQuery = false): UrlPatternInput[] {
+  if (!anyQuery || !hasQuery(url)) return [{ type: "exact", value: url }];
+  const base = withoutQuery(url);
+  // Globs need a host (file: has none) and treat "*" as a wildcard: use one regex then.
+  if (!/^https?:\/\/[^/]/.test(base) || base.includes("*")) {
+    return [{ type: "regex", value: `^${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\?[^#]*)?(#.*)?$` }];
+  }
+  return [
+    { type: "exact", value: base },
+    { type: "glob", value: `${base}?*` },
+  ];
+}
+
 /**
  * "Refresh until something appears": refresh this exact page every
  * `seconds` until `text` appears (or disappears) anywhere on it, then stop
@@ -119,6 +158,8 @@ export function untilRule(o: {
   priority?: number;
   /** Stop watching after this long (null/undefined = no limit). */
   stopAfterSeconds?: number | null;
+  /** Match the page whatever comes after "?" (see pagePatterns). */
+  anyQuery?: boolean;
 }): RuleInput {
   const text = o.text.trim();
   return {
@@ -126,7 +167,7 @@ export function untilRule(o: {
     enabled: true,
     priority: o.priority ?? 0,
     ...(o.stopAfterSeconds ? { limits: { maxDurationSeconds: o.stopAfterSeconds } } : {}),
-    target: { type: "url", patterns: [{ type: "exact", value: o.url }], exclusions: [] },
+    target: { type: "url", patterns: pagePatterns(o.url, o.anyQuery), exclusions: [] },
     trigger: { type: "interval", seconds: o.seconds },
     stopWhen: { type: "dom.text", operator: o.mode === "appears" ? "contains" : "not_contains", value: text, caseSensitive: false },
     actions: {

@@ -5,6 +5,7 @@
  */
 import { createApiEnv } from "../helpers/api-env";
 import { quietActivity } from "../helpers/fake-env";
+import { makeRule } from "../helpers/fixtures";
 import { FORM_RESULT_REASON } from "@/core/rule-engine";
 
 async function setup(protection = true) {
@@ -177,5 +178,106 @@ describe("form results: paused without polling", () => {
     await env.fireDue();
     expect((await env.runtime.get(7))?.status).toBe("completed");
     expect(env.browser.reloads).toEqual([]);
+  });
+});
+
+describe("form results: edge cases from the review of #14", () => {
+  it.each(["startup", "manual"] as const)("a %s rule with a time limit, paused on a form page, stops at the limit instead of waking forever", async (type) => {
+    const env = createApiEnv();
+    env.browser.addTab(7, "https://shop.test/order");
+    env.page.activityByTab.set(7, quietActivity({ formResult: true }));
+    await env.config.update((c) => {
+      c.rules.r1 = makeRule({ id: "r1", target: { patterns: ["https://shop.test/*"] }, trigger: { type }, limits: { maxDurationSeconds: 120 } });
+    });
+    await env.engine.syncTab(7);
+    const started = (await env.runtime.get(7))!.startedAt;
+    await env.engine.handleEvent(7, type);
+    expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
+    expect(env.alarms.alarms.get("sar:tab:7")).toBe(started + 120_000);
+    env.clock.t = started + 120_000;
+    await env.fireDue();
+    expect(await env.runtime.get(7)).toMatchObject({ status: "completed", reason: "Reached its time limit (2 min)" });
+    env.clock.advance(10 * 60_000);
+    expect(await env.fireDue()).toBe(0);
+    expect(env.browser.reloads).toEqual([]);
+  });
+
+  it.each([
+    ["a #hash change", "https://shop.test/order#receipt"],
+    ["history.replaceState to another address", "https://shop.test/order/42"],
+  ])("%s on the form page keeps the run: same time limit, no second notification", async (_label, url) => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    const before = (await env.runtime.get(7))!;
+    env.browser.tabs.get(7)!.url = url; // same document: still a form result
+    await env.engine.onTabUpdated(7, { url });
+    await env.engine.onTabUpdated(7, { status: "complete" });
+    env.clock.advance(5 * 60_000);
+    await env.fireDue();
+    const after = (await env.runtime.get(7))!;
+    expect(after).toMatchObject({ status: "paused_resubmit", generation: before.generation, startedAt: before.startedAt });
+    expect(env.alarms.alarms.has("sar:tab:7")).toBe(false);
+    expect(env.browser.notifications).toHaveLength(1);
+    expect(env.browser.reloads).toEqual([]);
+  });
+
+  it("going to another page after such a change starts a new run there", async () => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    const before = (await env.runtime.get(7))!;
+    env.browser.tabs.get(7)!.url = "https://shop.test/order#receipt";
+    await env.engine.onTabUpdated(7, { url: "https://shop.test/order#receipt" });
+    env.clock.advance(60_000);
+    env.browser.tabs.get(7)!.url = "https://shop.test/account";
+    env.page.activityByTab.set(7, quietActivity());
+    await env.engine.onTabUpdated(7, { url: "https://shop.test/account" });
+    await env.engine.onTabUpdated(7, { status: "complete" });
+    const after = (await env.runtime.get(7))!;
+    expect(after).toMatchObject({ status: "scheduled", url: "https://shop.test/account", startedAt: env.clock.t });
+    expect(after.generation).toBeGreaterThan(before.generation);
+    env.clock.advance(30_000);
+    await env.fireDue();
+    expect(env.browser.reloads).toEqual([7]);
+  });
+
+  it("the same address loaded as a normal visit carries on with the same run", async () => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    const before = (await env.runtime.get(7))!;
+    env.page.activityByTab.set(7, quietActivity());
+    await env.engine.onTabUpdated(7, { status: "complete" });
+    expect(await env.runtime.get(7)).toMatchObject({ status: "scheduled", generation: before.generation, startedAt: before.startedAt });
+  });
+});
+
+describe("form results: leaving the pause follows the tab's address (review)", () => {
+  const pausedThenHash = async () => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    env.browser.tabs.get(7)!.url = "https://shop.test/order#r";
+    await env.engine.onTabUpdated(7, { url: "https://shop.test/order#r" });
+    return { env, before: (await env.runtime.get(7))! };
+  };
+
+  it("Resume in the dashboard after a #hash change keeps the run (same time limit)", async () => {
+    const { env, before } = await pausedThenHash();
+    await env.engine.setTabStatus(7, "scheduled", "Resumed");
+    expect(await env.runtime.get(7)).toMatchObject({ status: "scheduled", url: "https://shop.test/order#r", generation: before.generation });
+    env.clock.advance(30_000);
+    await env.fireDue();
+    // Paused again in the same run (a resume asked for it, so it says so again).
+    expect(await env.runtime.get(7)).toMatchObject({ status: "paused_resubmit", generation: before.generation, startedAt: before.startedAt });
+    expect(env.browser.reloads).toEqual([]);
+  });
+
+  it("the same page loaded as a normal visit, at an address with #…, carries on with the same run", async () => {
+    const { env, before } = await pausedThenHash();
+    env.page.activityByTab.set(7, quietActivity());
+    await env.engine.onTabUpdated(7, { status: "complete" });
+    expect(await env.runtime.get(7)).toMatchObject({ status: "scheduled", generation: before.generation, startedAt: before.startedAt });
   });
 });

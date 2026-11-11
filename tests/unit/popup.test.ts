@@ -38,6 +38,8 @@ type Case = {
   protection?: boolean;
   source?: "tab" | "rule" | null;
   excluded?: boolean;
+  /** Rules set for this page with another "?…" part. */
+  otherQuery?: { id: string; name: string }[];
 };
 let current: Case;
 /** Set once createRule ran: the new rule then controls the tab. */
@@ -61,6 +63,7 @@ const tabState = () => {
       source: c.source,
       candidates: c.candidates ?? [],
     },
+    otherQueryRules: c.otherQuery ?? [],
     override: c.excluded ? { mode: "excluded" } : c.source === "tab" ? { mode: "custom", intervalSeconds: 300 } : null,
     interval: c.effective ?? (c.source === "rule" ? 600 : 300),
     safety: { ...DEFAULT_SAFETY, pauseWhileTyping: c.protection, protectUnsavedChanges: c.protection },
@@ -379,5 +382,38 @@ describe("popup protection line", () => {
     expect(text()).toContain("form you've started filling in");
     expect(text()).toContain("Waiting for you");
     expect(button("Refresh anyway")).toBeTruthy();
+  });
+});
+
+describe("addresses with a ?… part", () => {
+  it("Refresh until asks which address; the default is only this exact one", async () => {
+    await render({});
+    await click(/^More/);
+    await click(/Refresh until something appears/);
+    expect(text()).toContain("Which address?");
+    expect(text()).toContain("Only this exact address ?v=x");
+    const radios = [...el.querySelectorAll<HTMLInputElement>('.query-choice input[type="radio"]')];
+    expect(radios.map((r) => r.checked)).toEqual([true, false]);
+    await act(async () => radios[1]!.click());
+    await type(el.querySelector<HTMLInputElement>('input[aria-label="Text to look for"]')!, "Live");
+    await click("Start watching");
+    await tick();
+    const [created] = called("createRule") as { rule: { target: { patterns: unknown[] } } }[];
+    expect(created!.rule.target.patterns).toEqual([
+      { type: "exact", value: "https://www.youtube.com/watch" },
+      { type: "glob", value: "https://www.youtube.com/watch?*" },
+    ]);
+  });
+
+  it("a rule set for this page with another ?… part says why it doesn't run here, and links to it", async () => {
+    await render({ otherQuery: [{ id: "r9", name: "Track order" }] });
+    expect(text()).toContain("Rule “Track order” is set for this page with a different part after “?”");
+    await click("Edit “Track order”");
+    expect((chrome.tabs.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]).toMatchObject({ url: expect.stringContaining("#/builder/r9") });
+  });
+
+  it("no notice otherwise", async () => {
+    await render({});
+    expect(text()).not.toContain("different part after");
   });
 });

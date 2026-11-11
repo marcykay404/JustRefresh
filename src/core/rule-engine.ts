@@ -246,30 +246,17 @@ export class RuleEngine {
     }
 
     const rule = res.controller;
-    const changed =
-      cur.controllerId !== rule.id ||
-      cur.controllerRevision !== rule.meta.revision ||
-      (cur.url !== tab.url && !opts.ownNavigation && !cur.pendingReload);
+    // On a form result, an address change may be the same page (a #hash or
+    // history.replaceState): keep the run, so its time limit doesn't start over
+    // and it doesn't notify again. Loading a real new page resumes and restarts
+    // the run then (resumeAfterFormPage).
+    const urlChanged = cur.url !== tab.url && !opts.ownNavigation && !cur.pendingReload && cur.status !== "paused_resubmit";
+    const changed = cur.controllerId !== rule.id || cur.controllerRevision !== rule.meta.revision || urlChanged;
 
-    if (changed) {
-      const generation = cur.generation + 1;
-      cur = { ...newRuntime(tab.id, tab.url, now, generation), controllerId: rule.id, controllerRevision: rule.meta.revision };
-      const override = config.tabOverrides[String(tab.id)];
-      if (override?.mode === "custom" && override.stopped) {
-        return transition(cur, "stopped", { reason: "Stopped by user" });
-      }
-      if (override?.mode === "custom" && override.paused) {
-        return transition(cur, "paused_user", { reason: "Paused by user" });
-      }
-      const intervalDue = this.nextDue(rule, now);
-      const nextDueAt = intervalDue === null ? null : opts.restoring ? restoredDueAt(null, intervalDue, now, opts.slot ?? 0) : intervalDue;
-      return transition(cur, "scheduled", {
-        nextDueAt,
-        reason: nextDueAt === null ? `Waiting for ${rule.trigger.type} trigger` : undefined,
-      });
-    }
+    if (changed) return this.newRun(cur, tab, rule, config, opts);
 
-    cur = { ...cur, url: tab.url };
+    // Paused on a form result, the run remembers the form page's address.
+    if (cur.status !== "paused_resubmit") cur = { ...cur, url: tab.url };
     if (cur.status === "paused_global" || cur.status === "idle" || cur.status === "excluded") {
       // Resuming: do not fire overdue schedules at once.
       const intervalDue = this.nextDue(rule, now);
@@ -283,6 +270,25 @@ export class RuleEngine {
       return { ...cur, nextDueAt: restoredDueAt(cur.nextDueAt, intervalDue, now, opts.slot ?? 0) };
     }
     return cur;
+  }
+
+  /** Start a new run (new generation) of `rule` on the tab. */
+  private newRun(cur: TabRuntime, tab: TabInfo, rule: Rule, config: Config, opts: { restoring?: boolean; slot?: number } = {}): TabRuntime {
+    const now = this.now();
+    const fresh: TabRuntime = { ...newRuntime(tab.id, tab.url, now, cur.generation + 1), controllerId: rule.id, controllerRevision: rule.meta.revision };
+    const override = config.tabOverrides[String(tab.id)];
+    if (override?.mode === "custom" && override.stopped) {
+      return transition(fresh, "stopped", { reason: "Stopped by user" });
+    }
+    if (override?.mode === "custom" && override.paused) {
+      return transition(fresh, "paused_user", { reason: "Paused by user" });
+    }
+    const intervalDue = this.nextDue(rule, now);
+    const nextDueAt = intervalDue === null ? null : opts.restoring ? restoredDueAt(null, intervalDue, now, opts.slot ?? 0) : intervalDue;
+    return transition(fresh, "scheduled", {
+      nextDueAt,
+      reason: nextDueAt === null ? `Waiting for ${rule.trigger.type} trigger` : undefined,
+    });
   }
 
   /* ---------------- reconciliation ---------------- */
@@ -405,9 +411,10 @@ export class RuleEngine {
   }
 
   /**
-   * A tab paused on a form result has loaded a page: carry on with the
-   * schedule. If the new page is a form result too, the next refresh attempt
-   * pauses it again.
+   * A tab paused on a form result has loaded a page: carry on. Another page
+   * starts a new run, as any navigation does; the same address loaded as a
+   * normal visit keeps the run. If the new page is a form result too, the next
+   * refresh attempt pauses it again.
    */
   private async resumeAfterFormPage(tabId: number) {
     await this.withLock(tabId, async () => {
@@ -421,10 +428,21 @@ export class RuleEngine {
       // same address): stay paused, quietly, while it's still the form result.
       const { activity } = await this.page.activity(tabId);
       if (activity?.formResult) return;
-      const next = transition(rt, "scheduled", { reason: undefined, nextDueAt: this.nextDue(res.controller, this.now()) });
+      const next = this.leaveFormPause(rt, tab, res.controller, await this.deps.stores.config.get());
       await this.deps.stores.runtime.put(next);
       await this.setAlarm(next);
     });
+  }
+
+  /**
+   * Leave the form-page pause. Another page starts a new run, as any
+   * navigation does; the same page (ignoring #…) carries on with the run. The
+   * run then follows the tab's current address, so the next sync doesn't
+   * mistake it for a new page.
+   */
+  private leaveFormPause(rt: TabRuntime, tab: TabInfo, rule: Rule, config: Config): TabRuntime {
+    if (rule.id !== rt.controllerId || withoutHash(rt.url) !== withoutHash(tab.url)) return this.newRun(rt, tab, rule, config);
+    return transition(rt, "scheduled", { reason: undefined, url: tab.url, nextDueAt: this.nextDue(rule, this.now()) });
   }
 
   /** Our own reload finished loading: count it and evaluate post-navigation. */
@@ -499,8 +517,24 @@ export class RuleEngine {
       const now = this.now();
 
       if (!trigger) return save(transition(rt, "error", { lastError: `Unknown trigger ${rule.trigger.type}`, nextDueAt: null }));
+      const endOnLimit = async () => {
+        const limit = checkLimits(rule.limits, rt, now);
+        if (!limit.reached) return null;
+        this.log({ ruleId: rule.id, tabId, url: tab.url, trigger: event, action: "stop", outcome: "ok", reason: limit.reason });
+        // A rule waiting for something on the page must not end silently: say
+        // it stopped without finding it. Plain timers end quietly.
+        if (rule.stopWhen) await this.notifyStopped(config, rule, tab, `${limit.reason} before the condition was met. Open the popup to start again.`);
+        return save(transition(rt, "completed", { reason: rule.stopWhen ? `${limit.reason}; the condition wasn't met` : limit.reason, nextDueAt: null }));
+      };
+
       if (event !== "manual" && !trigger.events.includes(event)) {
         // Not our trigger: keep state, but make sure the alarm is consistent.
+        // A time limit still ends the run: a paused startup or manual rule only
+        // wakes on an alarm at its deadline.
+        if (event === "alarm" && !isTerminal(rt.status) && !rt.pendingReload) {
+          const ended = await endOnLimit();
+          if (ended) return ended;
+        }
         return save(rt);
       }
 
@@ -535,14 +569,8 @@ export class RuleEngine {
       }
 
       // Limits and active window.
-      const limit = checkLimits(rule.limits, rt, now);
-      if (limit.reached) {
-        this.log({ ruleId: rule.id, tabId, url: tab.url, trigger: event, action: "stop", outcome: "ok", reason: limit.reason });
-        // A rule waiting for something on the page must not end silently: say
-        // it stopped without finding it. Plain timers end quietly.
-        if (rule.stopWhen) await this.notifyStopped(config, rule, tab, `${limit.reason} before the condition was met. Open the popup to start again.`);
-        return save(transition(rt, "completed", { reason: rule.stopWhen ? `${limit.reason}; the condition wasn't met` : limit.reason, nextDueAt: null }));
-      }
+      const ended = await endOnLimit();
+      if (ended) return ended;
       if (!inActiveWindow(rule.schedule, now)) {
         const opens = nextWindowStart(rule.schedule, now);
         return save(transition(rt, "scheduled", { reason: "Outside active hours", nextDueAt: opens ?? this.nextDue(rule, now) }));
@@ -815,6 +843,8 @@ export class RuleEngine {
       } else {
         rt = transition(rt, status, { reason, nextDueAt: null, resumeAt: null, generation: rt.generation + 1 });
       }
+      // Leaving a form-page pause (which kept the form page's address): follow the tab.
+      rt = { ...rt, url: tab.url };
       await this.deps.stores.runtime.put(rt);
       await this.setAlarm(rt);
       return rt;
@@ -869,10 +899,10 @@ export class RuleEngine {
       if (res.kind === "restricted") return { opened: false, reason: res.reason };
       // Without the #fragment: navigating to the same URL with a fragment is an
       // in-page jump that loads nothing.
-      await this.deps.browser.navigate(tabId, tab.url.split("#")[0]!);
+      await this.deps.browser.navigate(tabId, withoutHash(tab.url));
       const rt = await this.deps.stores.runtime.get(tabId);
       if (rt?.status === "paused_resubmit" && res.kind === "controller") {
-        const next = transition(rt, "scheduled", { reason: undefined, nextDueAt: this.nextDue(res.controller, this.now()) });
+        const next = this.leaveFormPause(rt, { ...tab, url: withoutHash(tab.url) }, res.controller, config);
         await this.deps.stores.runtime.put(next);
         await this.setAlarm(next);
       }
@@ -933,6 +963,10 @@ export class RuleEngine {
   }
 
   isPausedStatus = isPaused;
+}
+
+function withoutHash(url: string): string {
+  return url.split("#")[0]!;
 }
 
 /** Host used for the per-site fast-refresh limit (null for non-web URLs). */

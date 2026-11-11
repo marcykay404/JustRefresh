@@ -29,6 +29,13 @@ URLs longer than 8192 characters never match.
 
 * Equal after normalization (scheme, host, port, path **and query** must all match).
 * `https://example.com/a` does **not** match `https://example.com/a?x=1`.
+* Some sites change the query on every load (`?t=1731…`), and the tab then
+  drops out of an exact rule. To match a page whatever its query, use two
+  patterns: `https://example.com/a` (exact) and `https://example.com/a?*`
+  (glob). The popup's "Refresh until…", the page templates and the Rule
+  Builder offer this as "whatever comes after “?”" when the address has a
+  query, and the popup says when a tab doesn't run under a rule only because
+  of its query.
 
 ## domain — `host[:port][/path-glob]`
 

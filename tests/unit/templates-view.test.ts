@@ -226,3 +226,43 @@ describe("Templates page", () => {
     expect(new Set(labels).size).toBe(5);
   });
 });
+
+describe("Templates: addresses with a ?… part", () => {
+  const typeAddress = async (v: string) => {
+    const select = el.querySelector<HTMLSelectElement>(".dialog select")!;
+    await act(async () => {
+      select.value = "__address__";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const input = el.querySelector<HTMLInputElement>('input[aria-label="Address"]')!;
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      set.call(input, v);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+
+  it("page templates ask which address, and the choice shapes the rule and its description", async () => {
+    await useTemplate("status changes");
+    expect(text()).not.toContain("Which address?"); // the open tab has no ?… part
+    await typeAddress("track.example.com/parcel?id=9&ts=1");
+    expect(text()).toContain("Which address?");
+    expect(text()).toContain("Refresh track.example.com/parcel?id=9&ts=1 every");
+    const radios = [...el.querySelectorAll<HTMLInputElement>('.query-choice input[type="radio"]')];
+    await act(async () => radios[1]!.click());
+    expect(text()).toContain("Refresh track.example.com/parcel (whatever comes after “?”) every");
+    await click(button("Create and start"));
+    await tick();
+    const [created] = called("createRule") as { rule: { target: { patterns: unknown[] } } }[];
+    expect(created!.rule.target.patterns).toEqual([
+      { type: "exact", value: "https://track.example.com/parcel" },
+      { type: "glob", value: "https://track.example.com/parcel?*" },
+    ]);
+  });
+
+  it("Stay signed in (a whole site) doesn't ask", async () => {
+    await useTemplate("Stay signed in");
+    await typeAddress("shop.example.com/a?b=1");
+    expect(text()).not.toContain("Which address?");
+  });
+});

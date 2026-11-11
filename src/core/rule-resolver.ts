@@ -12,7 +12,7 @@
  *     tie-breaker: older `meta.createdAt` first, then lexicographic `id`
  *  8. No applicable rule
  */
-import { matchesAny, patternToString, restrictedReason } from "./url-pattern";
+import { detectPattern, matchesAny, patternToString, restrictedReason } from "./url-pattern";
 import { DEFAULT_SAFETY } from "./defaults";
 import type { Config, Exclusion, Rule, TabOverride } from "./types";
 import { RULE_SCHEMA_VERSION } from "./types";
@@ -60,6 +60,39 @@ export function ruleAppliesTo(rule: Rule, url: string): boolean {
 
 export function matchingRules(rules: Iterable<Rule>, url: string): Rule[] {
   return [...rules].filter((r) => ruleAppliesTo(r, url)).sort(compareRulePrecedence);
+}
+
+/**
+ * Rules set for this exact page with a different "?…" part, which therefore
+ * don't run here: some sites change that part on every load, and the tab
+ * silently drops out of the rule.
+ */
+export function rulesForOtherQuery(rules: Iterable<Rule>, url: string): Rule[] {
+  const page = (href: string) => {
+    try {
+      const u = new URL(href);
+      const query = u.search;
+      u.search = "";
+      u.hash = "";
+      return { base: u.href, query };
+    } catch {
+      return null;
+    }
+  };
+  const here = page(url);
+  if (!here) return [];
+  return [...rules].filter(
+    (r) =>
+      r.enabled &&
+      !r.meta.draft &&
+      !ruleAppliesTo(r, url) &&
+      !matchesAny(r.target.exclusions, url) &&
+      r.target.patterns.some((p) => {
+        const { type, value } = detectPattern(p);
+        const there = type === "exact" ? page(value) : null;
+        return !!there && there.base === here.base && there.query !== here.query;
+      }),
+  );
 }
 
 /** Synthesize a rule from a per-tab override so one engine handles both. */

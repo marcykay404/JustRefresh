@@ -46,7 +46,7 @@ conditions); you can also grant all sites in Dashboard → Settings.
 
 * **Popup** — tap an interval and Start; Stop or change it while it runs;
   Refresh now. Under **More**: "Refresh until something appears…" (creates a
-  rule for this exact page), "Never auto-refresh this tab", and "Make a rule
+  rule for this page: exactly this address, or whatever comes after "?"), "Never auto-refresh this tab", and "Make a rule
   for this site…". A tab run by a rule shows the rule in words, with Check now.
 * **Dashboard** (popup → Dashboard, or the extension's Options page):
   Tabs · Rules · Templates · Rule Builder · Exclusions · History · Agent Integrations · Settings.
