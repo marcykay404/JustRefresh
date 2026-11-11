@@ -44,40 +44,40 @@ separate agent requiring approval.
 
 ## Agent API
 
-| Method | Scope | Params |
-|---|---|---|
-| `getCapabilities` | rules:read | — |
-| `listTabs` | tabs:read | — |
-| `listRules` / `getRule` | rules:read | `{ id }` |
-| `validateRule` | rules:read | `{ rule }` |
-| `testRule` | rules:test | `{ rule, tabId }` — dry run, no side effects |
-| `createRule` | rules:write | `{ rule }` → always a disabled draft |
-| `updateRule` | rules:write | `{ id, patch, expectedRevision? }` — own rules only; returns to draft |
-| `deleteRule` | rules:delete | `{ id, expectedRevision? }` — own rules; enabled rules need approval |
-| `enableRule` | rules:activate | `{ id }` → `{ status: "pending_approval", approvalId }` unless trusted |
-| `disableRule` | rules:activate | `{ id }` |
-| `getRuleStatus` | status:read | `{ id }` |
-| `getHistory` | status:read | `{ limit?, ruleId? }` |
+| Method                  | Scope          | Params                                                                 |
+| ----------------------- | -------------- | ---------------------------------------------------------------------- |
+| `getCapabilities`       | rules:read     | —                                                                      |
+| `listTabs`              | tabs:read      | —                                                                      |
+| `listRules` / `getRule` | rules:read     | `{ id }`                                                               |
+| `validateRule`          | rules:read     | `{ rule }`                                                             |
+| `testRule`              | rules:test     | `{ rule, tabId }` — dry run, no side effects                           |
+| `createRule`            | rules:write    | `{ rule }` → always a disabled draft                                   |
+| `updateRule`            | rules:write    | `{ id, patch, expectedRevision? }` — own rules only; returns to draft  |
+| `deleteRule`            | rules:delete   | `{ id, expectedRevision? }` — own rules; enabled rules need approval   |
+| `enableRule`            | rules:activate | `{ id }` → `{ status: "pending_approval", approvalId }` unless trusted |
+| `disableRule`           | rules:activate | `{ id }`                                                               |
+| `getRuleStatus`         | status:read    | `{ id }`                                                               |
+| `getHistory`            | status:read    | `{ limit?, ruleId? }`                                                  |
 
 ## Security model
 
-* Pairing creates a **pending** agent with **no scopes**; the user approves
+- Pairing creates a **pending** agent with **no scopes**; the user approves
   and chooses scopes in Dashboard → Agent Integrations. Revocable anytime.
-* Unknown methods and unknown parameters are rejected; all inputs pass the
+- Unknown methods and unknown parameters are rejected; all inputs pass the
   same validation as the UI.
-* Agent-created/updated rules are drafts. Activation and deletion of active
+- Agent-created/updated rules are drafts. Activation and deletion of active
   rules go through an approval queue (badge on the toolbar icon). An approval
   becomes **stale** if the rule changes after the request. The user may grant
-  an agent *trusted activation* for its own rules.
-* Agents can only modify rules they created; they can never call user-only
+  an agent _trusted activation_ for its own rules.
+- Agents can only modify rules they created; they can never call user-only
   methods (global controls, settings, exclusions, agent management, import).
-* Agents cannot expand site permissions (`chrome.permissions.request` needs
+- Agents cannot expand site permissions (`chrome.permissions.request` needs
   a user gesture in the extension UI).
-* URLs given to agents have query strings redacted by default; dry-run
+- URLs given to agents have query strings redacted by default; dry-run
   results never include page text previews — only match status, counts and
   tag/id/class names. Form values, cookies and keystrokes are never read.
-* Every agent call is written to the audit log with its outcome.
-* Rate limits: 60 calls/min per extension agent, 120/min via the bridge.
+- Every agent call is written to the audit log with its outcome.
+- Rate limits: 60 calls/min per extension agent, 120/min via the bridge.
 
 ## Typical workflow (FR-18)
 

@@ -60,8 +60,19 @@ describe("evaluateConditionTree", () => {
 
   it("decides despite unknown page leaves when browser leaves are decisive", async () => {
     const out = await evaluateConditionTree(
-      { type: "any", conditions: [{ type: "dom.exists", selector: "#a" }, { type: "refreshCount", operator: ">=", value: 100 }] },
-      { ...base, pageEvaluator: async () => { throw new Error("no content script"); } },
+      {
+        type: "any",
+        conditions: [
+          { type: "dom.exists", selector: "#a" },
+          { type: "refreshCount", operator: ">=", value: 100 },
+        ],
+      },
+      {
+        ...base,
+        pageEvaluator: async () => {
+          throw new Error("no content script");
+        },
+      },
     );
     expect(out.result.status).toBe("matched");
   });
@@ -69,7 +80,12 @@ describe("evaluateConditionTree", () => {
   it("reports unknown with a reason, never false", async () => {
     const out = await evaluateConditionTree(
       { type: "dom.exists", selector: "#a" },
-      { ...base, pageEvaluator: async () => { throw new Error("Cannot access page"); } },
+      {
+        ...base,
+        pageEvaluator: async () => {
+          throw new Error("Cannot access page");
+        },
+      },
     );
     expect(out.result).toMatchObject({ status: "unknown", code: "content_script_unavailable" });
     expect(explainTrace(out.trace)).toMatch(/Cannot access page/);

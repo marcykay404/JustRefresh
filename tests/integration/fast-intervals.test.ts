@@ -27,12 +27,15 @@ describe("fast intervals: validation and settings", () => {
     await env.service.call(env.user, "updateSettings", { allowFastIntervals: true });
     await expect(env.service.call(env.user, "createRule", { rule: rule("a", 10) })).resolves.toMatchObject({ id: "a" });
     await expect(env.service.call(env.user, "createRule", { rule: rule("b", 4) })).rejects.toMatchObject({ code: "validation_failed" });
-    await expect(env.service.call(env.user, "createRule", { rule: { ...rule("c", 30), trigger: { type: "interval", seconds: 30, randomMaxSeconds: 20 } } })).rejects.toMatchObject({ code: "validation_failed" });
+    await expect(
+      env.service.call(env.user, "createRule", { rule: { ...rule("c", 30), trigger: { type: "interval", seconds: 30, randomMaxSeconds: 20 } } }),
+    ).rejects.toMatchObject({ code: "validation_failed" });
   });
 
   it("capabilities report the effective minimum", async () => {
     const env = createApiEnv();
-    const caps = () => env.service.call(env.user, "getCapabilities", undefined) as Promise<{ limits: { minIntervalSeconds: number; fastIntervalsEnabled: boolean } }>;
+    const caps = () =>
+      env.service.call(env.user, "getCapabilities", undefined) as Promise<{ limits: { minIntervalSeconds: number; fastIntervalsEnabled: boolean } }>;
     expect((await caps()).limits).toMatchObject({ minIntervalSeconds: 30, fastIntervalsEnabled: false });
     await env.service.call(env.user, "updateSettings", { allowFastIntervals: true });
     expect((await caps()).limits).toMatchObject({ minIntervalSeconds: 5, fastIntervalsEnabled: true });

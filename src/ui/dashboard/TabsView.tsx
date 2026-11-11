@@ -74,10 +74,12 @@ export function TabsView() {
     const targets = rows.filter((r) => selected.has(r.tab.id) && !r.tab.restricted);
     const origins = [...new Set(targets.map((r) => originOf(r.tab.url)).filter((o): o is string => !!o))];
     // Request site access in the click gesture, then start each tab.
-    void requestOrigins(origins).catch(() => false).then(async () => {
-      for (const r of targets) await act("startTab", { tabId: r.tab.id, intervalSeconds: bulkInterval });
-      setNotice(`Started ${targets.length} tab(s)`);
-    });
+    void requestOrigins(origins)
+      .catch(() => false)
+      .then(async () => {
+        for (const r of targets) await act("startTab", { tabId: r.tab.id, intervalSeconds: bulkInterval });
+        setNotice(`Started ${targets.length} tab(s)`);
+      });
   };
   const bulk = async (method: string) => {
     for (const id of selected) await act(method, { tabId: id });
@@ -100,7 +102,9 @@ export function TabsView() {
       return;
     }
     // Form pages are left out: forcing them would only bring up Chrome's resubmission prompt.
-    const blocked = r.skipped.filter((s) => !/No rule|Excluded|excluded|cannot|Browser-internal|globally disabled/.test(s.reason) && s.reason !== FORM_RESULT_REASON);
+    const blocked = r.skipped.filter(
+      (s) => !/No rule|Excluded|excluded|cannot|Browser-internal|globally disabled/.test(s.reason) && s.reason !== FORM_RESULT_REASON,
+    );
     setNotice(`Refreshed ${r.refreshed.length} tab(s); ${r.skipped.length} skipped.`);
     const forceThem =
       blocked.length > 0 &&
@@ -111,7 +115,9 @@ export function TabsView() {
             <p>These were skipped to protect your work (for example, unsaved changes):</p>
             <ul>
               {blocked.slice(0, 8).map((b) => (
-                <li key={b.tabId}>{data?.tabs.find((t) => t.tab.id === b.tabId)?.tab.title || `Tab ${b.tabId}`}: {b.reason}</li>
+                <li key={b.tabId}>
+                  {data?.tabs.find((t) => t.tab.id === b.tabId)?.tab.title || `Tab ${b.tabId}`}: {b.reason}
+                </li>
               ))}
             </ul>
             {blocked.length > 8 && <p>…and {blocked.length - 8} more.</p>}
@@ -145,16 +151,25 @@ export function TabsView() {
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
           <option value="all">All statuses</option>
           {["scheduled", "paused", "completed", "stopped", "excluded", "idle", "error"].map((s) => (
-            <option key={s} value={s}>{s === "paused" ? "Paused (any)" : statusLabel(s)}</option>
+            <option key={s} value={s}>
+              {s === "paused" ? "Paused (any)" : statusLabel(s)}
+            </option>
           ))}
         </select>
         <span className="spacer" />
         {data.settings.paused ? (
-          <button className="primary" onClick={() => act("resumeAll")}>Resume all</button>
+          <button className="primary" onClick={() => act("resumeAll")}>
+            Resume all
+          </button>
         ) : (
           <button onClick={() => act("pauseAll")}>Pause all</button>
         )}
-        <button onClick={refreshAll} disabled={refreshingAll} aria-busy={refreshingAll} title="Refresh every tab with an active rule (respects exclusions & safety)">
+        <button
+          onClick={refreshAll}
+          disabled={refreshingAll}
+          aria-busy={refreshingAll}
+          title="Refresh every tab with an active rule (respects exclusions & safety)"
+        >
           {refreshingAll ? "Refreshing…" : "Refresh all eligible"}
         </button>
       </div>
@@ -162,14 +177,22 @@ export function TabsView() {
         <div className="card row">
           <strong>{selected.size} selected</strong>
           <select value={bulkInterval} onChange={(e) => setBulkInterval(Number(e.target.value))} aria-label="Bulk interval">
-            {INTERVAL_PRESETS.map((p) => <option key={p.seconds} value={p.seconds}>Every {p.label}</option>)}
+            {INTERVAL_PRESETS.map((p) => (
+              <option key={p.seconds} value={p.seconds}>
+                Every {p.label}
+              </option>
+            ))}
           </select>
-          <button className="primary" onClick={bulkStart}>Start refreshing</button>
+          <button className="primary" onClick={bulkStart}>
+            Start refreshing
+          </button>
           <button onClick={() => bulk("pauseTab")}>Pause</button>
           <button onClick={() => bulk("resumeTab")}>Resume</button>
           <button onClick={() => bulk("stopTab")}>Stop</button>
           <button onClick={() => bulk("excludeTab")}>Exclude</button>
-          <button className="link" onClick={() => setSelected(new Set())}>Clear selection</button>
+          <button className="link" onClick={() => setSelected(new Set())}>
+            Clear selection
+          </button>
         </div>
       )}
       <ErrorBox error={actionError} />
@@ -194,11 +217,19 @@ export function TabsView() {
                     onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.tab.id)) : new Set())}
                   />
                 </th>
-                <th className="sortable" onClick={() => setSort("title")}>Tab</th>
-                <th className="sortable" onClick={() => setSort("status")}>Status</th>
+                <th className="sortable" onClick={() => setSort("title")}>
+                  Tab
+                </th>
+                <th className="sortable" onClick={() => setSort("status")}>
+                  Status
+                </th>
                 <th>Controller</th>
-                <th className="sortable" onClick={() => setSort("next")}>Next refresh</th>
-                <th className="sortable" onClick={() => setSort("count")}>Count</th>
+                <th className="sortable" onClick={() => setSort("next")}>
+                  Next refresh
+                </th>
+                <th className="sortable" onClick={() => setSort("count")}>
+                  Count
+                </th>
                 <th>Last evaluation</th>
                 <th />
               </tr>
@@ -244,7 +275,9 @@ function LastEvaluation({ rt }: { rt: TabRuntime | null }) {
   return (
     <>
       {rt?.lastEvaluation ? (
-        <span title={rt.lastEvaluation.reason}>{rt.lastEvaluation.status} · {formatTime(rt.lastEvaluation.at)}</span>
+        <span title={rt.lastEvaluation.reason}>
+          {rt.lastEvaluation.status} · {formatTime(rt.lastEvaluation.at)}
+        </span>
       ) : (
         <span className="muted">—</span>
       )}
@@ -264,10 +297,26 @@ function RowActions({ row: r, act }: { row: Row; act: Act }) {
           {status?.startsWith("paused") ? "Resume" : "Start"}
         </button>
       )}
-      {running && <button className="small" onClick={() => act("pauseTab", { tabId })}>Pause</button>}
-      {running && <button className="small" onClick={() => act("stopTab", { tabId })}>Stop</button>}
-      {!r.tab.restricted && <button className="small" onClick={() => act("refreshNow", { tabId })}>Refresh</button>}
-      {isTabOverride(r) && <button className="small" onClick={() => act("clearTabOverride", { tabId })} title="Remove tab-specific settings">Reset</button>}
+      {running && (
+        <button className="small" onClick={() => act("pauseTab", { tabId })}>
+          Pause
+        </button>
+      )}
+      {running && (
+        <button className="small" onClick={() => act("stopTab", { tabId })}>
+          Stop
+        </button>
+      )}
+      {!r.tab.restricted && (
+        <button className="small" onClick={() => act("refreshNow", { tabId })}>
+          Refresh
+        </button>
+      )}
+      {isTabOverride(r) && (
+        <button className="small" onClick={() => act("clearTabOverride", { tabId })} title="Remove tab-specific settings">
+          Reset
+        </button>
+      )}
     </div>
   );
 }
@@ -280,12 +329,18 @@ function TabRow({ row: r, now, checked, onSelect, act }: { row: Row; now: number
         <input type="checkbox" aria-label={`Select ${r.tab.title}`} checked={checked} onChange={(e) => onSelect(e.target.checked)} />
       </td>
       <td style={{ maxWidth: 360 }}>
-        <div className="truncate"><strong>{r.tab.title || "Untitled"}</strong></div>
+        <div className="truncate">
+          <strong>{r.tab.title || "Untitled"}</strong>
+        </div>
         <div className="truncate muted small">{r.tab.url}</div>
       </td>
       <td>
         <StatusPill status={r.status} />
-        {r.reason && <div className="small muted" style={{ maxWidth: 220 }}>{r.reason}</div>}
+        {r.reason && (
+          <div className="small muted" style={{ maxWidth: 220 }}>
+            {r.reason}
+          </div>
+        )}
       </td>
       <td className="small">
         <ControllerCell row={r} />

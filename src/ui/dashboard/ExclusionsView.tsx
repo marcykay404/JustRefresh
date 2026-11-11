@@ -35,7 +35,13 @@ export function ExclusionsView() {
       <div className="card col">
         <h3>Add URL exclusion</h3>
         <div className="row">
-          <input style={{ flex: 2 }} placeholder="e.g. https://example.com/checkout/*  or  *.bank.com" value={pattern} onChange={(e) => setPattern(e.target.value)} aria-label="Exclusion pattern" />
+          <input
+            style={{ flex: 2 }}
+            placeholder="e.g. https://example.com/checkout/*  or  *.bank.com"
+            value={pattern}
+            onChange={(e) => setPattern(e.target.value)}
+            aria-label="Exclusion pattern"
+          />
           <input style={{ flex: 1 }} placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason" />
           <button
             className="primary"
@@ -49,7 +55,16 @@ export function ExclusionsView() {
             Add
           </button>
         </div>
-        {pattern && (problem ? <span className="small" style={{ color: "var(--error)" }}>{problem}</span> : <span className="small muted">Detected as <code>{detectPattern(pattern).type}</code> pattern</span>)}
+        {pattern &&
+          (problem ? (
+            <span className="small" style={{ color: "var(--error)" }}>
+              {problem}
+            </span>
+          ) : (
+            <span className="small muted">
+              Detected as <code>{detectPattern(pattern).type}</code> pattern
+            </span>
+          ))}
       </div>
       <ErrorBox error={error ?? actionError} />
       <div className="card" style={{ padding: 0 }}>
@@ -57,7 +72,15 @@ export function ExclusionsView() {
           <Empty>No URL exclusions.</Empty>
         ) : (
           <table>
-            <thead><tr><th>Pattern</th><th>Type</th><th>Reason</th><th>Added</th><th /></tr></thead>
+            <thead>
+              <tr>
+                <th>Pattern</th>
+                <th>Type</th>
+                <th>Reason</th>
+                <th>Added</th>
+                <th />
+              </tr>
+            </thead>
             <tbody>
               {data.exclusions.map((e) => (
                 <tr key={e.id}>
@@ -65,7 +88,11 @@ export function ExclusionsView() {
                   <td>{detectPattern(e.pattern).type}</td>
                   <td>{e.reason ?? <span className="muted">—</span>}</td>
                   <td className="small muted">{formatTime(e.createdAt)}</td>
-                  <td><button className="small danger" onClick={() => act("removeExclusion", { id: e.id })}>Remove</button></td>
+                  <td>
+                    <button className="small danger" onClick={() => act("removeExclusion", { id: e.id })}>
+                      Remove
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -78,7 +105,13 @@ export function ExclusionsView() {
           <Empty>No tabs are temporarily excluded.</Empty>
         ) : (
           <table>
-            <thead><tr><th>Tab</th><th>Since</th><th /></tr></thead>
+            <thead>
+              <tr>
+                <th>Tab</th>
+                <th>Since</th>
+                <th />
+              </tr>
+            </thead>
             <tbody>
               {data.tabExclusions.map((o) => (
                 <tr key={o.tabId}>
@@ -87,7 +120,11 @@ export function ExclusionsView() {
                     <div className="small muted">{o.tab?.url ?? o.restore.url}</div>
                   </td>
                   <td className="small muted">{formatTime(o.createdAt)}</td>
-                  <td><button className="small" onClick={() => act("includeTab", { tabId: o.tabId })}>Include again</button></td>
+                  <td>
+                    <button className="small" onClick={() => act("includeTab", { tabId: o.tabId })}>
+                      Include again
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

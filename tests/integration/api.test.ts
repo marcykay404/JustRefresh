@@ -9,7 +9,9 @@ describe("Rule Management API — user", () => {
     expect(r).toMatchObject({ id: "rule-001", enabled: true, meta: { revision: 1, draft: false, origin: { type: "user" } } });
     const u = (await env.service.call(env.user, "updateRule", { id: r.id, patch: { priority: 5 }, expectedRevision: 1 })) as Rule;
     expect(u.meta.revision).toBe(2);
-    await expect(env.service.call(env.user, "updateRule", { id: r.id, patch: { priority: 6 }, expectedRevision: 1 })).rejects.toMatchObject({ code: "conflict" });
+    await expect(env.service.call(env.user, "updateRule", { id: r.id, patch: { priority: 6 }, expectedRevision: 1 })).rejects.toMatchObject({
+      code: "conflict",
+    });
     await expect(env.service.call(env.user, "createRule", { rule: SPEC_EXAMPLE })).rejects.toMatchObject({ code: "conflict" });
     await env.service.call(env.user, "deleteRule", { id: r.id });
     await expect(env.service.call(env.user, "getRule", { id: r.id })).rejects.toMatchObject({ code: "not_found" });
@@ -17,9 +19,9 @@ describe("Rule Management API — user", () => {
 
   it("returns structured diagnostics agents can act on", async () => {
     const env = createApiEnv();
-    const e = await env.service
+    const e = (await env.service
       .call(env.user, "createRule", { rule: { ...SPEC_EXAMPLE, trigger: { type: "interval", seconds: 5 } } })
-      .catch((x: { code: string; diagnostics: unknown[] }) => x) as { code: string; diagnostics: unknown[] };
+      .catch((x: { code: string; diagnostics: unknown[] }) => x)) as { code: string; diagnostics: unknown[] };
     expect(e.code).toBe("validation_failed");
     expect(e.diagnostics[0]).toMatchObject({ path: "trigger.seconds", severity: "error" });
   });
@@ -135,12 +137,16 @@ describe("Scenario G: agent integration & security", () => {
     const env = createApiEnv();
     await env.pairAgent("native:a", ["rules:read", "rules:write"]);
     const userRule = (await env.service.call(env.user, "createRule", { rule: SPEC_EXAMPLE })) as Rule;
-    await expect(env.service.call(env.agent("native:a"), "updateRule", { id: userRule.id, patch: { priority: 1 } })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(env.service.call(env.agent("native:a"), "updateRule", { id: userRule.id, patch: { priority: 1 } })).rejects.toMatchObject({
+      code: "forbidden",
+    });
     await expect(env.service.call(env.agent("native:a"), "deleteRule", { id: userRule.id })).rejects.toMatchObject({ code: "forbidden" });
     await expect(env.service.call(env.agent("native:a"), "listTabs", undefined)).rejects.toMatchObject({ code: "forbidden" });
     // user-only methods are never reachable
     await expect(env.service.call(env.agent("native:a"), "pauseAll", undefined)).rejects.toMatchObject({ code: "forbidden" });
-    await expect(env.service.call(env.agent("native:a"), "updateAgent", { id: "native:a", scopes: ["rules:delete"] })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(env.service.call(env.agent("native:a"), "updateAgent", { id: "native:a", scopes: ["rules:delete"] })).rejects.toMatchObject({
+      code: "forbidden",
+    });
     await env.service.call(env.user, "updateAgent", { id: "native:a", status: "revoked" });
     await expect(env.service.call(env.agent("native:a"), "listRules", undefined)).rejects.toMatchObject({ code: "forbidden" });
   });
@@ -204,7 +210,12 @@ describe("temporary tab exclusion (FR-01)", () => {
 it("capabilities say so when the JSON Schema files can't be read", async () => {
   const { RuleManagementService } = await import("@/api/rule-api");
   const env = createApiEnv();
-  const svc = new RuleManagementService({ ...(env.service as unknown as { deps: ConstructorParameters<typeof RuleManagementService>[0] }).deps, schemas: async () => { throw new Error("missing"); } });
+  const svc = new RuleManagementService({
+    ...(env.service as unknown as { deps: ConstructorParameters<typeof RuleManagementService>[0] }).deps,
+    schemas: async () => {
+      throw new Error("missing");
+    },
+  });
   const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const caps = (await svc.call(env.user, "getCapabilities", undefined)) as { schemasUnavailable?: boolean; ruleSchema: object };
   expect(caps).toMatchObject({ schemasUnavailable: true, ruleSchema: {} });

@@ -24,7 +24,18 @@ export class FakeBrowser implements BrowserPort {
   stallReload = new Set<number>();
 
   addTab(id: number, url: string, extra: Partial<TabInfo> = {}) {
-    this.tabs.set(id, { id, url, title: `Tab ${id}`, windowId: 1, index: id, active: false, discarded: false, status: "complete", restricted: false, ...extra });
+    this.tabs.set(id, {
+      id,
+      url,
+      title: `Tab ${id}`,
+      windowId: 1,
+      index: id,
+      active: false,
+      discarded: false,
+      status: "complete",
+      restricted: false,
+      ...extra,
+    });
   }
   async getTab(id: number) {
     return this.tabs.get(id) ?? null;
@@ -114,7 +125,17 @@ export function createEnv(opts: { timeouts?: Partial<EngineTimeouts> } = {}) {
   const audit = new AuditRepository(local, clock.now);
   const engine = new RuleEngine({ browser, alarms, page, clock, stores: { config, runtime, history }, timeouts: opts.timeouts });
   return {
-    clock, browser, alarms, page, local, session, config, runtime, history, audit, engine,
+    clock,
+    browser,
+    alarms,
+    page,
+    local,
+    session,
+    config,
+    runtime,
+    history,
+    audit,
+    engine,
     /** Fire every alarm that is due, like Chrome would. */
     async fireDue() {
       const due = [...alarms.alarms.entries()].filter(([, t]) => t <= clock.t).map(([n]) => n);

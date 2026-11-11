@@ -14,14 +14,7 @@ import { detectPattern } from "../core/url-pattern";
 export class ApiError extends Error {
   constructor(
     public readonly code:
-      | "invalid_params"
-      | "validation_failed"
-      | "not_found"
-      | "conflict"
-      | "forbidden"
-      | "pairing_required"
-      | "unsupported_method"
-      | "internal",
+      "invalid_params" | "validation_failed" | "not_found" | "conflict" | "forbidden" | "pairing_required" | "unsupported_method" | "internal",
     message: string,
     public readonly diagnostics?: unknown[],
   ) {

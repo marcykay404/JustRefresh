@@ -6,13 +6,13 @@ string (type auto-detected) or an object `{ "type": "exact" | "domain" | "glob" 
 
 ## Auto-detection (strings)
 
-| String | Type |
-|---|---|
+| String                                             | Type                       |
+| -------------------------------------------------- | -------------------------- |
 | starts with `regex:`, `exact:`, `glob:`, `domain:` | that type (prefix removed) |
-| starts with `^` | regex |
-| contains `://` and `*` | glob |
-| contains `://` | exact |
-| anything else | domain |
+| starts with `^`                                    | regex                      |
+| contains `://` and `*`                             | glob                       |
+| contains `://`                                     | exact                      |
+| anything else                                      | domain                     |
 
 ## Normalization (all types)
 
@@ -27,9 +27,9 @@ URLs longer than 8192 characters never match.
 
 `https://example.com/dashboard`
 
-* Equal after normalization (scheme, host, port, path **and query** must all match).
-* `https://example.com/a` does **not** match `https://example.com/a?x=1`.
-* Some sites change the query on every load (`?t=1731…`), and the tab then
+- Equal after normalization (scheme, host, port, path **and query** must all match).
+- `https://example.com/a` does **not** match `https://example.com/a?x=1`.
+- Some sites change the query on every load (`?t=1731…`), and the tab then
   drops out of an exact rule. To match a page whatever its query, use two
   patterns: `https://example.com/a` (exact) and `https://example.com/a?*`
   (glob). The popup's "Refresh until…", the page templates and the Rule
@@ -39,37 +39,37 @@ URLs longer than 8192 characters never match.
 
 ## domain — `host[:port][/path-glob]`
 
-| Pattern | Matches | Does not match |
-|---|---|---|
-| `example.com` | `http(s)://example.com/anything` | `https://www.example.com/` |
-| `*.example.com` | `example.com` **and** any subdomain (`a.b.example.com`) | `badexample.com` |
-| `localhost:3000` | `http://localhost:3000/x` | `http://localhost:4000/` |
-| `example.com/reports/*` | `https://example.com/reports/q1?x=1` | `https://example.com/other` |
+| Pattern                 | Matches                                                 | Does not match              |
+| ----------------------- | ------------------------------------------------------- | --------------------------- |
+| `example.com`           | `http(s)://example.com/anything`                        | `https://www.example.com/`  |
+| `*.example.com`         | `example.com` **and** any subdomain (`a.b.example.com`) | `badexample.com`            |
+| `localhost:3000`        | `http://localhost:3000/x`                               | `http://localhost:4000/`    |
+| `example.com/reports/*` | `https://example.com/reports/q1?x=1`                    | `https://example.com/other` |
 
-* Scheme: `http` and `https` only.
-* Port: any port unless given; `:*` means any port explicitly.
-* Path part (optional) is a glob over `pathname + search` (query included).
-* `*` in the host is only allowed as a leading `*.`.
+- Scheme: `http` and `https` only.
+- Port: any port unless given; `:*` means any port explicitly.
+- Path part (optional) is a glob over `pathname + search` (query included).
+- `*` in the host is only allowed as a leading `*.`.
 
 ## glob — full URL with `*`
 
 `https://example.com/reports/*`, `*://*.example.com/app/*`
 
-* Structure: `scheme://host[:port]rest`.
-* `*` matches **any sequence of characters, including `/`, `?` and `&`** (may be empty).
-* `?` is a **literal** question mark (URLs use it for queries), not a single-char wildcard.
-* Scheme `*` means `http` or `https`.
-* Host follows the domain rules above (`*.example.com` includes the apex).
-* `rest` is matched against `pathname + search` (+ `hash` if the pattern contains `#`),
+- Structure: `scheme://host[:port]rest`.
+- `*` matches **any sequence of characters, including `/`, `?` and `&`** (may be empty).
+- `?` is a **literal** question mark (URLs use it for queries), not a single-char wildcard.
+- Scheme `*` means `http` or `https`.
+- Host follows the domain rules above (`*.example.com` includes the apex).
+- `rest` is matched against `pathname + search` (+ `hash` if the pattern contains `#`),
   anchored at both ends. An empty `rest` is `/`.
 
 ## regex
 
 `^https://example\.com/orders/.*$` or `regex:example\.com/(a|b)/`
 
-* JavaScript `RegExp` (no flags) tested against the full normalized URL (`href`, fragment included).
-* Not anchored automatically — use `^`/`$`.
-* Rejected for safety (JavaScript has no regex timeouts): nested quantifiers
+- JavaScript `RegExp` (no flags) tested against the full normalized URL (`href`, fragment included).
+- Not anchored automatically — use `^`/`$`.
+- Rejected for safety (JavaScript has no regex timeouts): nested quantifiers
   (`(a+)+`, `(.*a){3}`), repeated alternation groups (`(a|aa)+`), backreferences,
   patterns longer than 1000 characters.
 

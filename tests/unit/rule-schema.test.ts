@@ -78,10 +78,7 @@ describe("validateRule", () => {
   });
 
   it("validates nested conditions with precise paths", () => {
-    const d = validateCondition(
-      { type: "all", conditions: [{ type: "not", condition: { type: "refreshCount", operator: "~", value: 1 } }] },
-      "stopWhen",
-    );
+    const d = validateCondition({ type: "all", conditions: [{ type: "not", condition: { type: "refreshCount", operator: "~", value: 1 } }] }, "stopWhen");
     expect(d[0].path).toBe("stopWhen.conditions[0].condition.operator");
   });
 

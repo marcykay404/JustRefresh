@@ -94,24 +94,36 @@ export class ActivityMonitor {
       if ((target as HTMLElement).isContentEditable) this.editableTouched = true;
       else this.edited.add(target);
     };
-    this.doc.addEventListener("keydown", (e) => {
-      if (!this.isUserEvent(e)) return;
-      if (isEditable(e.target) || (e.target as HTMLElement)?.isContentEditable) this.lastKey = now();
-    }, listen);
+    this.doc.addEventListener(
+      "keydown",
+      (e) => {
+        if (!this.isUserEvent(e)) return;
+        if (isEditable(e.target) || (e.target as HTMLElement)?.isContentEditable) this.lastKey = now();
+      },
+      listen,
+    );
     this.doc.addEventListener("input", userEdit, listen);
     this.doc.addEventListener("change", userEdit, listen);
     this.doc.addEventListener("compositionstart", () => (this.composing = true), listen);
-    this.doc.addEventListener("compositionend", () => {
-      this.composing = false;
-      this.lastInput = now();
-    }, listen);
+    this.doc.addEventListener(
+      "compositionend",
+      () => {
+        this.composing = false;
+        this.lastInput = now();
+      },
+      listen,
+    );
     this.doc.addEventListener("pointerdown", () => (this.lastPointer = now()), listen);
     this.doc.addEventListener("pointermove", () => (this.lastPointer = now()), listen);
     this.doc.addEventListener("wheel", () => (this.lastScroll = now()), listen);
     this.doc.addEventListener("scroll", () => (this.lastScroll = now()), listen);
-    this.doc.addEventListener("submit", (e) => {
-      if (e.target instanceof HTMLFormElement) this.submittedForms.add(e.target);
-    }, listen);
+    this.doc.addEventListener(
+      "submit",
+      (e) => {
+        if (e.target instanceof HTMLFormElement) this.submittedForms.add(e.target);
+      },
+      listen,
+    );
   }
 
   /**

@@ -30,8 +30,7 @@ export abstract class EngineBase {
     this.page = {
       // A rejection here is reported by the evaluator as an `unknown` result.
       evaluate: (tabId, leaves, includeText) => withTimeout(deps.page.evaluate(tabId, leaves, includeText), pageMs, "Page"),
-      activity: (tabId) =>
-        withTimeout(deps.page.activity(tabId), pageMs, "Page").catch((e: Error) => ({ activity: null, reason: e.message })),
+      activity: (tabId) => withTimeout(deps.page.activity(tabId), pageMs, "Page").catch((e: Error) => ({ activity: null, reason: e.message })),
     };
   }
 

@@ -69,9 +69,9 @@ export function AgentsView() {
     <>
       <h1>Agent Integrations</h1>
       <p className="muted">
-        AI agents, such as AI apps on your computer or other browser extensions, can set up refresh rules for you. Nothing they do takes effect on its
-        own: rules they create are saved switched off, and switching a rule on or deleting it waits for your OK here, unless you choose to trust that
-        agent. You can take an agent's access away at any time.
+        AI agents, such as AI apps on your computer or other browser extensions, can set up refresh rules for you. Nothing they do takes effect on its own:
+        rules they create are saved switched off, and switching a rule on or deleting it waits for your OK here, unless you choose to trust that agent. You can
+        take an agent's access away at any time.
       </p>
       <ErrorBox error={error ?? actionError} />
       <ApprovalsCard
@@ -129,12 +129,22 @@ function ApprovalRow({ approval: a, rule, agentName, act }: { approval: Approval
   return (
     <div className="info col">
       <div className="row">
-        <strong>{a.kind === "activate" ? "Switch on" : "Delete"} rule “{rule?.name ?? a.ruleId}”</strong>
-        <span className="muted small" title={`Rule version ${a.ruleRevision}`}>asked by {agentName(a.agentId)} · {formatTime(a.createdAt)}</span>
+        <strong>
+          {a.kind === "activate" ? "Switch on" : "Delete"} rule “{rule?.name ?? a.ruleId}”
+        </strong>
+        <span className="muted small" title={`Rule version ${a.ruleRevision}`}>
+          asked by {agentName(a.agentId)} · {formatTime(a.createdAt)}
+        </span>
         <span className="spacer" />
-        <a className="btn small" href={`#/builder/${a.ruleId}`} style={{ textDecoration: "none" }}>Review & test</a>
-        <button className="small primary" onClick={() => act("resolveApproval", { id: a.id, approve: true })}>Approve</button>
-        <button className="small danger" onClick={() => act("resolveApproval", { id: a.id, approve: false })}>Reject</button>
+        <a className="btn small" href={`#/builder/${a.ruleId}`} style={{ textDecoration: "none" }}>
+          Review & test
+        </a>
+        <button className="small primary" onClick={() => act("resolveApproval", { id: a.id, approve: true })}>
+          Approve
+        </button>
+        <button className="small danger" onClick={() => act("resolveApproval", { id: a.id, approve: false })}>
+          Reject
+        </button>
       </div>
       {rule && (
         <>
@@ -161,20 +171,22 @@ function BridgeCard({ enabled, status, act }: { enabled: boolean; status: Bridge
     <div className="card col">
       <h2>Desktop AI apps (MCP bridge)</h2>
       <p className="small muted" style={{ margin: 0 }}>
-        Optional. Lets AI apps on this computer that support MCP (Model Context Protocol) connect to JustRefresh. It needs a small helper program
-        installed from the <code>bridge/</code> folder; see <code>docs/agent-integration.md</code>. Everything stays on this computer, and each app has to
-        be approved above before it can do anything.
+        Optional. Lets AI apps on this computer that support MCP (Model Context Protocol) connect to JustRefresh. It needs a small helper program installed from
+        the <code>bridge/</code> folder; see <code>docs/agent-integration.md</code>. Everything stays on this computer, and each app has to be approved above
+        before it can do anything.
       </p>
       <div className="row">
         <Toggle checked={enabled} label="Allow desktop AI apps to connect" onChange={toggle} />
         <span className={`pill pill-${connected ? "ok" : "muted"}`}>{connected ? "Connected" : "Not connected"}</span>
-        <span className="small muted">Extension ID (used when installing the helper): <code>{chrome.runtime.id}</code></span>
+        <span className="small muted">
+          Extension ID (used when installing the helper): <code>{chrome.runtime.id}</code>
+        </span>
       </div>
       {status?.restartRequired && (
         <div className="row">
           <span className="small">
-            One more step: Chrome only allows this connection after JustRefresh restarts. Your rules and schedules are kept; open JustRefresh pages
-            (like this one) will close.
+            One more step: Chrome only allows this connection after JustRefresh restarts. Your rules and schedules are kept; open JustRefresh pages (like this
+            one) will close.
           </span>
           <button className="small primary" onClick={() => chrome.runtime.reload()}>
             Restart JustRefresh
@@ -200,7 +212,12 @@ function ActivityLog({
 }) {
   const dialog = useDialog();
   const clear = async () => {
-    const ok = await dialog.confirm({ title: "Clear the activity log?", message: "The record of what agents asked JustRefresh to do is deleted.", confirmLabel: "Clear log", danger: true });
+    const ok = await dialog.confirm({
+      title: "Clear the activity log?",
+      message: "The record of what agents asked JustRefresh to do is deleted.",
+      confirmLabel: "Clear log",
+      danger: true,
+    });
     if (ok) await act("clearAudit", undefined);
   };
   return (
@@ -208,22 +225,43 @@ function ActivityLog({
       <div className="row">
         <h2>Activity log</h2>
         <span className="spacer" />
-        <button className="small" onClick={clear}>Clear</button>
+        <button className="small" onClick={clear}>
+          Clear
+        </button>
       </div>
-      <p className="small muted" style={{ margin: 0 }}>Everything agents have asked JustRefresh to do, newest first.</p>
+      <p className="small muted" style={{ margin: 0 }}>
+        Everything agents have asked JustRefresh to do, newest first.
+      </p>
       {entries.length === 0 ? (
         <Empty>No agent activity yet.</Empty>
       ) : (
         <table>
-          <thead><tr><th>Time</th><th>Agent</th><th>Request</th><th>Rule</th><th>Result</th><th>Details</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Agent</th>
+              <th>Request</th>
+              <th>Rule</th>
+              <th>Result</th>
+              <th>Details</th>
+            </tr>
+          </thead>
           <tbody>
             {entries.slice(0, 300).map((e, i) => (
               <tr key={i}>
                 <td className="small">{formatTime(e.at)}</td>
-                <td className="small" title={e.agentId}>{agentName(e.agentId)}</td>
-                <td className="small" title={e.operation}>{operationLabel(e.operation)}</td>
-                <td className="small" title={e.ruleId}>{e.ruleId ? (ruleById.get(e.ruleId)?.name ?? e.ruleId) : "—"}</td>
-                <td><span className={`pill pill-${OUTCOME_PILL[e.outcome] ?? "error"}`}>{OUTCOME_LABEL[e.outcome] ?? e.outcome}</span></td>
+                <td className="small" title={e.agentId}>
+                  {agentName(e.agentId)}
+                </td>
+                <td className="small" title={e.operation}>
+                  {operationLabel(e.operation)}
+                </td>
+                <td className="small" title={e.ruleId}>
+                  {e.ruleId ? (ruleById.get(e.ruleId)?.name ?? e.ruleId) : "—"}
+                </td>
+                <td>
+                  <span className={`pill pill-${OUTCOME_PILL[e.outcome] ?? "error"}`}>{OUTCOME_LABEL[e.outcome] ?? e.outcome}</span>
+                </td>
                 <td className="small muted">{e.detail}</td>
               </tr>
             ))}
@@ -243,8 +281,8 @@ function AllowedExtensions({ ids, save }: { ids: string[]; save: (ids: string[])
     <div className="card col">
       <h2>Browser extensions that may connect</h2>
       <p className="small muted" style={{ margin: 0 }}>
-        Another browser extension can act as an agent only if you add its ID here, and it still has to be approved above before it can do anything. To
-        find an extension's ID, open <code>chrome://extensions</code> and turn on Developer mode.
+        Another browser extension can act as an agent only if you add its ID here, and it still has to be approved above before it can do anything. To find an
+        extension's ID, open <code>chrome://extensions</code> and turn on Developer mode.
       </p>
       {ids.length === 0 ? (
         <span className="small muted">None added. Other extensions can't connect.</span>
@@ -253,13 +291,23 @@ function AllowedExtensions({ ids, save }: { ids: string[]; save: (ids: string[])
           <div key={id} className="row">
             <code>{id}</code>
             <span className="spacer" />
-            <button className="small" onClick={() => void save(ids.filter((x) => x !== id))}>Remove</button>
+            <button className="small" onClick={() => void save(ids.filter((x) => x !== id))}>
+              Remove
+            </button>
           </div>
         ))
       )}
       <div className="row">
-        <input aria-label="Extension ID" placeholder="32-letter extension ID" value={draft} onChange={(e) => setDraft(e.target.value)} style={{ minWidth: 300 }} />
-        <button className="small" disabled={!valid || ids.includes(candidate)} onClick={() => void save([...ids, candidate]).then(() => setDraft(""))}>Add</button>
+        <input
+          aria-label="Extension ID"
+          placeholder="32-letter extension ID"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          style={{ minWidth: 300 }}
+        />
+        <button className="small" disabled={!valid || ids.includes(candidate)} onClick={() => void save([...ids, candidate]).then(() => setDraft(""))}>
+          Add
+        </button>
         {draft && !valid && <span className="small muted">An extension ID is 32 letters, each from a to p.</span>}
       </div>
     </div>
@@ -275,30 +323,45 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
         <strong>{agent.name}</strong>
         <code className="small">{agent.id}</code>
         <span className={`pill pill-${agent.status === "approved" ? "ok" : agent.status === "pending" ? "warn" : "muted"}`}>{STATUS_LABEL[agent.status]}</span>
-        <span className="small muted">{TRANSPORT_LABEL[agent.transport]} · last seen {formatTime(agent.lastSeenAt)}</span>
+        <span className="small muted">
+          {TRANSPORT_LABEL[agent.transport]} · last seen {formatTime(agent.lastSeenAt)}
+        </span>
         <span className="spacer" />
         {/* Kept together so the buttons wrap as a pair, never one per line. */}
         <span className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
-        {agent.status !== "revoked" && (
-          <button className="small danger" title="Keep it listed but refuse everything it asks; you can approve it again later" onClick={() => act("updateAgent", { id: agent.id, status: "revoked" })}>
-            {agent.status === "pending" ? "Decline" : "Revoke access"}
+          {agent.status !== "revoked" && (
+            <button
+              className="small danger"
+              title="Keep it listed but refuse everything it asks; you can approve it again later"
+              onClick={() => act("updateAgent", { id: agent.id, status: "revoked" })}
+            >
+              {agent.status === "pending" ? "Decline" : "Revoke access"}
+            </button>
+          )}
+          <button
+            className="small"
+            onClick={async () =>
+              (await dialog.confirm({
+                title: `Remove ${agent.name}?`,
+                message: "It loses access to JustRefresh and has to ask for approval again to reconnect.",
+                confirmLabel: "Remove agent",
+                danger: true,
+              })) && act("removeAgent", { id: agent.id })
+            }
+          >
+            Remove
           </button>
-        )}
-        <button className="small" onClick={async () =>
-            (await dialog.confirm({
-              title: `Remove ${agent.name}?`,
-              message: "It loses access to JustRefresh and has to ask for approval again to reconnect.",
-              confirmLabel: "Remove agent",
-              danger: true,
-            })) && act("removeAgent", { id: agent.id })
-          }>Remove</button>
         </span>
       </div>
       <div className="col small" style={{ gap: 4 }}>
         <strong>{agent.status === "pending" ? "What may this agent do?" : "This agent may:"}</strong>
         {allScopes.map((s) => (
           <label key={s} title={s} className="row" style={{ gap: 6 }}>
-            <input type="checkbox" checked={scopes.includes(s)} onChange={(e) => setScopes(e.target.checked ? [...scopes, s] : scopes.filter((x) => x !== s))} />
+            <input
+              type="checkbox"
+              checked={scopes.includes(s)}
+              onChange={(e) => setScopes(e.target.checked ? [...scopes, s] : scopes.filter((x) => x !== s))}
+            />
             {SCOPE_LABEL[s] ?? s}
           </label>
         ))}
@@ -306,7 +369,11 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
       <div className="row">
         <Toggle
           checked={agent.trustedActivation}
-          label={<span className="small">Trust this agent <span className="muted">(switch on and delete its own rules without asking me each time)</span></span>}
+          label={
+            <span className="small">
+              Trust this agent <span className="muted">(switch on and delete its own rules without asking me each time)</span>
+            </span>
+          }
           onChange={async (on) =>
             (!on ||
               (await dialog.confirm({
@@ -344,7 +411,10 @@ export function RuleInWords({ rule }: { rule: Rule }) {
   ].filter(Boolean);
   return (
     <div className="col small rule-in-words" style={{ gap: 4 }}>
-      <span>{describeRule(rule)}{extras.length ? ` (${extras.join(", ")})` : ""}.</span>
+      <span>
+        {describeRule(rule)}
+        {extras.length ? ` (${extras.join(", ")})` : ""}.
+      </span>
       <span>
         On {pages.length === 1 ? "pages matching" : "pages matching any of"}{" "}
         {pages.map((p, i) => (
@@ -366,9 +436,7 @@ export function RuleInWords({ rule }: { rule: Rule }) {
         )}
         .
       </span>
-      {matchesEverySite(rule) && (
-        <span className="warn-text">This rule can run on every website.</span>
-      )}
+      {matchesEverySite(rule) && <span className="warn-text">This rule can run on every website.</span>}
     </div>
   );
 }

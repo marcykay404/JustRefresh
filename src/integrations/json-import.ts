@@ -52,7 +52,9 @@ const bundleSchema = z.looseObject({
   format: z.literal(BUNDLE_FORMAT),
   version: z.int(),
   rules: z.array(z.unknown()).check(z.maxLength(1000)),
-  exclusions: z.optional(z.array(z.strictObject({ pattern: urlPatternSchema, reason: z.optional(z.string().check(z.maxLength(200))) })).check(z.maxLength(1000))),
+  exclusions: z.optional(
+    z.array(z.strictObject({ pattern: urlPatternSchema, reason: z.optional(z.string().check(z.maxLength(200))) })).check(z.maxLength(1000)),
+  ),
   settings: z.optional(z.record(z.string(), z.unknown())),
 });
 
@@ -69,7 +71,14 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
 ];
 
 type ExclusionInput = Omit<Exclusion, "id" | "createdAt">;
-type ParsedImport = { fatal: boolean; rules: Rule[]; exclusions: ExclusionInput[]; settings?: Partial<Settings>; errors: ImportReport["errors"]; warnings: string[] };
+type ParsedImport = {
+  fatal: boolean;
+  rules: Rule[];
+  exclusions: ExclusionInput[];
+  settings?: Partial<Settings>;
+  errors: ImportReport["errors"];
+  warnings: string[];
+};
 type ImportOptions = { registries: Registries; defaultSafety: SafetyConfig; now: number; allowFastIntervals?: boolean };
 /** What an import holds before its rules are validated. */
 interface ImportSource {
@@ -78,7 +87,13 @@ interface ImportSource {
   settings?: Partial<Settings>;
 }
 
-const fatalImport = (diagnostics: Diagnostic[], warnings: string[]): ParsedImport => ({ fatal: true, rules: [], exclusions: [], errors: [{ index: -1, diagnostics }], warnings });
+const fatalImport = (diagnostics: Diagnostic[], warnings: string[]): ParsedImport => ({
+  fatal: true,
+  rules: [],
+  exclusions: [],
+  errors: [{ index: -1, diagnostics }],
+  warnings,
+});
 const importError = (path: string, code: string, message: string): Diagnostic => ({ path, code, message, severity: "error" });
 
 /** Only the importable settings (never integration access). */

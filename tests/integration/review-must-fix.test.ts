@@ -56,10 +56,20 @@ describe("agents and query strings in rules", () => {
     const env = createApiEnv();
     await env.pairAgent("native:a");
     await env.service.call(env.user, "createRule", {
-      rule: { id: "mine", name: "Order", target: { patterns: [{ type: "exact", value: "https://shop.test/order?id=42&email=a@b.test" }] }, trigger: { type: "interval", seconds: 60 } },
+      rule: {
+        id: "mine",
+        name: "Order",
+        target: { patterns: [{ type: "exact", value: "https://shop.test/order?id=42&email=a@b.test" }] },
+        trigger: { type: "interval", seconds: 60 },
+      },
     });
     await env.service.call(env.agent("native:a"), "createRule", {
-      rule: { id: "agents", name: "Agent's", target: { patterns: [{ type: "exact", value: "https://x.test/?q=1" }] }, trigger: { type: "interval", seconds: 60 } },
+      rule: {
+        id: "agents",
+        name: "Agent's",
+        target: { patterns: [{ type: "exact", value: "https://x.test/?q=1" }] },
+        trigger: { type: "interval", seconds: 60 },
+      },
     });
     const seen = (await env.service.call(env.agent("native:a"), "listRules", undefined)) as { id: string; target: { patterns: unknown[] } }[];
     expect(seen.find((r) => r.id === "mine")!.target.patterns).toEqual([{ type: "exact", value: "https://shop.test/order?…" }]);
@@ -68,7 +78,9 @@ describe("agents and query strings in rules", () => {
       { type: "exact", value: "https://shop.test/order?…" },
     ]);
     // The user always sees the real pattern; and redaction can be turned off.
-    expect(((await env.service.call(env.user, "getRule", { id: "mine" })) as { target: { patterns: { value: string }[] } }).target.patterns[0]!.value).toContain("id=42");
+    expect(
+      ((await env.service.call(env.user, "getRule", { id: "mine" })) as { target: { patterns: { value: string }[] } }).target.patterns[0]!.value,
+    ).toContain("id=42");
     await env.service.call(env.user, "updateSettings", { redactUrlsForAgents: false });
     const plain = (await env.service.call(env.agent("native:a"), "getRule", { id: "mine" })) as { target: { patterns: { value: string }[] } };
     expect(plain.target.patterns[0]!.value).toContain("id=42");
@@ -117,7 +129,9 @@ describe("timer reasons and rule precedence", () => {
     await env.service.call(env.user, "createRule", { rule: { id: "old", name: "Older", priority: 2, ...base } });
     env.clock.advance(1000);
     const tie = (await env.service.call(env.user, "createRule", { rule: { id: "tie", name: "Same priority", priority: 2, ...base } })) as { id: string };
-    const state1 = (await env.service.call(env.user, "getTabState", { tabId: 7 })) as { resolution: { controllerId: string; candidates: { priority: number }[] } };
+    const state1 = (await env.service.call(env.user, "getTabState", { tabId: 7 })) as {
+      resolution: { controllerId: string; candidates: { priority: number }[] };
+    };
     expect(state1.resolution.controllerId).toBe("old"); // a tie goes to the older rule: the original bug
     expect(tie.id).toBe("tie");
     const { priorityAbove } = await import("@/ui/popup/describe");

@@ -23,7 +23,11 @@ export function createApiEnv() {
   });
   const user = { type: "user" } as const;
   const agent = (id = "native:claude") => ({ type: "agent", agentId: id }) as const;
-  async function pairAgent(id = "native:claude", scopes: AgentScope[] = ["tabs:read", "rules:read", "rules:write", "rules:test", "rules:activate", "rules:delete", "status:read"], trusted = false) {
+  async function pairAgent(
+    id = "native:claude",
+    scopes: AgentScope[] = ["tabs:read", "rules:read", "rules:write", "rules:test", "rules:activate", "rules:delete", "status:read"],
+    trusted = false,
+  ) {
     await service.ensureAgent({ id, name: "Test agent", transport: "native" });
     await service.call(user, "updateAgent", { id, status: "approved", scopes, trustedActivation: trusted });
   }

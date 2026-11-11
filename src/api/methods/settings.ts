@@ -34,8 +34,8 @@ export function settingsMethods(svc: ServiceInternals): Record<string, MethodDef
         enabled: z.optional(z.boolean()),
         paused: z.optional(z.boolean()),
         defaultIntervalSeconds: z.optional(z.int().check(z.gte(MIN_INTERVAL_SECONDS), z.lte(MAX_INTERVAL_SECONDS))),
-        defaultSafety: z.optional(z
-          .strictObject({
+        defaultSafety: z.optional(
+          z.strictObject({
             pauseWhileTyping: z.optional(z.boolean()),
             protectUnsavedChanges: z.optional(z.boolean()),
             inactivityGraceSeconds: z.optional(z.int().check(z.gte(0), z.lte(86400))),
@@ -44,7 +44,8 @@ export function settingsMethods(svc: ServiceInternals): Record<string, MethodDef
             onUnknown: z.optional(z.enum(["pause", "skip", "refresh", "stop"])),
             maxUnknownRetries: z.optional(z.int().check(z.gte(0), z.lte(100))),
             onActivityUnavailable: z.optional(z.enum(["pause", "refresh"])),
-          })),
+          }),
+        ),
         historyLimit: z.optional(z.int().check(z.gte(10), z.lte(5000))),
         historyRetentionDays: z.optional(z.int().check(z.gte(1), z.lte(365))),
         notificationsEnabled: z.optional(z.boolean()),
@@ -53,8 +54,7 @@ export function settingsMethods(svc: ServiceInternals): Record<string, MethodDef
         nativeBridgeEnabled: z.optional(z.boolean()),
         allowFastIntervals: z.optional(z.boolean()),
         defaultStopAfterMinutes: z.optional(z.nullable(z.int().check(z.gte(1), z.lte(10_080)))),
-        allowedExtensionIds: z.optional(z
-          .array(z.string().check(z.regex(/^[a-p]{32}$/, "Chrome extension IDs are 32 letters a–p"))).check(z.maxLength(50))),
+        allowedExtensionIds: z.optional(z.array(z.string().check(z.regex(/^[a-p]{32}$/, "Chrome extension IDs are 32 letters a–p"))).check(z.maxLength(50))),
       }),
       mutates: true,
       handler: async (_a, p) => {
@@ -121,7 +121,12 @@ export function settingsMethods(svc: ServiceInternals): Record<string, MethodDef
       mutates: true,
       handler: async (_a, p) => {
         const config = await d.config.get();
-        const parsed = parseImport(p.json, { registries: svc.registries, defaultSafety: config.settings.defaultSafety, now: d.clock.now(), allowFastIntervals: config.settings.allowFastIntervals });
+        const parsed = parseImport(p.json, {
+          registries: svc.registries,
+          defaultSafety: config.settings.defaultSafety,
+          now: d.clock.now(),
+          allowFastIntervals: config.settings.allowFastIntervals,
+        });
         const report: ImportReport = { imported: [], skipped: [], errors: parsed.errors, warnings: parsed.warnings };
         if (parsed.fatal) return report;
         await d.config.update((c) => {
@@ -168,7 +173,13 @@ function importRules(
       ...rule,
       id,
       enabled: o.activate ? rule.enabled : false,
-      meta: { createdAt: existing?.meta.createdAt ?? o.now, updatedAt: o.now, revision: (existing?.meta.revision ?? 0) + 1, origin: { type: "import" }, draft: !o.activate },
+      meta: {
+        createdAt: existing?.meta.createdAt ?? o.now,
+        updatedAt: o.now,
+        revision: (existing?.meta.revision ?? 0) + 1,
+        origin: { type: "import" },
+        draft: !o.activate,
+      },
     };
     report.imported.push(id);
   }

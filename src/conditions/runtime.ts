@@ -37,8 +37,7 @@ export const refreshCount: ConditionHandler<RefreshCount> = {
   schema: refreshCountSchema,
   permissions: [],
   validate: schemaValidator(refreshCountSchema),
-  evaluate: async (c, ctx) =>
-    compareNumbers(ctx.runtime.refreshCount, c.operator, c.value) ? { status: "matched" } : { status: "not_matched" },
+  evaluate: async (c, ctx) => (compareNumbers(ctx.runtime.refreshCount, c.operator, c.value) ? { status: "matched" } : { status: "not_matched" }),
 };
 
 export const tabStatusSchema = z.strictObject({

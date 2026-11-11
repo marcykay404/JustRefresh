@@ -27,13 +27,22 @@ export function HistoryView() {
       <div className="row">
         <h1>History</h1>
         <span className="spacer" />
-        <button onClick={async () => {
-            const ok = await dialog.confirm({ title: "Clear history?", message: "All refresh and rule history entries are deleted.", confirmLabel: "Clear history", danger: true });
+        <button
+          onClick={async () => {
+            const ok = await dialog.confirm({
+              title: "Clear history?",
+              message: "All refresh and rule history entries are deleted.",
+              confirmLabel: "Clear history",
+              danger: true,
+            });
             if (ok) {
               await api("clearHistory");
               reload();
             }
-          }}>Clear history</button>
+          }}
+        >
+          Clear history
+        </button>
       </div>
       <div className="toolbar">
         <input placeholder="Search rule, URL, action, reason" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search history" />
@@ -57,18 +66,42 @@ export function HistoryView() {
           <Empty>No history entries.</Empty>
         ) : (
           <table>
-            <thead><tr><th>Time</th><th>Rule</th><th>Tab</th><th>Trigger</th><th>Condition</th><th>Action</th><th>Outcome</th><th>Details</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Rule</th>
+                <th>Tab</th>
+                <th>Trigger</th>
+                <th>Condition</th>
+                <th>Action</th>
+                <th>Outcome</th>
+                <th>Details</th>
+              </tr>
+            </thead>
             <tbody>
               {rows.map((e, i) => (
                 <tr key={i}>
                   <td className="small">{formatTime(e.at)}</td>
                   <td className="small mono">{e.ruleId ?? "—"}</td>
-                  <td className="small" style={{ maxWidth: 260 }}><div className="truncate">{e.url ?? `#${e.tabId}`}</div></td>
-                  <td className="small">{e.trigger}{e.actor !== "system" && <span className="pill pill-muted" style={{ marginLeft: 4 }}>{e.actor}</span>}</td>
+                  <td className="small" style={{ maxWidth: 260 }}>
+                    <div className="truncate">{e.url ?? `#${e.tabId}`}</div>
+                  </td>
+                  <td className="small">
+                    {e.trigger}
+                    {e.actor !== "system" && (
+                      <span className="pill pill-muted" style={{ marginLeft: 4 }}>
+                        {e.actor}
+                      </span>
+                    )}
+                  </td>
                   <td className="small">{e.condition ?? "—"}</td>
                   <td className="small">{e.action}</td>
-                  <td><span className={`pill pill-${e.outcome === "ok" ? "ok" : e.outcome === "error" ? "error" : "warn"}`}>{e.outcome}</span></td>
-                  <td className="small muted" style={{ maxWidth: 320 }}>{e.reason}</td>
+                  <td>
+                    <span className={`pill pill-${e.outcome === "ok" ? "ok" : e.outcome === "error" ? "error" : "warn"}`}>{e.outcome}</span>
+                  </td>
+                  <td className="small muted" style={{ maxWidth: 320 }}>
+                    {e.reason}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -46,7 +46,10 @@ export function Popup() {
     void chrome.tabs.query({ active: true, currentWindow: true }).then(([t]) => setTabId(t?.id ?? null));
   }, []);
 
-  const state = useApi<TabState>("getTabState", tabId !== null ? { tabId } : undefined, { skip: tabId === null, live: ["runtime", "config", "tabs", "access"] });
+  const state = useApi<TabState>("getTabState", tabId !== null ? { tabId } : undefined, {
+    skip: tabId === null,
+    live: ["runtime", "config", "tabs", "access"],
+  });
   const overview = useApi<Overview>("getOverview", undefined, { live: ["runtime", "config", "tabs"] });
 
   const run: Run = async (method, params) => {
@@ -112,7 +115,21 @@ function countdownOf(rt: TabRuntime | null, now: number, intervalSeconds: number
   return { countdown, progress };
 }
 
-function TabPopup({ tabId, s, overview, run, setError, reloadState }: { tabId: number; s: TabState; overview: Overview | null; run: Run; setError: (e: unknown) => void; reloadState: () => Promise<void> }) {
+function TabPopup({
+  tabId,
+  s,
+  overview,
+  run,
+  setError,
+  reloadState,
+}: {
+  tabId: number;
+  s: TabState;
+  overview: Overview | null;
+  run: Run;
+  setError: (e: unknown) => void;
+  reloadState: () => Promise<void>;
+}) {
   const now = useNow(1000);
   const f = tabFacts(s, overview);
   const ruleId = f.byRule ? s.resolution.controllerId : null;
@@ -158,9 +175,22 @@ function TabPopup({ tabId, s, overview, run, setError, reloadState }: { tabId: n
   };
 
   const card = () => {
-    if (f.blocked) return <BlockedCard kind={f.blocked} tabId={tabId} controllerName={s.resolution.controllerName} reason={s.resolution.reason} run={(m, p) => void run(m, p)} />;
+    if (f.blocked)
+      return (
+        <BlockedCard kind={f.blocked} tabId={tabId} controllerName={s.resolution.controllerName} reason={s.resolution.reason} run={(m, p) => void run(m, p)} />
+      );
     if (view === "until") {
-      return <UntilForm site={f.siteName} url={s.tab.url} picker={picker.element} canStart={picker.valid} problem={picker.tooShort} onCancel={() => setView("main")} onStart={onStartUntil} />;
+      return (
+        <UntilForm
+          site={f.siteName}
+          url={s.tab.url}
+          picker={picker.element}
+          canStart={picker.valid}
+          problem={picker.tooShort}
+          onCancel={() => setView("main")}
+          onStart={onStartUntil}
+        />
+      );
     }
     if (f.byRule) {
       return (
@@ -281,7 +311,8 @@ function Extras(p: {
   };
 
   const allowAccess = () =>
-    f.origin && void requestOrigins([f.origin]).then((ok) => ok && (p.declinedFor !== null ? p.onStart(p.declinedFor, true) : void run("resumeTab", { tabId })));
+    f.origin &&
+    void requestOrigins([f.origin]).then((ok) => ok && (p.declinedFor !== null ? p.onStart(p.declinedFor, true) : void run("resumeTab", { tabId })));
 
   return (
     <>
@@ -309,8 +340,12 @@ function Extras(p: {
             won't refresh this page until you allow access.
           </span>
           <div className="row">
-            <button className="small" onClick={allowAccess}>Allow access</button>
-            <button className="small" onClick={() => void p.onStartUnprotected()}>Refresh without protection</button>
+            <button className="small" onClick={allowAccess}>
+              Allow access
+            </button>
+            <button className="small" onClick={() => void p.onStartUnprotected()}>
+              Refresh without protection
+            </button>
           </div>
         </div>
       )}
@@ -351,13 +386,23 @@ function MoreMenu({ s, f, tabId, run, onUntil, onClose }: { s: TabState; f: Fact
   return (
     <nav className="menu" aria-label="More actions">
       {canWatch && (
-        <button onClick={() => { onUntil(); onClose(); }}>
+        <button
+          onClick={() => {
+            onUntil();
+            onClose();
+          }}
+        >
           <strong>Refresh until something appears…</strong>
           <span>e.g. stop and notify me when “In stock” shows up</span>
         </button>
       )}
       {!tabExcluded && (
-        <button onClick={() => { void run("excludeTab", { tabId }); onClose(); }}>
+        <button
+          onClick={() => {
+            void run("excludeTab", { tabId });
+            onClose();
+          }}
+        >
           <strong>Never auto-refresh this tab</strong>
           <span>Rules for this site will skip it until you allow it again</span>
         </button>

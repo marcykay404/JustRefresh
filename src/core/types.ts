@@ -15,9 +15,7 @@ export const CONFIG_SCHEMA_VERSION = 1 as const;
 /* ------------------------------------------------------------------ */
 
 export type EvaluationResult =
-  | { status: "matched"; details?: MatchDetails }
-  | { status: "not_matched"; details?: MatchDetails }
-  | { status: "unknown"; reason: string; code?: UnknownCode };
+  { status: "matched"; details?: MatchDetails } | { status: "not_matched"; details?: MatchDetails } | { status: "unknown"; reason: string; code?: UnknownCode };
 
 export type EvaluationStatus = EvaluationResult["status"];
 
@@ -252,24 +250,9 @@ export interface Settings {
 /* Agents                                                              */
 /* ------------------------------------------------------------------ */
 
-export type AgentScope =
-  | "tabs:read"
-  | "rules:read"
-  | "rules:write"
-  | "rules:test"
-  | "rules:activate"
-  | "rules:delete"
-  | "status:read";
+export type AgentScope = "tabs:read" | "rules:read" | "rules:write" | "rules:test" | "rules:activate" | "rules:delete" | "status:read";
 
-export const ALL_AGENT_SCOPES: AgentScope[] = [
-  "tabs:read",
-  "rules:read",
-  "rules:write",
-  "rules:test",
-  "rules:activate",
-  "rules:delete",
-  "status:read",
-];
+export const ALL_AGENT_SCOPES: AgentScope[] = ["tabs:read", "rules:read", "rules:write", "rules:test", "rules:activate", "rules:delete", "status:read"];
 
 export interface AgentRecord {
   id: string;
@@ -404,10 +387,7 @@ export interface AuditEntry {
 /* Actor                                                               */
 /* ------------------------------------------------------------------ */
 
-export type Actor =
-  | { type: "user" }
-  | { type: "system" }
-  | { type: "agent"; agentId: string };
+export type Actor = { type: "user" } | { type: "system" } | { type: "agent"; agentId: string };
 
 /* ------------------------------------------------------------------ */
 /* Tabs                                                                */

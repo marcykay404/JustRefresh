@@ -26,7 +26,9 @@ describe("templates", () => {
     expect(byId["back-in-stock"]).toBe(
       "Refresh shop.example.com/item/42 every 1 min until “In stock” appears, then stop and notify you with a sound. It waits while you're typing.",
     );
-    expect(byId["work-hours-dashboard"]).toBe("Refresh shop.example.com/item/42 every 5 to 6 min, Monday to Friday, 08:00 to 18:00. It waits while you're typing.");
+    expect(byId["work-hours-dashboard"]).toBe(
+      "Refresh shop.example.com/item/42 every 5 to 6 min, Monday to Friday, 08:00 to 18:00. It waits while you're typing.",
+    );
     expect(byId["stay-signed-in"]).toBe("Refresh any open www.shop.example.com page every 10 min so it doesn't log you out. It waits while you're typing.");
   });
 

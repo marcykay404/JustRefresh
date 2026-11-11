@@ -11,8 +11,7 @@ export const FORM_RESULT_REASON =
   "This page came from submitting a form, so refreshing it could send the form again (for example a second order). Open the page fresh to keep refreshing";
 
 export type SafetyDecision =
-  | { allowed: true }
-  | { allowed: false; status: Extract<ExecutionStatus, "paused_activity" | "paused_unsaved">; reason: string; retryInMs: number };
+  { allowed: true } | { allowed: false; status: Extract<ExecutionStatus, "paused_activity" | "paused_unsaved">; reason: string; retryInMs: number };
 
 export interface SafetyInput {
   safety: SafetyConfig;
@@ -70,7 +69,8 @@ function recentActivity(safety: SafetyConfig, activity: ActivitySnapshot): Block
 function typingState(activity: ActivitySnapshot, grace: number): { reason: string; since?: number; retryInMs?: number } | null {
   if (activity.composing) return { reason: "Text composition (IME) in progress", retryInMs: grace || 30_000 };
   // The monitor started recently: we cannot know whether the user typed before.
-  if (activity.monitoringForMs < grace && activity.editing) return { reason: "Activity monitoring just started while editing", since: activity.monitoringForMs };
+  if (activity.monitoringForMs < grace && activity.editing)
+    return { reason: "Activity monitoring just started while editing", since: activity.monitoringForMs };
   const typing = [activity.sinceKeyMs, activity.sinceInputMs].filter((v): v is number => v !== null);
   const last = typing.length ? Math.min(...typing) : null;
   return last !== null && last < grace ? { reason: "Recent typing detected", since: last } : null;

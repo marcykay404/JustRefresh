@@ -17,16 +17,24 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
     getCapabilities: m({
       scope: "rules:read",
       params: none,
-      handler: async () => buildCapabilities(svc.registries, (await d.config.get()).settings, (await d.schemas?.().catch((e: Error) => {
+      handler: async () =>
+        buildCapabilities(
+          svc.registries,
+          (await d.config.get()).settings,
+          (await d.schemas?.().catch((e: Error) => {
             console.warn("JustRefresh: JSON Schemas unavailable for capabilities", e);
             return null;
-          })) ?? NO_SCHEMAS),
+          })) ?? NO_SCHEMAS,
+        ),
     }),
     listRules: m({
       scope: "rules:read",
       params: none,
       handler: async (actor) =>
-        svc.rulesFor(actor, Object.values((await d.config.get()).rules).sort((a, b) => b.priority - a.priority || a.meta.createdAt - b.meta.createdAt)),
+        svc.rulesFor(
+          actor,
+          Object.values((await d.config.get()).rules).sort((a, b) => b.priority - a.priority || a.meta.createdAt - b.meta.createdAt),
+        ),
     }),
     getRule: m({ scope: "rules:read", params: ruleId, handler: async (actor, p) => (await svc.rulesFor(actor, [await svc.getRuleOrThrow(p.id)]))[0] }),
     validateRule: m({
@@ -34,7 +42,12 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
       params: z.strictObject({ rule: z.unknown() }),
       handler: async (_a, p) => {
         const config = await d.config.get();
-        const v = validateRule(p.rule, { registries: svc.registries, defaultSafety: config.settings.defaultSafety, now: d.clock.now(), allowFastIntervals: config.settings.allowFastIntervals });
+        const v = validateRule(p.rule, {
+          registries: svc.registries,
+          defaultSafety: config.settings.defaultSafety,
+          now: d.clock.now(),
+          allowFastIntervals: config.settings.allowFastIntervals,
+        });
         return { valid: v.valid, diagnostics: v.diagnostics, normalized: v.normalized ? svc.stripMeta(v.normalized) : undefined };
       },
     }),
@@ -83,13 +96,21 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
       params: z.strictObject({ rule: z.unknown(), tabId: z.int().check(z.nonnegative()) }),
       handler: async (actor, p) => {
         const config = await d.config.get();
-        const v = validateRule(p.rule, { registries: svc.registries, defaultSafety: config.settings.defaultSafety, now: d.clock.now(), allowFastIntervals: config.settings.allowFastIntervals });
+        const v = validateRule(p.rule, {
+          registries: svc.registries,
+          defaultSafety: config.settings.defaultSafety,
+          now: d.clock.now(),
+          allowFastIntervals: config.settings.allowFastIntervals,
+        });
         if (!v.valid) return { valid: false, diagnostics: v.diagnostics };
         const tab = await d.browser.getTab(p.tabId);
         if (!tab) throw new ApiError("not_found", "Tab not found");
         const rule = v.normalized!;
         const targets = !!matchesAny(rule.target.patterns, tab.url) && !matchesAny(rule.target.exclusions, tab.url);
-        const res = resolveTab(tab, { ...config, rules: { ...config.rules, [rule.id || "__test__"]: { ...rule, id: rule.id || "__test__", enabled: true, meta: { ...rule.meta, draft: false } } } });
+        const res = resolveTab(tab, {
+          ...config,
+          rules: { ...config.rules, [rule.id || "__test__"]: { ...rule, id: rule.id || "__test__", enabled: true, meta: { ...rule.meta, draft: false } } },
+        });
         const hostAccess = await d.hostAccess(tab.url).catch(() => false);
         const dry = await d.engine.dryRun(rule, p.tabId, actor.type !== "agent");
         const explanations: string[] = [];

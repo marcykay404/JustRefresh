@@ -52,8 +52,15 @@ it("the limits can't be switched off with an inline comment", async () => {
   const { ESLint } = await import("eslint");
   const eslint = new ESLint({ cwd: process.cwd() });
   const branches = Array.from({ length: 20 }, (_, i) => `  if (x === ${i}) return ${i};`).join("\n");
-  for (const comment of ["// eslint-disable-next-line complexity, sonarjs/cognitive-complexity", "/* eslint-disable */", '/* eslint complexity: ["error", 99] */']) {
+  for (const comment of [
+    "// eslint-disable-next-line complexity, sonarjs/cognitive-complexity",
+    "/* eslint-disable */",
+    '/* eslint complexity: ["error", 99] */',
+  ]) {
     const [r] = await eslint.lintText(`${comment}\nexport function f(x: number) {\n${branches}\n  return -1;\n}\n`, { filePath: "src/__probe.ts" });
-    expect(r!.messages.some((m) => m.ruleId === "complexity"), comment).toBe(true);
+    expect(
+      r!.messages.some((m) => m.ruleId === "complexity"),
+      comment,
+    ).toBe(true);
   }
 }, 30_000);

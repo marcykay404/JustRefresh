@@ -96,10 +96,13 @@ export function useApi<T>(method: string, params?: unknown, opts: { pollMs?: num
         return;
       }
       if (timer !== undefined) return;
-      timer = setTimeout(() => {
-        timer = undefined;
-        start();
-      }, Math.max(0, last + LIVE_GAP_MS - Date.now()));
+      timer = setTimeout(
+        () => {
+          timer = undefined;
+          start();
+        },
+        Math.max(0, last + LIVE_GAP_MS - Date.now()),
+      );
     };
     start();
     // Polling is paced by its own interval.

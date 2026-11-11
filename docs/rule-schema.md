@@ -9,23 +9,23 @@ cross-field rules. Unknown fields and unknown types are rejected.
 
 ```jsonc
 {
-  "schemaVersion": 1,              // optional on input
-  "id": "rule-001",                // optional; generated if absent. [A-Za-z0-9._-]{1,64}
-  "name": "Monitor availability",  // required
-  "description": "…",              // optional
-  "enabled": true,                 // default true (forced false for agent/imported drafts)
-  "priority": 100,                 // -1000…1000, default 0; higher wins
+  "schemaVersion": 1, // optional on input
+  "id": "rule-001", // optional; generated if absent. [A-Za-z0-9._-]{1,64}
+  "name": "Monitor availability", // required
+  "description": "…", // optional
+  "enabled": true, // default true (forced false for agent/imported drafts)
+  "priority": 100, // -1000…1000, default 0; higher wins
   "target": {
     "type": "url",
-    "patterns":   ["https://example.com/products/*"],  // ≥1, see url-matching.md
-    "exclusions": []                                    // rule-local exclusions
+    "patterns": ["https://example.com/products/*"], // ≥1, see url-matching.md
+    "exclusions": [], // rule-local exclusions
   },
   "trigger": { "type": "interval", "seconds": 30, "randomMaxSeconds": 90 },
-  "stopWhen": { /* condition tree, optional */ },
+  "stopWhen": {/* condition tree, optional */},
   "actions": {
-    "onMatched":    [{ "type": "stopRefresh" }, { "type": "notify" }],   // default when stopWhen set
-    "onNotMatched": [{ "type": "refresh" }],                            // default for refreshing triggers
-    "onUnknown":    []                                                   // optional
+    "onMatched": [{ "type": "stopRefresh" }, { "type": "notify" }], // default when stopWhen set
+    "onNotMatched": [{ "type": "refresh" }], // default for refreshing triggers
+    "onUnknown": [], // optional
   },
   "safety": {
     "pauseWhileTyping": true,
@@ -33,12 +33,12 @@ cross-field rules. Unknown fields and unknown types are rejected.
     "inactivityGraceSeconds": 60,
     "pauseOnMouse": false,
     "pauseOnScroll": false,
-    "onUnknown": "pause",              // pause | skip | refresh | stop
+    "onUnknown": "pause", // pause | skip | refresh | stop
     "maxUnknownRetries": 3,
-    "onActivityUnavailable": "pause"   // pause | refresh
+    "onActivityUnavailable": "pause", // pause | refresh
   },
   "limits": { "maxRefreshes": 100, "maxDurationSeconds": 3600, "stopAt": "2026-12-01T09:00:00Z" },
-  "schedule": { "days": [1,2,3,4,5], "startTime": "09:00", "endTime": "17:00" }
+  "schedule": { "days": [1, 2, 3, 4, 5], "startTime": "09:00", "endTime": "17:00" },
 }
 ```
 
@@ -53,30 +53,30 @@ so an unattended "refresh until" never ends silently.
 
 ## Triggers
 
-| type | Fields | Fires on | Can refresh |
-|---|---|---|---|
-| `interval` | `seconds` (≥30; ≥5 with fast intervals enabled), `randomMaxSeconds?` | chrome.alarms (+ worker timer below 30 s) | yes |
-| `navigation` | — | page load completed | no (loop) |
-| `urlChange` | — | tab URL changed | no (loop) |
-| `startup` | — | extension start | yes |
-| `manual` | — | "Run now" only | yes |
+| type         | Fields                                                               | Fires on                                  | Can refresh |
+| ------------ | -------------------------------------------------------------------- | ----------------------------------------- | ----------- |
+| `interval`   | `seconds` (≥30; ≥5 with fast intervals enabled), `randomMaxSeconds?` | chrome.alarms (+ worker timer below 30 s) | yes         |
+| `navigation` | —                                                                    | page load completed                       | no (loop)   |
+| `urlChange`  | —                                                                    | tab URL changed                           | no (loop)   |
+| `startup`    | —                                                                    | extension start                           | yes         |
+| `manual`     | —                                                                    | "Run now" only                            | yes         |
 
 ## Conditions
 
 All return `matched`, `not_matched` or `unknown` (never silently false).
 
-| type | Fields | Runs in |
-|---|---|---|
-| `dom.exists` | `selector`, `minCount?` | page |
-| `dom.missing` | `selector` | page |
-| `dom.text` | `selector?` (default `body`), `operator`, `value`, `caseSensitive?` | page |
-| `dom.attribute` | `selector`, `attribute`, `operator`, `value?` | page |
-| `url.match` | `pattern` | worker |
-| `time.after` / `time.before` | `at` (ISO timestamp or local `HH:MM`) | worker |
-| `refreshCount` | `operator` (`>= > <= < == !=`), `value` | worker |
-| `tab.status` | `value` (`loading`/`complete`) | worker |
-| `all` / `any` | `conditions[]` (1–20) | logical |
-| `not` | `condition` | logical |
+| type                         | Fields                                                              | Runs in |
+| ---------------------------- | ------------------------------------------------------------------- | ------- |
+| `dom.exists`                 | `selector`, `minCount?`                                             | page    |
+| `dom.missing`                | `selector`                                                          | page    |
+| `dom.text`                   | `selector?` (default `body`), `operator`, `value`, `caseSensitive?` | page    |
+| `dom.attribute`              | `selector`, `attribute`, `operator`, `value?`                       | page    |
+| `url.match`                  | `pattern`                                                           | worker  |
+| `time.after` / `time.before` | `at` (ISO timestamp or local `HH:MM`)                               | worker  |
+| `refreshCount`               | `operator` (`>= > <= < == !=`), `value`                             | worker  |
+| `tab.status`                 | `value` (`loading`/`complete`)                                      | worker  |
+| `all` / `any`                | `conditions[]` (1–20)                                               | logical |
+| `not`                        | `condition`                                                         | logical |
 
 Text operators: `contains`, `not_contains`, `equals`, `not_equals`,
 `starts_with`, `ends_with`, `matches` (safe regex). Text is the visible text
@@ -94,11 +94,11 @@ Logic: `all` → any `not_matched` wins, else any `unknown` → `unknown`;
 
 ## Actions
 
-| type | Fields | Notes |
-|---|---|---|
-| `refresh` | `bypassCache?` | Passes the safety gate first |
-| `stopRefresh` | `as?` (`completed`/`stopped`) | Terminal; later non-disruptive actions still run |
-| `pauseRefresh` | `minutes?` | Auto-resume after `minutes` |
-| `resumeRefresh` | — | |
-| `notify` | `title?`, `message?`, `sound?` | Desktop notification (click focuses the tab); `sound: true` also plays a short chime |
-| `log` | `message?`, `level?` | Writes to history |
+| type            | Fields                         | Notes                                                                                |
+| --------------- | ------------------------------ | ------------------------------------------------------------------------------------ |
+| `refresh`       | `bypassCache?`                 | Passes the safety gate first                                                         |
+| `stopRefresh`   | `as?` (`completed`/`stopped`)  | Terminal; later non-disruptive actions still run                                     |
+| `pauseRefresh`  | `minutes?`                     | Auto-resume after `minutes`                                                          |
+| `resumeRefresh` | —                              |                                                                                      |
+| `notify`        | `title?`, `message?`, `sound?` | Desktop notification (click focuses the tab); `sound: true` also plays a short chime |
+| `log`           | `message?`, `level?`           | Writes to history                                                                    |

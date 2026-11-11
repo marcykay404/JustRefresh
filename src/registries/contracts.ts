@@ -5,12 +5,7 @@
  * registering it. The scheduler, engine and UI contracts do not change.
  */
 import type { z } from "../core/zod";
-import type {
-  ConditionNode,
-  Diagnostic,
-  EvaluationResult,
-  ExecutionStatus,
-} from "../core/types";
+import type { ConditionNode, Diagnostic, EvaluationResult, ExecutionStatus } from "../core/types";
 
 export type RequiredPermission = "host" | "notifications" | "tabs";
 

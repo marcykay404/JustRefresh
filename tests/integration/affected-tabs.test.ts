@@ -5,11 +5,20 @@
 import { createApiEnv } from "../helpers/api-env";
 import { alarmName } from "@/core/rule-engine";
 
-const rule = (id: string, host: string, seconds = 60) => ({ id, name: id, target: { patterns: [`https://${host}/*`] }, trigger: { type: "interval", seconds } });
+const rule = (id: string, host: string, seconds = 60) => ({
+  id,
+  name: id,
+  target: { patterns: [`https://${host}/*`] },
+  trigger: { type: "interval", seconds },
+});
 
 async function setup() {
   const env = createApiEnv();
-  for (const [id, host] of [["a", "a.test"], ["b", "b.test"], ["c", "c.test"]] as const) {
+  for (const [id, host] of [
+    ["a", "a.test"],
+    ["b", "b.test"],
+    ["c", "c.test"],
+  ] as const) {
     await env.service.call(env.user, "createRule", { rule: rule(id, host) });
     await env.service.call(env.user, "enableRule", { id });
   }
@@ -92,7 +101,10 @@ describe("changes made at the same time (review)", () => {
 
     // Tab 1 is busy (e.g. a page check in progress).
     let release!: () => void;
-    const busy = (env.engine as unknown as { withLock: (id: number, fn: () => Promise<void>) => Promise<void> }).withLock(1, () => new Promise<void>((r) => (release = r)));
+    const busy = (env.engine as unknown as { withLock: (id: number, fn: () => Promise<void>) => Promise<void> }).withLock(
+      1,
+      () => new Promise<void>((r) => (release = r)),
+    );
 
     const first = env.service.call(env.user, "disableRule", { id: "a" });
     await new Promise((r) => setTimeout(r, 0));

@@ -18,28 +18,28 @@
 
 ## Layers
 
-| Layer | Files | Notes |
-|---|---|---|
-| Types & schema | `src/core/types.ts`, `src/core/rule-schema.ts`, `schemas/*.json` | Rule envelope in zod (`zod/mini`); node types validated by registry handlers. JSON Schemas generated from the same source at build time (`npm run gen:schema`), a test keeps them in sync; the service worker reads them from the package when an agent asks for capabilities. |
-| Registries | `src/registries/*`, `src/conditions/*`, `src/triggers/*`, `src/actions/*` | Adding a capability = implement a handler + register it. The engine, scheduler and UI pick it up (the builder renders forms from the published JSON Schema). |
-| Engine | `src/core/rule-engine.ts`, `src/core/engine/*` | Uses ports (`engine/ports.ts`: `BrowserPort`, `AlarmPort`, `PagePort`, `ClockPort`, stores) — fully testable without Chrome. In layers: `base.ts` (per-tab locks, persistence, sync), `cycle.ts` (one refresh cycle, in named steps), `rule-engine.ts` (events, reconciliation, user controls); `fast-site-limit.ts` is the per-site turn-taking for fast intervals. |
-| API | `src/api/rule-api.ts`, `src/api/methods/*`, `src/api/permissions.ts` | Single entry point; the UI uses actor `user`, agents use actor `agent`. The service dispatches, authorizes and audits; the methods live by area (`rules`, `tabs`, `settings`, `agents`). Parameter schemas use `zod/mini`. |
-| Background | `src/background/*` | Chrome adapters, event wiring, startup reconciliation, tab restoration. |
-| Content | `src/content/*`, `src/conditions/dom-eval.ts` | Dependency-free (≈7 KB). Top frame only. |
-| Storage | `src/storage/*` | Config (one atomic key + backup) in `storage.local`; runtime in `storage.session`; bounded history/audit logs. |
-| UI | `src/ui/*` | React. No refresh logic lives in components. |
+| Layer          | Files                                                                     | Notes                                                                                                                                                                                                                                                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Types & schema | `src/core/types.ts`, `src/core/rule-schema.ts`, `schemas/*.json`          | Rule envelope in zod (`zod/mini`); node types validated by registry handlers. JSON Schemas generated from the same source at build time (`npm run gen:schema`), a test keeps them in sync; the service worker reads them from the package when an agent asks for capabilities.                                                                                       |
+| Registries     | `src/registries/*`, `src/conditions/*`, `src/triggers/*`, `src/actions/*` | Adding a capability = implement a handler + register it. The engine, scheduler and UI pick it up (the builder renders forms from the published JSON Schema).                                                                                                                                                                                                         |
+| Engine         | `src/core/rule-engine.ts`, `src/core/engine/*`                            | Uses ports (`engine/ports.ts`: `BrowserPort`, `AlarmPort`, `PagePort`, `ClockPort`, stores) — fully testable without Chrome. In layers: `base.ts` (per-tab locks, persistence, sync), `cycle.ts` (one refresh cycle, in named steps), `rule-engine.ts` (events, reconciliation, user controls); `fast-site-limit.ts` is the per-site turn-taking for fast intervals. |
+| API            | `src/api/rule-api.ts`, `src/api/methods/*`, `src/api/permissions.ts`      | Single entry point; the UI uses actor `user`, agents use actor `agent`. The service dispatches, authorizes and audits; the methods live by area (`rules`, `tabs`, `settings`, `agents`). Parameter schemas use `zod/mini`.                                                                                                                                           |
+| Background     | `src/background/*`                                                        | Chrome adapters, event wiring, startup reconciliation, tab restoration.                                                                                                                                                                                                                                                                                              |
+| Content        | `src/content/*`, `src/conditions/dom-eval.ts`                             | Dependency-free (≈7 KB). Top frame only.                                                                                                                                                                                                                                                                                                                             |
+| Storage        | `src/storage/*`                                                           | Config (one atomic key + backup) in `storage.local`; runtime in `storage.session`; bounded history/audit logs.                                                                                                                                                                                                                                                       |
+| UI             | `src/ui/*`                                                                | React. No refresh logic lives in components.                                                                                                                                                                                                                                                                                                                         |
 
 ## Data separation
 
-* **Rule definitions & configuration** — `chrome.storage.local["config"]`:
+- **Rule definitions & configuration** — `chrome.storage.local["config"]`:
   settings, rules, exclusions, per-tab overrides, agents, approvals.
   Every write replaces the single key (atomic) and saves the previous value
   as `config.backup`. On load: migrate → validate → drop invalid rules →
   fall back to backup if unreadable.
-* **Runtime execution state** — `chrome.storage.session["rt:<tabId>"]`:
+- **Runtime execution state** — `chrome.storage.session["rt:<tabId>"]`:
   survives service-worker termination, cleared on browser restart (tab ids
   change). Contains status, generation, timestamps, counters, pending reload.
-* **UI state** — React component state only. The popup and dashboard
+- **UI state** — React component state only. The popup and dashboard
   don't poll: they re-fetch when Chrome reports a change they show
   (`storage.onChanged` for `config`, `rt:*`, `history`, `audit` and
   `bridge.status`; `chrome.tabs` and `chrome.permissions` events), coalesced
@@ -99,15 +99,15 @@ Exactly one controller per tab, so rules never cause duplicate reloads.
 
 ## Scheduling & recovery
 
-* Only `chrome.alarms` (`sar:tab:<id>`), no long-lived timers.
-* Worker start: if `storage.session` has no boot marker → **browser start**:
+- Only `chrome.alarms` (`sar:tab:<id>`), no long-lived timers.
+- Worker start: if `storage.session` has no boot marker → **browser start**:
   re-associate tab overrides by URL (ambiguous matches dropped), register
   content scripts, reconcile with staggered first runs (≥30 s, +2 s per tab).
   Otherwise → **wake**: reconcile, recreate missing alarms, remove orphans.
-* Overdue schedules (sleep/wake) are rescheduled into staggered slots; alarms
+- Overdue schedules (sleep/wake) are rescheduled into staggered slots; alarms
   that do fire together are serialized by the throttle → no refresh storm.
-* Countdown UIs compute from persisted `nextDueAt`.
-* After a change through the API (an agent's or the user's), only the tabs
+- Countdown UIs compute from persisted `nextDueAt`.
+- After a change through the API (an agent's or the user's), only the tabs
   it affects are re-checked: each tab's resolution (kind, controller,
   revision, source, reason) is compared with the one under the
   config from before the change. A tab's run state is written only when it

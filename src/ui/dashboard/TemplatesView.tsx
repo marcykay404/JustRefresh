@@ -33,14 +33,29 @@ export function TemplatesView() {
         {TEMPLATES.map((t) => (
           <article key={t.id} className="card col template-card">
             <div className="row" style={{ flexWrap: "nowrap" }}>
-              <h2 className="grow" style={{ margin: 0 }}>{t.title}</h2>
+              <h2 className="grow" style={{ margin: 0 }}>
+                {t.title}
+              </h2>
               {t.badge && <span className="pill pill-ok">{t.badge}</span>}
             </div>
             <p style={{ margin: 0 }}>{t.description}</p>
-            <p className="small muted" style={{ margin: 0 }}>You fill in: {t.fills}</p>
-            {t.warning && <p className="notice small" style={{ margin: 0 }}>{t.warning}</p>}
+            <p className="small muted" style={{ margin: 0 }}>
+              You fill in: {t.fills}
+            </p>
+            {t.warning && (
+              <p className="notice small" style={{ margin: 0 }}>
+                {t.warning}
+              </p>
+            )}
             <span className="spacer" />
-            <button style={{ alignSelf: "flex-start" }} aria-label={`Use template: ${t.title}`} onClick={() => { setCreated(null); setOpen(t); }}>
+            <button
+              style={{ alignSelf: "flex-start" }}
+              aria-label={`Use template: ${t.title}`}
+              onClick={() => {
+                setCreated(null);
+                setOpen(t);
+              }}
+            >
               Use template
             </button>
           </article>
@@ -70,7 +85,16 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
   const rules = useApi<Rule[]>("listRules");
   const overview = useApi<{ settings: Settings }>("getOverview");
   const webTabs = (tabs.data ?? []).filter((x) => /^https?:/.test(x.url));
-  const [form, setForm] = useState<FormState>(() => ({ choice: "", address: "", text: t.text?.initial ?? "", seconds: t.initialSeconds, start: "08:00", end: "18:00", anyQuery: false, stopAfter: undefined }));
+  const [form, setForm] = useState<FormState>(() => ({
+    choice: "",
+    address: "",
+    text: t.text?.initial ?? "",
+    seconds: t.initialSeconds,
+    start: "08:00",
+    end: "18:00",
+    anyQuery: false,
+    stopAfter: undefined,
+  }));
   const update = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -116,10 +140,19 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
 
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={boxRef} className="dialog template-form" role="dialog" aria-modal="true" aria-labelledby="tpl-title" onKeyDown={(e) => trapFocus(e, boxRef.current, onClose)}>
+      <div
+        ref={boxRef}
+        className="dialog template-form"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tpl-title"
+        onKeyDown={(e) => trapFocus(e, boxRef.current, onClose)}
+      >
         <div className="col" style={{ gap: 2 }}>
           <span className="eyebrow">Template</span>
-          <h3 id="tpl-title" style={{ fontSize: 18 }}>{t.title}</h3>
+          <h3 id="tpl-title" style={{ fontSize: 18 }}>
+            {t.title}
+          </h3>
         </div>
 
         <TemplateBlanks t={t} form={form} update={update} webTabs={webTabs} v={v} />
@@ -127,7 +160,9 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
         <ErrorBox error={error} />
 
         <div className="dialog-actions" style={{ alignItems: "center" }}>
-          <button className="link" disabled={!v.values} onClick={customise}>Customise in the Rule Builder…</button>
+          <button className="link" disabled={!v.values} onClick={customise}>
+            Customise in the Rule Builder…
+          </button>
           <span className="spacer" />
           <button onClick={onClose}>Cancel</button>
           <button className="primary" disabled={!ready} onClick={() => void create()}>
@@ -167,7 +202,14 @@ function formValues(t: Template, f: FormState, pickedTab: TabInfo | null, rules:
   };
 }
 
-function ruleValues(t: Template, f: FormState, url: string, rules: Rule[] | null, settings: Settings | undefined, stopAfterMinutes: number | null): TemplateValues {
+function ruleValues(
+  t: Template,
+  f: FormState,
+  url: string,
+  rules: Rule[] | null,
+  settings: Settings | undefined,
+  stopAfterMinutes: number | null,
+): TemplateValues {
   // A page template outranks rules already matching its page, or it would never
   // run there. A site-wide template doesn't: more specific rules keep their pages.
   const matching = t.scope === "page" ? (rules ?? []).filter((r) => r.enabled && !r.meta.draft && matchesAny(r.target.patterns, url) !== null) : [];
@@ -200,7 +242,9 @@ async function createFromTemplate(t: Template, values: TemplateValues, url: stri
   if (!pickedTab || t.scope !== "page") return { name: rule.name };
   const state = (await api("getTabState", { tabId: pickedTab.id })) as { override: { mode: string } | null };
   if (state.override?.mode === "custom") await api("clearTabOverride", { tabId: pickedTab.id });
-  const after = (await api("getTabState", { tabId: pickedTab.id })) as { resolution: { kind: string; reason?: string; controllerId: string | null; controllerName: string | null } };
+  const after = (await api("getTabState", { tabId: pickedTab.id })) as {
+    resolution: { kind: string; reason?: string; controllerId: string | null; controllerName: string | null };
+  };
   if (after.resolution.controllerId !== rule.id) return { name: rule.name, note: takeoverNote(after.resolution) };
   await api("runNow", { tabId: pickedTab.id }).catch(() => undefined);
   return { name: rule.name };
@@ -225,11 +269,27 @@ function trapFocus(e: KeyboardEvent, box: HTMLElement | null, onClose: () => voi
 }
 
 /** The template's blanks, in order, and what the rule will do. */
-function TemplateBlanks({ t, form, update, webTabs, v }: { t: Template; form: FormState; update: Update; webTabs: TabInfo[]; v: ReturnType<typeof formValues> }) {
+function TemplateBlanks({
+  t,
+  form,
+  update,
+  webTabs,
+  v,
+}: {
+  t: Template;
+  form: FormState;
+  update: Update;
+  webTabs: TabInfo[];
+  v: ReturnType<typeof formValues>;
+}) {
   const complete = v.values && v.textOk && v.hoursOk ? v.values : null;
   return (
     <>
-      {t.warning && <p className="notice small" style={{ margin: 0 }}>{t.warning}</p>}
+      {t.warning && (
+        <p className="notice small" style={{ margin: 0 }}>
+          {t.warning}
+        </p>
+      )}
       <PageField t={t} form={form} update={update} webTabs={webTabs} url={v.url} />
       {t.scope === "page" && v.url && <QueryChoice url={v.url} anyQuery={form.anyQuery} onChange={(anyQuery) => update({ anyQuery })} />}
       {t.text && (
@@ -256,7 +316,12 @@ function TemplateBlanks({ t, form, update, webTabs, v }: { t: Template; form: Fo
 function PageField({ t, form, update, webTabs, url }: { t: Template; form: FormState; update: Update; webTabs: TabInfo[]; url: string | null }) {
   const typing = form.choice === ADDRESS;
   const site = t.scope === "site";
-  const hint = typing && form.address && !url ? "That doesn't look like a web address." : site ? "Every page on this site." : "Pick one of your open tabs, or type an address.";
+  const hint =
+    typing && form.address && !url
+      ? "That doesn't look like a web address."
+      : site
+        ? "Every page on this site."
+        : "Pick one of your open tabs, or type an address.";
   return (
     <label className="field">
       <span className="field-label">{site ? "Which site?" : "Which page?"}</span>
@@ -268,7 +333,9 @@ function PageField({ t, form, update, webTabs, url }: { t: Template; form: FormS
         ))}
         <option value={ADDRESS}>Type an address…</option>
       </select>
-      {typing && <input aria-label="Address" placeholder="shop.example.com/item/42" value={form.address} onChange={(e) => update({ address: e.target.value })} />}
+      {typing && (
+        <input aria-label="Address" placeholder="shop.example.com/item/42" value={form.address} onChange={(e) => update({ address: e.target.value })} />
+      )}
       <span className="field-hint">{hint}</span>
     </label>
   );
@@ -295,7 +362,9 @@ function StopAfterField({ minutes, onChange }: { minutes: number | null; onChang
       <span className="field-label">Stop watching after</span>
       <select value={minutes ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}>
         {STOP_AFTER_CHOICES.map((m) => (
-          <option key={m ?? "none"} value={m ?? ""}>{stopAfterLabel(m)}</option>
+          <option key={m ?? "none"} value={m ?? ""}>
+            {stopAfterLabel(m)}
+          </option>
         ))}
       </select>
       <span className="field-hint">If it hasn't happened by then, it stops and tells you. Your default is in Settings.</span>

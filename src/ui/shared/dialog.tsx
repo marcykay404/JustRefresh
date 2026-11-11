@@ -107,7 +107,15 @@ function DialogView({ pending, onClose }: { pending: Pending; onClose: (v: boole
 
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose(false)}>
-      <div ref={boxRef} className="dialog" role={isConfirm ? "alertdialog" : "dialog"} aria-modal="true" aria-labelledby="dialog-title" aria-describedby={o.message ? "dialog-message" : undefined} onKeyDown={onKeyDown}>
+      <div
+        ref={boxRef}
+        className="dialog"
+        role={isConfirm ? "alertdialog" : "dialog"}
+        aria-modal="true"
+        aria-labelledby="dialog-title"
+        aria-describedby={o.message ? "dialog-message" : undefined}
+        onKeyDown={onKeyDown}
+      >
         <h3 id="dialog-title">{o.title}</h3>
         {o.message && (
           <div id="dialog-message" className="dialog-message">

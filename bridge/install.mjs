@@ -78,4 +78,6 @@ console.log(`Installed native host manifest: ${manifestPath}`);
 if (isWin) {
   console.log(`Now register it:\n  reg add "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST}" /ve /t REG_SZ /d "${manifestPath}" /f`);
 }
-console.log(`\nAdd the MCP server to your agent, e.g.:\n${JSON.stringify({ mcpServers: { "smart-auto-refresh": { command: node, args: [script, "mcp"] } } }, null, 2)}`);
+console.log(
+  `\nAdd the MCP server to your agent, e.g.:\n${JSON.stringify({ mcpServers: { "smart-auto-refresh": { command: node, args: [script, "mcp"] } } }, null, 2)}`,
+);

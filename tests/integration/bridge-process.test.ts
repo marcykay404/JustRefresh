@@ -34,7 +34,10 @@ describe.skipIf(isWin)("bridge processes", () => {
 
     const mcp = spawn(process.execPath, ["bridge/sar-bridge.mjs", "mcp"], { env });
     const replies: any[] = [];
-    mcp.stdout.on("data", createLineDecoder((m) => replies.push(m)));
+    mcp.stdout.on(
+      "data",
+      createLineDecoder((m) => replies.push(m)),
+    );
     const send = (m: unknown) => mcp.stdin.write(JSON.stringify(m) + "\n");
     const waitReply = async (id: number) => {
       for (let i = 0; i < 200; i++) {
@@ -63,7 +66,10 @@ describe.skipIf(isWin)("bridge processes", () => {
     for (let i = 0; i < 100 && !existsSync(join(dir, "bridge.sock")); i++) await new Promise((r) => setTimeout(r, 25));
     const sock = net.createConnection(join(dir, "bridge.sock"));
     const msgs: any[] = [];
-    sock.on("data", createLineDecoder((m) => msgs.push(m)));
+    sock.on(
+      "data",
+      createLineDecoder((m) => msgs.push(m)),
+    );
     sock.write(JSON.stringify({ type: "hello", token: "nope", client: { id: "x" } }) + "\n");
     await new Promise((r) => sock.on("close", r));
     expect(msgs[0]).toEqual({ type: "error", error: "Invalid token" });

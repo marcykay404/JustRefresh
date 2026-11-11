@@ -97,7 +97,8 @@ export class RuleManagementService {
   async call(actor: Actor, method: string, rawParams: unknown): Promise<unknown> {
     const def = Object.prototype.hasOwnProperty.call(this.methods, method) ? this.methods[method] : undefined;
     const audit = (outcome: AuditEntry["outcome"], detail?: string, ruleId?: string) => {
-      if (actor.type === "agent") void this.deps.audit.append({ at: this.deps.clock.now(), agentId: actor.agentId, operation: method, outcome, detail, ruleId });
+      if (actor.type === "agent")
+        void this.deps.audit.append({ at: this.deps.clock.now(), agentId: actor.agentId, operation: method, outcome, detail, ruleId });
     };
     try {
       if (!def) throw new ApiError("unsupported_method", `Unknown method "${method}"`);
@@ -164,7 +165,12 @@ export class RuleManagementService {
   }
 
   validateOrThrow(input: unknown, config: Config) {
-    const v = validateRule(input, { registries: this.registries, defaultSafety: config.settings.defaultSafety, now: this.deps.clock.now(), allowFastIntervals: config.settings.allowFastIntervals });
+    const v = validateRule(input, {
+      registries: this.registries,
+      defaultSafety: config.settings.defaultSafety,
+      now: this.deps.clock.now(),
+      allowFastIntervals: config.settings.allowFastIntervals,
+    });
     if (!v.valid) throw new ApiError("validation_failed", "Rule failed validation", v.diagnostics);
     return v;
   }
@@ -298,7 +304,13 @@ export class RuleManagementService {
       if (pending.length >= 10) delete c.agents[pending[0].id];
       c.agents[record.id] = record;
     });
-    void this.deps.audit.append({ at: this.deps.clock.now(), agentId: record.id, operation: "pair", outcome: "pending_approval", detail: `${identity.transport} pairing requested` });
+    void this.deps.audit.append({
+      at: this.deps.clock.now(),
+      agentId: record.id,
+      operation: "pair",
+      outcome: "pending_approval",
+      detail: `${identity.transport} pairing requested`,
+    });
     return record;
   }
 }

@@ -4,7 +4,14 @@
 import type { AlarmPort, BrowserPort, ClockPort, PagePort } from "../core/rule-engine";
 import { restrictedReason } from "../core/url-pattern";
 import type { ConditionNode, EvaluationResult, TabInfo } from "../core/types";
-import { CONTENT_PROTOCOL, OFFSCREEN_CHANNEL, type ActivitySnapshot, type ContentRequest, type ContentResponse, type OffscreenMessage } from "../shared/messaging-types";
+import {
+  CONTENT_PROTOCOL,
+  OFFSCREEN_CHANNEL,
+  type ActivitySnapshot,
+  type ContentRequest,
+  type ContentResponse,
+  type OffscreenMessage,
+} from "../shared/messaging-types";
 import { hasHostAccess } from "./host-access";
 import { withTimeout } from "../core/timeout";
 
@@ -109,10 +116,13 @@ export const chromeAlarms: AlarmPort = {
     if (delay < ALARM_MIN_DELAY_MS) {
       shortTimers.set(
         name,
-        setTimeout(() => {
-          shortTimers.delete(name);
-          onShortTimer?.(name);
-        }, Math.max(0, delay)),
+        setTimeout(
+          () => {
+            shortTimers.delete(name);
+            onShortTimer?.(name);
+          },
+          Math.max(0, delay),
+        ),
       );
     }
     await chrome.alarms.create(name, { when: Math.max(when, Date.now() + ALARM_MIN_DELAY_MS) });
@@ -144,7 +154,9 @@ async function send<K extends ContentResponse["kind"]>(tabId: number, req: Conte
 }
 
 /** Ensure the content script is present; inject it on demand if we have access. */
-async function ensureContent(tabId: number): Promise<{ ok: true } | { ok: false; reason: string; code: "missing_permission" | "content_script_unavailable" | "restricted_url" }> {
+async function ensureContent(
+  tabId: number,
+): Promise<{ ok: true } | { ok: false; reason: string; code: "missing_permission" | "content_script_unavailable" | "restricted_url" }> {
   let tab: chrome.tabs.Tab;
   try {
     tab = await chrome.tabs.get(tabId);
@@ -164,7 +176,11 @@ async function ensureContent(tabId: number): Promise<{ ok: true } | { ok: false;
   try {
     // executeScript has no timeout of its own and can stall indefinitely
     // (e.g. page paused in a debugger, tab driven via chrome.debugger).
-    await withTimeout(chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["content.js"] }), INJECT_TIMEOUT_MS, "Content script injection");
+    await withTimeout(
+      chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["content.js"] }),
+      INJECT_TIMEOUT_MS,
+      "Content script injection",
+    );
     await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "ping" }, "pong");
     return { ok: true };
   } catch (e) {

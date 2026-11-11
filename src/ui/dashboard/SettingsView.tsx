@@ -45,7 +45,11 @@ export function SettingsView() {
           <Toggle checked={s.paused} onChange={(v) => update({ paused: v })} label="Pause all refreshes" />
           <Field label="Default interval" hint="Used when enabling refresh on a tab without choosing an interval.">
             <select value={s.defaultIntervalSeconds} onChange={(e) => update({ defaultIntervalSeconds: Number(e.target.value) })}>
-              {INTERVAL_PRESETS.map((p) => <option key={p.seconds} value={p.seconds}>{p.label}</option>)}
+              {INTERVAL_PRESETS.map((p) => (
+                <option key={p.seconds} value={p.seconds}>
+                  {p.label}
+                </option>
+              ))}
             </select>
           </Field>
           <Field
@@ -57,7 +61,9 @@ export function SettingsView() {
               onChange={(e) => update({ defaultStopAfterMinutes: e.target.value === "" ? null : Number(e.target.value) })}
             >
               {STOP_AFTER_CHOICES.map((m) => (
-                <option key={m ?? "none"} value={m ?? ""}>{stopAfterLabel(m)}</option>
+                <option key={m ?? "none"} value={m ?? ""}>
+                  {stopAfterLabel(m)}
+                </option>
               ))}
             </select>
           </Field>
@@ -68,17 +74,27 @@ export function SettingsView() {
         <div className="card col">
           <h2>Activity protection</h2>
           <p className="small muted" style={{ margin: 0 }}>
-            Tabs you start from the popup follow these settings (a tab's own popup switch wins). New rules start with a
-            copy, so changing these later doesn't change rules you already have: edit those in the Rule Builder.
+            Tabs you start from the popup follow these settings (a tab's own popup switch wins). New rules start with a copy, so changing these later doesn't
+            change rules you already have: edit those in the Rule Builder.
           </p>
           <Toggle checked={sf.pauseWhileTyping} onChange={(v) => update({ defaultSafety: { pauseWhileTyping: v } })} label="Wait while I'm typing" />
-          <Toggle checked={sf.protectUnsavedChanges} onChange={(v) => update({ defaultSafety: { protectUnsavedChanges: v } })} label="Don't refresh over unsaved form changes" />
+          <Toggle
+            checked={sf.protectUnsavedChanges}
+            onChange={(v) => update({ defaultSafety: { protectUnsavedChanges: v } })}
+            label="Don't refresh over unsaved form changes"
+          />
           <Toggle checked={sf.pauseOnMouse} onChange={(v) => update({ defaultSafety: { pauseOnMouse: v } })} label="Also wait while I move the mouse" />
           <Toggle checked={sf.pauseOnScroll} onChange={(v) => update({ defaultSafety: { pauseOnScroll: v } })} label="Also wait while I scroll" />
           <Field label="Quiet time before a postponed refresh" hint="A refresh that waited for you happens once the page has been quiet this long.">
             <select value={sf.inactivityGraceSeconds} onChange={(e) => update({ defaultSafety: { inactivityGraceSeconds: Number(e.target.value) } })}>
-              {[30, 60, 120, 300, 600, 1800].map((v) => <option key={v} value={v}>{v < 60 ? `${v} s` : `${v / 60} min`}</option>)}
-              {![30, 60, 120, 300, 600, 1800].includes(sf.inactivityGraceSeconds) && <option value={sf.inactivityGraceSeconds}>{sf.inactivityGraceSeconds} s</option>}
+              {[30, 60, 120, 300, 600, 1800].map((v) => (
+                <option key={v} value={v}>
+                  {v < 60 ? `${v} s` : `${v / 60} min`}
+                </option>
+              ))}
+              {![30, 60, 120, 300, 600, 1800].includes(sf.inactivityGraceSeconds) && (
+                <option value={sf.inactivityGraceSeconds}>{sf.inactivityGraceSeconds} s</option>
+              )}
             </select>
           </Field>
           <Field
@@ -110,35 +126,61 @@ export function SettingsView() {
           <Toggle
             checked={s.allowFastIntervals}
             onChange={(v) => update({ allowFastIntervals: v })}
-            label={<span>Allow intervals under 30 seconds <span className="muted small">(minimum 5 seconds)</span></span>}
+            label={
+              <span>
+                Allow intervals under 30 seconds <span className="muted small">(minimum 5 seconds)</span>
+              </span>
+            }
           />
           <p className="small muted" style={{ margin: 0 }}>
-            For time-critical pages such as restocks or appointment slots. Refreshing this often puts real load on the website and may break its
-            terms of use, so JustRefresh never refreshes faster than every 5 seconds, and refreshes any one site at most once every 5 seconds
-            across all tabs. Fast intervals keep the extension's background worker awake while such a tab is scheduled. Turning this off keeps
-            existing fast rules but runs them every 30 seconds.
+            For time-critical pages such as restocks or appointment slots. Refreshing this often puts real load on the website and may break its terms of use,
+            so JustRefresh never refreshes faster than every 5 seconds, and refreshes any one site at most once every 5 seconds across all tabs. Fast intervals
+            keep the extension's background worker awake while such a tab is scheduled. Turning this off keeps existing fast rules but runs them every 30
+            seconds.
           </p>
         </div>
 
         <div className="card col">
           <h2>Help</h2>
-          <p className="small muted" style={{ margin: 0 }}>A short introduction, and ready-made rules to start from.</p>
+          <p className="small muted" style={{ margin: 0 }}>
+            A short introduction, and ready-made rules to start from.
+          </p>
           <div className="row">
-            <a className="btn" href="#/welcome">Show the welcome page</a>
-            <a className="btn" href="#/templates">Browse templates</a>
+            <a className="btn" href="#/welcome">
+              Show the welcome page
+            </a>
+            <a className="btn" href="#/templates">
+              Browse templates
+            </a>
           </div>
         </div>
 
         <div className="card col">
           <h2>History & privacy</h2>
           <Field label="Maximum history entries">
-            <input type="number" min={10} max={5000} key={s.historyLimit} defaultValue={s.historyLimit} onBlur={(e) => update({ historyLimit: Number(e.target.value) })} />
+            <input
+              type="number"
+              min={10}
+              max={5000}
+              key={s.historyLimit}
+              defaultValue={s.historyLimit}
+              onBlur={(e) => update({ historyLimit: Number(e.target.value) })}
+            />
           </Field>
           <Field label="Keep history for (days)">
-            <input type="number" min={1} max={365} key={s.historyRetentionDays} defaultValue={s.historyRetentionDays} onBlur={(e) => update({ historyRetentionDays: Number(e.target.value) })} />
+            <input
+              type="number"
+              min={1}
+              max={365}
+              key={s.historyRetentionDays}
+              defaultValue={s.historyRetentionDays}
+              onBlur={(e) => update({ historyRetentionDays: Number(e.target.value) })}
+            />
           </Field>
           <Toggle checked={s.redactUrlsForAgents} onChange={(v) => update({ redactUrlsForAgents: v })} label="Hide URL query strings from agents" />
-          <p className="small muted" style={{ margin: 0 }}>No analytics or telemetry. Everything is stored locally in this browser profile. Typed text and form values are never recorded.</p>
+          <p className="small muted" style={{ margin: 0 }}>
+            No analytics or telemetry. Everything is stored locally in this browser profile. Typed text and form values are never recorded.
+          </p>
         </div>
       </div>
       <ImportExport onDone={reload} />
@@ -171,7 +213,9 @@ function ImportExport({ onDone }: { onDone: () => void }) {
     <div className="card col">
       <h2>Import / export</h2>
       <div className="row">
-        <button onClick={async () => downloadJson(`justrefresh-${new Date().toISOString().slice(0, 10)}.json`, await api("exportConfig", { includeSettings: true }))}>
+        <button
+          onClick={async () => downloadJson(`justrefresh-${new Date().toISOString().slice(0, 10)}.json`, await api("exportConfig", { includeSettings: true }))}
+        >
           Export everything
         </button>
         <button onClick={() => file.current?.click()}>Load file…</button>
@@ -219,19 +263,40 @@ function ImportExport({ onDone }: { onDone: () => void }) {
         <Toggle checked={activate} onChange={setActivate} label={<span className="small">Activate imported rules immediately</span>} />
         <Toggle checked={includeSettings} onChange={setIncludeSettings} label={<span className="small">Also import settings</span>} />
         <span className="spacer" />
-        <button className="primary" disabled={!json.trim()} onClick={runImport}>Validate & import</button>
+        <button className="primary" disabled={!json.trim()} onClick={runImport}>
+          Validate & import
+        </button>
       </div>
       {!activate && <span className="small muted">Imported rules are saved disabled so you can review and test them first.</span>}
       <ErrorBox error={error} />
       {report && (
         <div className="info small col">
-          <div>Imported: {report.imported.length ? report.imported.map((id) => <a key={id} href={`#/builder/${id}`} style={{ marginRight: 6 }}>{id}</a>) : "none"}</div>
+          <div>
+            Imported:{" "}
+            {report.imported.length
+              ? report.imported.map((id) => (
+                  <a key={id} href={`#/builder/${id}`} style={{ marginRight: 6 }}>
+                    {id}
+                  </a>
+                ))
+              : "none"}
+          </div>
           {report.skipped.length > 0 && <div>Skipped: {report.skipped.map((s) => `${s.id} (${s.reason})`).join(", ")}</div>}
-          {report.warnings.map((w, i) => <div key={i} style={{ color: "var(--warn)" }}>{w}</div>)}
+          {report.warnings.map((w, i) => (
+            <div key={i} style={{ color: "var(--warn)" }}>
+              {w}
+            </div>
+          ))}
           {report.errors.map((e, i) => (
             <div key={i} style={{ color: "var(--error)" }}>
               {e.index >= 0 ? `Rule #${e.index + 1}${e.name ? ` “${e.name}”` : ""}:` : "Import failed:"}
-              <ul className="diagnostics">{e.diagnostics.map((d, j) => <li key={j} className={d.severity}><code>{d.path}</code> {d.message}</li>)}</ul>
+              <ul className="diagnostics">
+                {e.diagnostics.map((d, j) => (
+                  <li key={j} className={d.severity}>
+                    <code>{d.path}</code> {d.message}
+                  </li>
+                ))}
+              </ul>
             </div>
           ))}
         </div>
@@ -275,13 +340,15 @@ function useSites(origins: string[] | null): { sites: SiteEntry[]; loaded: boole
   const sites = useMemo(() => {
     const tabs = (overview.data?.tabs ?? []).map((r) => ({ url: r.tab.url, status: r.status }));
     const ruleList = (rules.data ?? []).map((r) => ({ name: r.name, patterns: r.target.patterns }));
-    return groupOrigins(origins ?? [])
-      .map((g) => {
-        const usage = siteUsage(g, tabs, ruleList);
-        return { g, usage, used: !loaded || inUse(usage) };
-      })
-      // "All websites" first, then sites in use, then the rest by name.
-      .sort((a, b) => Number(b.g.kind === "all") - Number(a.g.kind === "all") || Number(b.used) - Number(a.used));
+    return (
+      groupOrigins(origins ?? [])
+        .map((g) => {
+          const usage = siteUsage(g, tabs, ruleList);
+          return { g, usage, used: !loaded || inUse(usage) };
+        })
+        // "All websites" first, then sites in use, then the rest by name.
+        .sort((a, b) => Number(b.g.kind === "all") - Number(a.g.kind === "all") || Number(b.used) - Number(a.used))
+    );
   }, [origins, overview.data, rules.data, loaded]);
   return { sites, loaded };
 }
@@ -320,11 +387,11 @@ function useAccessRemoval(setError: (e: unknown) => void) {
     removeAfter(
       () =>
         dialog.confirm({
-        title: `Remove access to ${what}?`,
-        message: `Tabs and rules on ${list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing (unless set to refresh without protection), and page conditions will report “unknown”.`,
-        confirmLabel: "Remove access",
-        danger: true,
-      }),
+          title: `Remove access to ${what}?`,
+          message: `Tabs and rules on ${list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing (unless set to refresh without protection), and page conditions will report “unknown”.`,
+          confirmLabel: "Remove access",
+          danger: true,
+        }),
       list,
     );
   const removeUnused = (unused: SiteEntry[]) => {
@@ -332,21 +399,21 @@ function useAccessRemoval(setError: (e: unknown) => void) {
     return removeAfter(
       () =>
         dialog.confirm({
-        title: `Remove access to ${plural(names.length, "unused site")}?`,
-        message: (
-          <>
-            <p>No running tab or rule uses {names.length === 1 ? "it" : "them"}. JustRefresh asks again the next time you turn on refresh there.</p>
-            <ul>
-              {names.slice(0, 10).map((n) => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
-            {names.length > 10 && <p>…and {names.length - 10} more.</p>}
-          </>
-        ),
-        confirmLabel: "Remove access",
-        danger: true,
-      }),
+          title: `Remove access to ${plural(names.length, "unused site")}?`,
+          message: (
+            <>
+              <p>No running tab or rule uses {names.length === 1 ? "it" : "them"}. JustRefresh asks again the next time you turn on refresh there.</p>
+              <ul>
+                {names.slice(0, 10).map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+              {names.length > 10 && <p>…and {names.length - 10} more.</p>}
+            </>
+          ),
+          confirmLabel: "Remove access",
+          danger: true,
+        }),
       unused.flatMap((s) => s.g.origins),
     );
   };
@@ -404,8 +471,8 @@ export function SiteAccess() {
     <div className="card col">
       <h2>Site access</h2>
       <p className="small muted" style={{ margin: 0 }}>
-        JustRefresh installs without access to any website and asks per site when you turn on refresh. Access lets it wait while you're typing or have
-        unsaved form changes, and lets rules check a page's content.
+        JustRefresh installs without access to any website and asks per site when you turn on refresh. Access lets it wait while you're typing or have unsaved
+        form changes, and lets rules check a page's content.
       </p>
       {origins === null && <span className="muted small">Loading…</span>}
       {origins !== null && sites.length === 0 && <span className="muted small">No site access granted.</span>}

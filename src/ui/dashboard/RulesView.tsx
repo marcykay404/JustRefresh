@@ -31,9 +31,17 @@ export function RulesView() {
     const q = search.toLowerCase();
     return (data ?? [])
       .filter((r) => !q || r.name.toLowerCase().includes(q) || r.id.includes(q) || r.target.patterns.some((p) => patternToString(p).toLowerCase().includes(q)))
-      .filter((r) => filter === "all" || (filter === "enabled" ? r.enabled : filter === "disabled" ? !r.enabled : filter === "draft" ? r.meta.draft : r.meta.origin.type === "agent"))
+      .filter(
+        (r) =>
+          filter === "all" ||
+          (filter === "enabled" ? r.enabled : filter === "disabled" ? !r.enabled : filter === "draft" ? r.meta.draft : r.meta.origin.type === "agent"),
+      )
       .sort((a, b) =>
-        sort === "name" ? a.name.localeCompare(b.name) : sort === "updated" ? b.meta.updatedAt - a.meta.updatedAt : b.priority - a.priority || a.meta.createdAt - b.meta.createdAt,
+        sort === "name"
+          ? a.name.localeCompare(b.name)
+          : sort === "updated"
+            ? b.meta.updatedAt - a.meta.updatedAt
+            : b.priority - a.priority || a.meta.createdAt - b.meta.createdAt,
       );
   }, [data, search, filter, sort]);
 
@@ -42,8 +50,14 @@ export function RulesView() {
       <div className="row">
         <h1>Rules</h1>
         <span className="spacer" />
-        <button onClick={async () => downloadJson("justrefresh-rules.json", await api("exportConfig", { includeSettings: false, ruleIds: rules.map((r) => r.id) }))}>Export shown</button>
-        <a className="btn primary" href="#/builder" style={{ textDecoration: "none" }}>New rule</a>
+        <button
+          onClick={async () => downloadJson("justrefresh-rules.json", await api("exportConfig", { includeSettings: false, ruleIds: rules.map((r) => r.id) }))}
+        >
+          Export shown
+        </button>
+        <a className="btn primary" href="#/builder" style={{ textDecoration: "none" }}>
+          New rule
+        </a>
       </div>
       <div className="toolbar">
         <input placeholder="Search name, id or pattern" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search rules" />
@@ -85,7 +99,9 @@ export function RulesView() {
                     <Toggle checked={r.enabled} label="" onChange={(on) => act(on ? "enableRule" : "disableRule", { id: r.id })} />
                   </td>
                   <td>
-                    <a href={`#/builder/${r.id}`}><strong>{r.name}</strong></a>
+                    <a href={`#/builder/${r.id}`}>
+                      <strong>{r.name}</strong>
+                    </a>
                     <div className="small muted mono">{r.id}</div>
                     <div className="row small">
                       {r.meta.draft && <span className="pill pill-warn">Draft</span>}
@@ -95,27 +111,49 @@ export function RulesView() {
                     </div>
                   </td>
                   <td className="small mono" style={{ maxWidth: 300 }}>
-                    {r.target.patterns.map((p, i) => <div key={i} className="truncate">{patternToString(p)}</div>)}
-                    {r.target.exclusions.map((p, i) => <div key={`x${i}`} className="truncate muted">not {patternToString(p)}</div>)}
+                    {r.target.patterns.map((p, i) => (
+                      <div key={i} className="truncate">
+                        {patternToString(p)}
+                      </div>
+                    ))}
+                    {r.target.exclusions.map((p, i) => (
+                      <div key={`x${i}`} className="truncate muted">
+                        not {patternToString(p)}
+                      </div>
+                    ))}
                   </td>
                   <td className="small">
                     {r.trigger.type === "interval" ? `Every ${(r.trigger as unknown as { seconds: number }).seconds}s` : r.trigger.type}
                   </td>
                   <td>{r.priority}</td>
-                  <td className="small muted">{formatTime(r.meta.updatedAt)}<div>rev {r.meta.revision}</div></td>
+                  <td className="small muted">
+                    {formatTime(r.meta.updatedAt)}
+                    <div>rev {r.meta.revision}</div>
+                  </td>
                   <td>
                     <div className="row" style={{ flexWrap: "nowrap" }}>
-                      <a className="btn small" href={`#/builder/${r.id}`} style={{ textDecoration: "none" }}>Edit</a>
-                      <button className="small" onClick={() => act("duplicateRule", { id: r.id })}>Duplicate</button>
-                      <button className="small" onClick={async () => downloadJson(`${r.id}.json`, await api("exportConfig", { ruleIds: [r.id] }))}>Export</button>
-                      <button className="small danger" onClick={async () =>
+                      <a className="btn small" href={`#/builder/${r.id}`} style={{ textDecoration: "none" }}>
+                        Edit
+                      </a>
+                      <button className="small" onClick={() => act("duplicateRule", { id: r.id })}>
+                        Duplicate
+                      </button>
+                      <button className="small" onClick={async () => downloadJson(`${r.id}.json`, await api("exportConfig", { ruleIds: [r.id] }))}>
+                        Export
+                      </button>
+                      <button
+                        className="small danger"
+                        onClick={async () =>
                           (await dialog.confirm({
                             title: `Delete rule “${r.name}”?`,
                             message: "Tabs it controls stop refreshing. This can't be undone; export your rules first if you may want it back.",
                             confirmLabel: "Delete rule",
                             danger: true,
                           })) && act("deleteRule", { id: r.id, expectedRevision: r.meta.revision })
-                        }>Delete</button>
+                        }
+                      >
+                        Delete
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -131,15 +169,32 @@ export function RulesView() {
 export function PatternTester({ initialPattern = "" }: { initialPattern?: string }) {
   const [pattern, setPattern] = useState(initialPattern);
   const [url, setUrl] = useState("");
-  const [result, setResult] = useState<{ valid: boolean; error?: string; type?: string; matches?: boolean; rulesMatchingUrl?: { id: string; name: string; priority: number }[]; excludedBy?: string[] } | null>(null);
+  const [result, setResult] = useState<{
+    valid: boolean;
+    error?: string;
+    type?: string;
+    matches?: boolean;
+    rulesMatchingUrl?: { id: string; name: string; priority: number }[];
+    excludedBy?: string[];
+  } | null>(null);
   const test = async () => setResult(await api("testPattern", { pattern: pattern || "*", url }));
   return (
     <details className="card">
-      <summary><strong>URL pattern tester</strong> <span className="muted small">— check patterns, precedence and exclusions</span></summary>
+      <summary>
+        <strong>URL pattern tester</strong> <span className="muted small">— check patterns, precedence and exclusions</span>
+      </summary>
       <div className="row" style={{ marginTop: 8 }}>
-        <input style={{ flex: 1 }} placeholder="Pattern, e.g. *.example.com or https://example.com/reports/*" value={pattern} onChange={(e) => setPattern(e.target.value)} aria-label="Pattern" />
+        <input
+          style={{ flex: 1 }}
+          placeholder="Pattern, e.g. *.example.com or https://example.com/reports/*"
+          value={pattern}
+          onChange={(e) => setPattern(e.target.value)}
+          aria-label="Pattern"
+        />
         <input style={{ flex: 1 }} placeholder="URL to test" value={url} onChange={(e) => setUrl(e.target.value)} aria-label="URL" />
-        <button onClick={test} disabled={!url}>Test</button>
+        <button onClick={test} disabled={!url}>
+          Test
+        </button>
       </div>
       {result && (
         <div className="small" style={{ marginTop: 8 }}>
@@ -148,11 +203,19 @@ export function PatternTester({ initialPattern = "" }: { initialPattern?: string
           ) : (
             <>
               <div>
-                Detected type <code>{result.type}</code>: {result.matches ? <strong style={{ color: "var(--ok)" }}>matches</strong> : <strong>does not match</strong>}
+                Detected type <code>{result.type}</code>:{" "}
+                {result.matches ? <strong style={{ color: "var(--ok)" }}>matches</strong> : <strong>does not match</strong>}
               </div>
               <div>
                 Rules for this URL (in precedence order):{" "}
-                {result.rulesMatchingUrl?.length ? result.rulesMatchingUrl.map((r, i) => <span key={r.id}>{i ? " → " : ""}{r.name} (p{r.priority})</span>) : "none"}
+                {result.rulesMatchingUrl?.length
+                  ? result.rulesMatchingUrl.map((r, i) => (
+                      <span key={r.id}>
+                        {i ? " → " : ""}
+                        {r.name} (p{r.priority})
+                      </span>
+                    ))
+                  : "none"}
               </div>
               {result.excludedBy?.length ? <div style={{ color: "var(--warn)" }}>Excluded by: {result.excludedBy.join(", ")}</div> : null}
             </>
