@@ -15,15 +15,27 @@ interface AgentsData {
 /** Nothing is pre-selected: the user grants each permission deliberately. */
 const DEFAULT_SCOPES: AgentScope[] = [];
 
-const SCOPE_HELP: Record<AgentScope, string> = {
-  "tabs:read": "List open tabs (URLs redacted by default)",
-  "rules:read": "List rules and discover capabilities",
-  "rules:write": "Create and edit draft rules it owns",
-  "rules:test": "Dry-run rules against tabs (no side effects)",
-  "rules:activate": "Request activation / disable rules",
-  "rules:delete": "Request deletion of rules it owns",
-  "status:read": "Read rule status and history",
+/** Plain-language permission labels; the API scope name is kept as a tooltip. */
+const SCOPE_LABEL: Record<AgentScope, string> = {
+  "tabs:read": "See your open tabs (page addresses hide query strings by default)",
+  "rules:read": "See your rules",
+  "rules:write": "Create and edit its own rules (they're saved switched off)",
+  "rules:test": "Test rules against your tabs (nothing is refreshed)",
+  "rules:activate": "Ask to switch its rules on or off",
+  "rules:delete": "Ask to delete its own rules",
+  "status:read": "See rule status and history",
 };
+
+const STATUS_LABEL: Record<AgentRecord["status"], string> = { pending: "Waiting for approval", approved: "Approved", revoked: "Access revoked" };
+const TRANSPORT_LABEL: Record<AgentRecord["transport"], string> = { native: "desktop app (MCP bridge)", extension: "browser extension", internal: "built in" };
+
+/** "createRule" → "Create rule". */
+export const operationLabel = (op: string) => {
+  if (op === "pair") return "Ask to connect";
+  const words = op.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+const OUTCOME_LABEL: Record<AuditEntry["outcome"], string> = { ok: "Done", pending_approval: "Waiting for your OK", denied: "Refused", error: "Failed" };
 
 export function AgentsView() {
   const dialog = useDialog();
@@ -46,28 +58,35 @@ export function AgentsView() {
 
   const pendingApprovals = data?.approvals.filter((a) => a.status === "pending") ?? [];
   const ruleById = new Map((rules.data ?? []).map((r) => [r.id, r]));
+  const pendingAgents = data?.agents.filter((a) => a.status === "pending").length ?? 0;
+  const agentName = (id: string) => data?.agents.find((a) => a.id === id)?.name ?? id;
 
   return (
     <>
       <h1>Agent Integrations</h1>
       <p className="muted">
-        External AI agents use the same Rule Management API as this dashboard. Agent-created rules are saved as disabled drafts; activation and deletion
-        require your approval unless you grant an agent trusted activation. Access is revocable at any time.
+        AI agents, such as AI apps on your computer or other browser extensions, can set up refresh rules for you. Nothing they do takes effect on its
+        own: rules they create are saved switched off, and switching a rule on or deleting it waits for your OK here, unless you choose to trust that
+        agent. You can take an agent's access away at any time.
       </p>
       <ErrorBox error={error ?? actionError} />
 
       <div className="card col">
-        <h2>Pending approvals {pendingApprovals.length > 0 && <span className="badge">{pendingApprovals.length}</span>}</h2>
+        <h2>Waiting for your OK {pendingApprovals.length > 0 && <span className="badge">{pendingApprovals.length}</span>}</h2>
         {pendingApprovals.length === 0 ? (
-          <span className="muted">Nothing waiting for approval.</span>
+          <span className="muted">
+            {pendingAgents > 0
+              ? `No rule changes are waiting. ${pendingAgents === 1 ? "1 agent is" : `${pendingAgents} agents are`} asking to connect: see Agents below.`
+              : "Nothing is waiting for your OK."}
+          </span>
         ) : (
           pendingApprovals.map((a) => {
             const rule = ruleById.get(a.ruleId);
             return (
               <div key={a.id} className="info col">
                 <div className="row">
-                  <strong>{a.kind === "activate" ? "Activate" : "Delete"} rule “{rule?.name ?? a.ruleId}”</strong>
-                  <span className="muted small">requested by {a.agentId} · {formatTime(a.createdAt)} · revision {a.ruleRevision}</span>
+                  <strong>{a.kind === "activate" ? "Switch on" : "Delete"} rule “{rule?.name ?? a.ruleId}”</strong>
+                  <span className="muted small" title={`Rule version ${a.ruleRevision}`}>asked by {agentName(a.agentId)} · {formatTime(a.createdAt)}</span>
                   <span className="spacer" />
                   <a className="btn small" href={`#/builder/${a.ruleId}`} style={{ textDecoration: "none" }}>Review & test</a>
                   <button className="small primary" onClick={() => act("resolveApproval", { id: a.id, approve: true })}>Approve</button>
@@ -75,7 +94,7 @@ export function AgentsView() {
                 </div>
                 {rule && (
                   <details>
-                    <summary className="small">Rule JSON</summary>
+                    <summary className="small">Show the rule's full definition (JSON)</summary>
                     <pre>{JSON.stringify({ ...rule, meta: undefined }, null, 2)}</pre>
                   </details>
                 )}
@@ -86,9 +105,9 @@ export function AgentsView() {
       </div>
 
       <div className="card col">
-        <h2>Connected agents</h2>
+        <h2>Agents</h2>
         {!data?.agents.length ? (
-          <Empty>No agents have requested access yet.</Empty>
+          <Empty>No agents have asked for access yet.</Empty>
         ) : (
           data.agents.map((a) => <AgentCard key={a.id} agent={a} allScopes={data.allScopes} act={act} />)
         )}
@@ -97,31 +116,32 @@ export function AgentsView() {
       <AllowedExtensions ids={overview.data?.settings.allowedExtensionIds ?? []} save={(ids) => act("updateSettings", { allowedExtensionIds: ids })} />
 
       <div className="card col">
-        <h2>Local MCP bridge</h2>
+        <h2>Desktop AI apps (MCP bridge)</h2>
         <p className="small muted" style={{ margin: 0 }}>
-          Optional. Lets local MCP clients (e.g. desktop AI agents) call the API through Chrome Native Messaging. Requires installing the bridge host from
-          the <code>bridge/</code> folder (see docs/agent-integration.md). Communication is local-only; each MCP client must be approved here.
+          Optional. Lets AI apps on this computer that support MCP (Model Context Protocol) connect to JustRefresh. It needs a small helper program
+          installed from the <code>bridge/</code> folder; see <code>docs/agent-integration.md</code>. Everything stays on this computer, and each app has to
+          be approved above before it can do anything.
         </p>
         <div className="row">
           <Toggle
             checked={!!overview.data?.settings.nativeBridgeEnabled}
-            label="Enable native bridge"
+            label="Allow desktop AI apps to connect"
             onChange={(on) => {
               const ask = on ? chrome.permissions.request({ permissions: ["nativeMessaging"] }).catch(() => false) : Promise.resolve(true);
               void ask.then((granted) => { if (granted) void act("updateSettings", { nativeBridgeEnabled: on }); });
             }}
           />
           <span className={`pill pill-${bridge.data?.connected ? "ok" : "muted"}`}>{bridge.data?.connected ? "Connected" : "Not connected"}</span>
-          <span className="small muted">Extension ID: <code>{chrome.runtime.id}</code></span>
+          <span className="small muted">Extension ID (used when installing the helper): <code>{chrome.runtime.id}</code></span>
         </div>
         {bridge.data?.restartRequired && (
           <div className="row">
             <span className="small">
-              Chrome makes native messaging available only after the extension restarts. Restarting keeps your rules and schedules; open extension
-              pages (like this one) will close.
+              One more step: Chrome only allows this connection after JustRefresh restarts. Your rules and schedules are kept; open JustRefresh pages
+              (like this one) will close.
             </span>
             <button className="small primary" onClick={() => chrome.runtime.reload()}>
-              Restart extension to finish
+              Restart JustRefresh
             </button>
           </div>
         )}
@@ -129,26 +149,27 @@ export function AgentsView() {
 
       <div className="card col">
         <div className="row">
-          <h2>Audit log</h2>
+          <h2>Activity log</h2>
           <span className="spacer" />
           <button className="small" onClick={async () =>
-              (await dialog.confirm({ title: "Clear the audit log?", message: "The record of agent requests is deleted.", confirmLabel: "Clear log", danger: true })) &&
+              (await dialog.confirm({ title: "Clear the activity log?", message: "The record of what agents asked JustRefresh to do is deleted.", confirmLabel: "Clear log", danger: true })) &&
               act("clearAudit", undefined)
             }>Clear</button>
         </div>
+        <p className="small muted" style={{ margin: 0 }}>Everything agents have asked JustRefresh to do, newest first.</p>
         {!audit.data?.length ? (
-          <Empty>No agent operations recorded.</Empty>
+          <Empty>No agent activity yet.</Empty>
         ) : (
           <table>
-            <thead><tr><th>Time</th><th>Agent</th><th>Operation</th><th>Rule</th><th>Outcome</th><th>Detail</th></tr></thead>
+            <thead><tr><th>Time</th><th>Agent</th><th>Request</th><th>Rule</th><th>Result</th><th>Details</th></tr></thead>
             <tbody>
               {audit.data.slice(0, 300).map((e, i) => (
                 <tr key={i}>
                   <td className="small">{formatTime(e.at)}</td>
-                  <td className="small mono">{e.agentId}</td>
-                  <td className="small">{e.operation}</td>
-                  <td className="small mono">{e.ruleId ?? "—"}</td>
-                  <td><span className={`pill pill-${e.outcome === "ok" ? "ok" : e.outcome === "pending_approval" ? "warn" : "error"}`}>{e.outcome}</span></td>
+                  <td className="small" title={e.agentId}>{agentName(e.agentId)}</td>
+                  <td className="small" title={e.operation}>{operationLabel(e.operation)}</td>
+                  <td className="small" title={e.ruleId}>{e.ruleId ? (ruleById.get(e.ruleId)?.name ?? e.ruleId) : "—"}</td>
+                  <td><span className={`pill pill-${e.outcome === "ok" ? "ok" : e.outcome === "pending_approval" ? "warn" : "error"}`}>{OUTCOME_LABEL[e.outcome] ?? e.outcome}</span></td>
                   <td className="small muted">{e.detail}</td>
                 </tr>
               ))}
@@ -167,13 +188,13 @@ function AllowedExtensions({ ids, save }: { ids: string[]; save: (ids: string[])
   const valid = /^[a-p]{32}$/.test(candidate);
   return (
     <div className="card col">
-      <h2>Allowed extensions</h2>
+      <h2>Browser extensions that may connect</h2>
       <p className="small muted" style={{ margin: 0 }}>
-        Other browser extensions can use the agent API only if their ID is listed here; they still need your approval as an agent afterwards. Find an
-        extension's ID on <code>chrome://extensions</code> (Developer mode).
+        Another browser extension can act as an agent only if you add its ID here, and it still has to be approved above before it can do anything. To
+        find an extension's ID, open <code>chrome://extensions</code> and turn on Developer mode.
       </p>
       {ids.length === 0 ? (
-        <span className="small muted">No extensions allowed.</span>
+        <span className="small muted">None added. Other extensions can't connect.</span>
       ) : (
         ids.map((id) => (
           <div key={id} className="row">
@@ -185,8 +206,8 @@ function AllowedExtensions({ ids, save }: { ids: string[]; save: (ids: string[])
       )}
       <div className="row">
         <input aria-label="Extension ID" placeholder="32-letter extension ID" value={draft} onChange={(e) => setDraft(e.target.value)} style={{ minWidth: 300 }} />
-        <button className="small" disabled={!valid || ids.includes(candidate)} onClick={() => void save([...ids, candidate]).then(() => setDraft(""))}>Allow</button>
-        {draft && !valid && <span className="small muted">Extension IDs are 32 letters a–p.</span>}
+        <button className="small" disabled={!valid || ids.includes(candidate)} onClick={() => void save([...ids, candidate]).then(() => setDraft(""))}>Add</button>
+        {draft && !valid && <span className="small muted">An extension ID is 32 letters, each from a to p.</span>}
       </div>
     </div>
   );
@@ -200,10 +221,16 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
       <div className="row">
         <strong>{agent.name}</strong>
         <code className="small">{agent.id}</code>
-        <span className={`pill pill-${agent.status === "approved" ? "ok" : agent.status === "pending" ? "warn" : "muted"}`}>{agent.status}</span>
-        <span className="small muted">via {agent.transport} · last seen {formatTime(agent.lastSeenAt)}</span>
+        <span className={`pill pill-${agent.status === "approved" ? "ok" : agent.status === "pending" ? "warn" : "muted"}`}>{STATUS_LABEL[agent.status]}</span>
+        <span className="small muted">{TRANSPORT_LABEL[agent.transport]} · last seen {formatTime(agent.lastSeenAt)}</span>
         <span className="spacer" />
-        {agent.status !== "revoked" && <button className="small danger" onClick={() => act("updateAgent", { id: agent.id, status: "revoked" })}>Revoke</button>}
+        {/* Kept together so the buttons wrap as a pair, never one per line. */}
+        <span className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
+        {agent.status !== "revoked" && (
+          <button className="small danger" title="Keep it listed but refuse everything it asks; you can approve it again later" onClick={() => act("updateAgent", { id: agent.id, status: "revoked" })}>
+            {agent.status === "pending" ? "Decline" : "Revoke access"}
+          </button>
+        )}
         <button className="small" onClick={async () =>
             (await dialog.confirm({
               title: `Remove ${agent.name}?`,
@@ -212,19 +239,21 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
               danger: true,
             })) && act("removeAgent", { id: agent.id })
           }>Remove</button>
+        </span>
       </div>
-      <div className="row small">
+      <div className="col small" style={{ gap: 4 }}>
+        <strong>{agent.status === "pending" ? "What may this agent do?" : "This agent may:"}</strong>
         {allScopes.map((s) => (
-          <label key={s} title={SCOPE_HELP[s]} className="row" style={{ gap: 4 }}>
+          <label key={s} title={s} className="row" style={{ gap: 6 }}>
             <input type="checkbox" checked={scopes.includes(s)} onChange={(e) => setScopes(e.target.checked ? [...scopes, s] : scopes.filter((x) => x !== s))} />
-            {s}
+            {SCOPE_LABEL[s] ?? s}
           </label>
         ))}
       </div>
       <div className="row">
         <Toggle
           checked={agent.trustedActivation}
-          label={<span className="small">Trusted activation <span className="muted">(activate/delete its own rules without per-request approval)</span></span>}
+          label={<span className="small">Trust this agent <span className="muted">(switch on and delete its own rules without asking me each time)</span></span>}
           onChange={async (on) =>
             (!on ||
               (await dialog.confirm({
@@ -236,13 +265,13 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
           }
         />
         <span className="spacer" />
-        {agent.status === "pending" && scopes.length === 0 && <span className="small muted">Tick what this agent may do.</span>}
+        {agent.status === "pending" && scopes.length === 0 && <span className="small muted">Tick at least one thing it may do.</span>}
         <button
           className="small primary"
           disabled={agent.status === "pending" && scopes.length === 0}
           onClick={() => act("updateAgent", { id: agent.id, status: "approved", scopes })}
         >
-          {agent.status === "approved" ? "Save scopes" : "Approve with these scopes"}
+          {agent.status === "approved" ? "Save changes" : "Approve"}
         </button>
       </div>
     </div>

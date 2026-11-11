@@ -23,9 +23,9 @@ MCP client ──stdio──▶ sar-bridge.mjs mcp ──local socket + token─
    ```bash
    node bridge/install.mjs --extension-id <EXTENSION_ID> --browser chrome
    ```
-3. Dashboard → Agent Integrations → **Enable native bridge** (grants the
-   optional `nativeMessaging` permission). The first time, click **Restart
-   extension to finish**: Chrome only exposes native messaging to a service
+3. Dashboard → Agent Integrations → **Allow desktop AI apps to connect**
+   (grants the optional `nativeMessaging` permission). The first time, click
+   **Restart JustRefresh**: Chrome only exposes native messaging to a service
    worker that started with the permission. Rules and schedules are kept.
 4. Add the MCP server printed by the installer to your MCP client config:
    ```json
