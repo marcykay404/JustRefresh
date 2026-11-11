@@ -116,8 +116,11 @@ export function hasQuery(url: string): boolean {
 /** The address without its "?…" and "#…" parts. */
 export function withoutQuery(url: string): string {
   try {
+    // Not origin + pathname: a file: URL's origin is "null".
     const u = new URL(url);
-    return `${u.origin}${u.pathname}`;
+    u.search = "";
+    u.hash = "";
+    return u.href;
   } catch {
     return url;
   }
@@ -130,6 +133,10 @@ export function withoutQuery(url: string): string {
 export function pagePatterns(url: string, anyQuery = false): UrlPatternInput[] {
   if (!anyQuery || !hasQuery(url)) return [{ type: "exact", value: url }];
   const base = withoutQuery(url);
+  // Globs need a host (file: has none) and treat "*" as a wildcard: use one regex then.
+  if (!/^https?:\/\/[^/]/.test(base) || base.includes("*")) {
+    return [{ type: "regex", value: `^${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\?[^#]*)?(#.*)?$` }];
+  }
   return [
     { type: "exact", value: base },
     { type: "glob", value: `${base}?*` },

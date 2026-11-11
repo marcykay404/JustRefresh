@@ -252,3 +252,32 @@ describe("form results: edge cases from the review of #14", () => {
     expect(await env.runtime.get(7)).toMatchObject({ status: "scheduled", generation: before.generation, startedAt: before.startedAt });
   });
 });
+
+describe("form results: leaving the pause follows the tab's address (review)", () => {
+  const pausedThenHash = async () => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    env.browser.tabs.get(7)!.url = "https://shop.test/order#r";
+    await env.engine.onTabUpdated(7, { url: "https://shop.test/order#r" });
+    return { env, before: (await env.runtime.get(7))! };
+  };
+
+  it("Resume in the dashboard after a #hash change keeps the run (same time limit)", async () => {
+    const { env, before } = await pausedThenHash();
+    await env.engine.setTabStatus(7, "scheduled", "Resumed");
+    expect(await env.runtime.get(7)).toMatchObject({ status: "scheduled", url: "https://shop.test/order#r", generation: before.generation });
+    env.clock.advance(30_000);
+    await env.fireDue();
+    // Paused again in the same run (a resume asked for it, so it says so again).
+    expect(await env.runtime.get(7)).toMatchObject({ status: "paused_resubmit", generation: before.generation, startedAt: before.startedAt });
+    expect(env.browser.reloads).toEqual([]);
+  });
+
+  it("the same page loaded as a normal visit, at an address with #…, carries on with the same run", async () => {
+    const { env, before } = await pausedThenHash();
+    env.page.activityByTab.set(7, quietActivity());
+    await env.engine.onTabUpdated(7, { status: "complete" });
+    expect(await env.runtime.get(7)).toMatchObject({ status: "scheduled", generation: before.generation, startedAt: before.startedAt });
+  });
+});

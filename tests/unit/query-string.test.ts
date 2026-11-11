@@ -72,3 +72,25 @@ describe("rules set for this page with another ?… part", () => {
     expect(rulesForOtherQuery([excluded], "https://shop.test/track?t=1")).toEqual([]);
   });
 });
+
+describe("review of the ?… choice", () => {
+  it("works for file: pages (whose origin is \"null\")", () => {
+    const p = pagePatterns("file:///Users/x/a.html?x=1", true);
+    expect(p).toEqual([{ type: "regex", value: "^file:///Users/x/a\\.html(\\?[^#]*)?(#.*)?$" }]);
+    expect(matchesAny(p, "file:///Users/x/a.html")).not.toBeNull();
+    expect(matchesAny(p, "file:///Users/x/a.html#top")).not.toBeNull();
+    expect(matchesAny(p, "file:///Users/x/a.htmlx")).toBeNull();
+    expect(validateRule(untilRule({ url: "file:///Users/x/a.html?x=1", site: "a.html", seconds: 60, text: "x", mode: "appears", anyQuery: true })).valid).toBe(true);
+    expect(matchesAny(p, "file:///Users/x/a.html?x=2")).not.toBeNull();
+  });
+
+  it("a rule whose address differs only after # is not reported as a different ?… part", () => {
+    expect(rulesForOtherQuery([makeRule({ id: "h", target: { patterns: ["https://shop.test/a?x=1#f"] } })], "https://shop.test/a?x=1")).toEqual([]);
+  });
+});
+
+it("a * in the path stays literal", () => {
+  const p = pagePatterns("https://shop.test/a*b?x=1", true);
+  expect(matchesAny(p, "https://shop.test/a*b?y=2")).not.toBeNull();
+  expect(matchesAny(p, "https://shop.test/aZZZb?y=2")).toBeNull();
+});

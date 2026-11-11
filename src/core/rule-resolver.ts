@@ -71,7 +71,10 @@ export function rulesForOtherQuery(rules: Iterable<Rule>, url: string): Rule[] {
   const page = (href: string) => {
     try {
       const u = new URL(href);
-      return { base: `${u.origin}${u.pathname}`, query: u.search.length > 1 };
+      const query = u.search;
+      u.search = "";
+      u.hash = "";
+      return { base: u.href, query };
     } catch {
       return null;
     }
@@ -87,7 +90,7 @@ export function rulesForOtherQuery(rules: Iterable<Rule>, url: string): Rule[] {
       r.target.patterns.some((p) => {
         const { type, value } = detectPattern(p);
         const there = type === "exact" ? page(value) : null;
-        return !!there && there.base === here.base && (there.query || here.query);
+        return !!there && there.base === here.base && there.query !== here.query;
       }),
   );
 }

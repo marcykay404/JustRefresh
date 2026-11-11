@@ -428,13 +428,21 @@ export class RuleEngine {
       // same address): stay paused, quietly, while it's still the form result.
       const { activity } = await this.page.activity(tabId);
       if (activity?.formResult) return;
-      const next =
-        res.controller.id !== rt.controllerId || withoutHash(rt.url) !== withoutHash(tab.url)
-          ? this.newRun(rt, tab, res.controller, await this.deps.stores.config.get())
-          : transition(rt, "scheduled", { reason: undefined, nextDueAt: this.nextDue(res.controller, this.now()) });
+      const next = this.leaveFormPause(rt, tab, res.controller, await this.deps.stores.config.get());
       await this.deps.stores.runtime.put(next);
       await this.setAlarm(next);
     });
+  }
+
+  /**
+   * Leave the form-page pause. Another page starts a new run, as any
+   * navigation does; the same page (ignoring #…) carries on with the run. The
+   * run then follows the tab's current address, so the next sync doesn't
+   * mistake it for a new page.
+   */
+  private leaveFormPause(rt: TabRuntime, tab: TabInfo, rule: Rule, config: Config): TabRuntime {
+    if (rule.id !== rt.controllerId || withoutHash(rt.url) !== withoutHash(tab.url)) return this.newRun(rt, tab, rule, config);
+    return transition(rt, "scheduled", { reason: undefined, url: tab.url, nextDueAt: this.nextDue(rule, this.now()) });
   }
 
   /** Our own reload finished loading: count it and evaluate post-navigation. */
@@ -835,6 +843,8 @@ export class RuleEngine {
       } else {
         rt = transition(rt, status, { reason, nextDueAt: null, resumeAt: null, generation: rt.generation + 1 });
       }
+      // Leaving a form-page pause (which kept the form page's address): follow the tab.
+      rt = { ...rt, url: tab.url };
       await this.deps.stores.runtime.put(rt);
       await this.setAlarm(rt);
       return rt;
@@ -892,10 +902,7 @@ export class RuleEngine {
       await this.deps.browser.navigate(tabId, withoutHash(tab.url));
       const rt = await this.deps.stores.runtime.get(tabId);
       if (rt?.status === "paused_resubmit" && res.kind === "controller") {
-        const next =
-        res.controller.id !== rt.controllerId || withoutHash(rt.url) !== withoutHash(tab.url)
-          ? this.newRun(rt, tab, res.controller, await this.deps.stores.config.get())
-          : transition(rt, "scheduled", { reason: undefined, nextDueAt: this.nextDue(res.controller, this.now()) });
+        const next = this.leaveFormPause(rt, { ...tab, url: withoutHash(tab.url) }, res.controller, config);
         await this.deps.stores.runtime.put(next);
         await this.setAlarm(next);
       }
@@ -958,11 +965,11 @@ export class RuleEngine {
   isPausedStatus = isPaused;
 }
 
-/** Host used for the per-site fast-refresh limit (null for non-web URLs). */
 function withoutHash(url: string): string {
   return url.split("#")[0]!;
 }
 
+/** Host used for the per-site fast-refresh limit (null for non-web URLs). */
 function siteKey(url: string): string | null {
   try {
     const u = new URL(url);

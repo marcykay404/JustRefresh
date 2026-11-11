@@ -192,8 +192,8 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
           <span className="field-hint">
             {choice === ADDRESS && address && !url ? "That doesn't look like a web address." : t.scope === "site" ? "Every page on this site." : "Pick one of your open tabs, or type an address."}
           </span>
-          {t.scope === "page" && url && <QueryChoice url={url} anyQuery={anyQuery} onChange={setAnyQuery} />}
         </label>
+        {t.scope === "page" && url && <QueryChoice url={url} anyQuery={anyQuery} onChange={setAnyQuery} />}
 
         {t.text && (
           <label className="field">
