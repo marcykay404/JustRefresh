@@ -69,25 +69,18 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
   const tabs = useApi<TabInfo[]>("listTabs");
   const rules = useApi<Rule[]>("listRules");
   const overview = useApi<{ settings: Settings }>("getOverview");
-  const settings = overview.data?.settings;
-  const [stopAfter, setStopAfter] = useState<number | null | undefined>(undefined);
   const webTabs = (tabs.data ?? []).filter((x) => /^https?:/.test(x.url));
-  const [choice, setChoice] = useState<string>("");
-  const [address, setAddress] = useState("");
-  const [text, setText] = useState(t.text?.initial ?? "");
-  const [seconds, setSeconds] = useState(t.initialSeconds);
-  const [start, setStart] = useState("08:00");
-  const [end, setEnd] = useState("18:00");
-  const [anyQuery, setAnyQuery] = useState(false);
+  const [form, setForm] = useState<FormState>(() => ({ choice: "", address: "", text: t.text?.initial ?? "", seconds: t.initialSeconds, start: "08:00", end: "18:00", anyQuery: false, stopAfter: undefined }));
+  const update = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   // Default to the most recently used open web tab once tabs load.
   useEffect(() => {
-    if (choice || tabs.data === null) return;
-    setChoice(webTabs.length ? String(webTabs[0]!.id) : ADDRESS);
-  }, [tabs.data]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (form.choice || tabs.data === null) return;
+    update({ choice: webTabs.length ? String(webTabs[0]!.id) : ADDRESS });
+  }, [tabs.data]);
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -95,44 +88,19 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
     return () => previous?.focus?.();
   }, []);
 
-  const pickedTab = webTabs.find((x) => String(x.id) === choice) ?? null;
-  const url = choice === ADDRESS ? normalizeAddress(address) : (pickedTab?.url ?? null);
-  // A page template outranks rules already matching its page, or it would never
-  // run there. A site-wide template doesn't: more specific rules keep their pages.
-  const matching = url && t.scope === "page" ? (rules.data ?? []).filter((r) => r.enabled && !r.meta.draft && matchesAny(r.target.patterns, url) !== null) : [];
-  const stopAfterMinutes = stopAfter === undefined ? (settings?.defaultStopAfterMinutes ?? null) : stopAfter;
-  const protects = settings ? settings.defaultSafety.pauseWhileTyping : true;
-  const values: TemplateValues | null = url ? { url, text, seconds, start, end, stopAfterMinutes: t.until ? stopAfterMinutes : null, priority: priorityAbove(matching), protects, anyQuery: t.scope === "page" && anyQuery } : null;
-  const textOk = !t.text || text.trim().length > 0;
-  const hoursOk = !t.hours || (start !== "" && end !== "" && start < end);
+  const pickedTab = webTabs.find((x) => String(x.id) === form.choice) ?? null;
+  const v = formValues(t, form, pickedTab, rules.data, overview.data?.settings);
   // Wait for rules and settings: priority, protection wording and the default time limit come from them.
   const loaded = rules.data !== null && overview.data !== null;
-  const ready = !!values && textOk && hoursOk && loaded && !busy;
-  const host = url ? hostOf(url) : "";
+  const ready = !!v.values && v.textOk && v.hoursOk && loaded && !busy;
 
   const create = async () => {
-    if (!values || !url) return;
+    if (!v.values || !v.url) return;
     setError(null);
     setBusy(true);
     try {
-      // Ask first, inside the click: page reading (conditions, protection) needs site access.
-      const origin = originOf(url);
-      if (origin && !(await requestOrigins([origin]).catch(() => false))) {
-        setError(new Error(`JustRefresh needs access to ${host} to read the page. Nothing was created.`));
-        return;
-      }
-      const rule = (await api("createRule", { rule: t.build(values) })) as Rule;
-      // The rule now exists: whatever happens next, close the form (no duplicate on a second click).
-      let note: string | undefined;
-      // A page template takes over the chosen tab from a tab-specific timer, which would outrank it.
-      if (pickedTab && t.scope === "page") {
-        const state = (await api("getTabState", { tabId: pickedTab.id })) as { override: { mode: string } | null };
-        if (state.override?.mode === "custom") await api("clearTabOverride", { tabId: pickedTab.id });
-        const after = (await api("getTabState", { tabId: pickedTab.id })) as { resolution: { kind: string; reason?: string; controllerId: string | null; controllerName: string | null } };
-        if (after.resolution.controllerId === rule.id) await api("runNow", { tabId: pickedTab.id }).catch(() => undefined);
-        else note = takeoverNote(after.resolution);
-      }
-      onCreated(rule.name, note);
+      const done = await createFromTemplate(t, v.values, v.url, pickedTab);
+      onCreated(done.name, done.note);
     } catch (e) {
       setError(e);
     } finally {
@@ -141,117 +109,25 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
   };
 
   const customise = () => {
-    if (!values) return;
-    stashBuilderDraft({ ...t.build(values), enabled: false });
+    if (!v.values) return;
+    stashBuilderDraft({ ...t.build(v.values), enabled: false });
     location.hash = "/builder?draft=template";
-  };
-
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      onClose();
-    } else if (e.key === "Tab") {
-      // Keep focus inside the form while it's open.
-      const items = [...(boxRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input, select") ?? [])];
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (!first || !last) return;
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
   };
 
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={boxRef} className="dialog template-form" role="dialog" aria-modal="true" aria-labelledby="tpl-title" onKeyDown={onKeyDown}>
+      <div ref={boxRef} className="dialog template-form" role="dialog" aria-modal="true" aria-labelledby="tpl-title" onKeyDown={(e) => trapFocus(e, boxRef.current, onClose)}>
         <div className="col" style={{ gap: 2 }}>
           <span className="eyebrow">Template</span>
           <h3 id="tpl-title" style={{ fontSize: 18 }}>{t.title}</h3>
         </div>
 
-        {t.warning && <p className="notice small" style={{ margin: 0 }}>{t.warning}</p>}
-
-        <label className="field">
-          <span className="field-label">{t.scope === "site" ? "Which site?" : "Which page?"}</span>
-          <select value={choice} onChange={(e) => setChoice(e.target.value)}>
-            {webTabs.map((x) => (
-              <option key={x.id} value={x.id}>
-                {t.scope === "site" ? hostOf(x.url) : `${x.title ? `${x.title} · ` : ""}${pageLabel(x.url)}`} (open tab)
-              </option>
-            ))}
-            <option value={ADDRESS}>Type an address…</option>
-          </select>
-          {choice === ADDRESS && (
-            <input aria-label="Address" placeholder="shop.example.com/item/42" value={address} onChange={(e) => setAddress(e.target.value)} />
-          )}
-          <span className="field-hint">
-            {choice === ADDRESS && address && !url ? "That doesn't look like a web address." : t.scope === "site" ? "Every page on this site." : "Pick one of your open tabs, or type an address."}
-          </span>
-        </label>
-        {t.scope === "page" && url && <QueryChoice url={url} anyQuery={anyQuery} onChange={setAnyQuery} />}
-
-        {t.text && (
-          <label className="field">
-            <span className="field-label">{t.text.label}</span>
-            <input value={text} maxLength={200} onChange={(e) => setText(e.target.value)} />
-            <span className="field-hint">{t.text.hint}</span>
-          </label>
-        )}
-
-        {t.intervals && (
-          <div className="field">
-            <span className="field-label">Check every</span>
-            <div className="chips" style={{ gridTemplateColumns: `repeat(${t.intervals.length}, minmax(0, 1fr))` }} role="group" aria-label="Check every">
-              {t.intervals.map((s) => (
-                <button type="button" key={s} className={`chip${seconds === s ? " selected" : ""}`} aria-pressed={seconds === s} onClick={() => setSeconds(s)}>
-                  {intervalLabel(s)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {t.until && (
-          <label className="field">
-            <span className="field-label">Stop watching after</span>
-            <select value={stopAfterMinutes ?? ""} onChange={(e) => setStopAfter(e.target.value === "" ? null : Number(e.target.value))}>
-              {STOP_AFTER_CHOICES.map((m) => (
-                <option key={m ?? "none"} value={m ?? ""}>{stopAfterLabel(m)}</option>
-              ))}
-            </select>
-            <span className="field-hint">If it hasn't happened by then, it stops and tells you. Your default is in Settings.</span>
-          </label>
-        )}
-
-        {t.hours && (
-          <div className="field">
-            <span className="field-label">Working hours, Monday to Friday</span>
-            <div className="row">
-              <input type="time" aria-label="From" value={start} onChange={(e) => setStart(e.target.value)} />
-              <span>to</span>
-              <input type="time" aria-label="Until" value={end} onChange={(e) => setEnd(e.target.value)} />
-            </div>
-            {!hoursOk && <span className="small field-error">The end time must be after the start time.</span>}
-          </div>
-        )}
-
-        {values && textOk && hoursOk && (
-          <div className="info col" style={{ gap: 4 }}>
-            <span className="eyebrow">What it will do</span>
-            <span>{t.describe(values)}</span>
-            <span className="small muted">Chrome may ask once for access to {host} so JustRefresh can read the page.</span>
-          </div>
-        )}
+        <TemplateBlanks t={t} form={form} update={update} webTabs={webTabs} v={v} />
 
         <ErrorBox error={error} />
 
         <div className="dialog-actions" style={{ alignItems: "center" }}>
-          <button className="link" disabled={!values} onClick={customise}>Customise in the Rule Builder…</button>
+          <button className="link" disabled={!v.values} onClick={customise}>Customise in the Rule Builder…</button>
           <span className="spacer" />
           <button onClick={onClose}>Cancel</button>
           <button className="primary" disabled={!ready} onClick={() => void create()}>
@@ -259,6 +135,184 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface FormState {
+  /** An open tab's id, or ADDRESS to type one. */
+  choice: string;
+  address: string;
+  text: string;
+  seconds: number;
+  start: string;
+  end: string;
+  anyQuery: boolean;
+  /** undefined = the Settings default. */
+  stopAfter: number | null | undefined;
+}
+
+type Update = (patch: Partial<FormState>) => void;
+
+/** The template's blanks as filled in: the rule's values (null until there's a page) and what's missing. */
+function formValues(t: Template, f: FormState, pickedTab: TabInfo | null, rules: Rule[] | null, settings: Settings | undefined) {
+  const url = f.choice === ADDRESS ? normalizeAddress(f.address) : (pickedTab?.url ?? null);
+  const stopAfterMinutes = f.stopAfter === undefined ? (settings?.defaultStopAfterMinutes ?? null) : f.stopAfter;
+  return {
+    url,
+    values: url ? ruleValues(t, f, url, rules, settings, stopAfterMinutes) : null,
+    stopAfterMinutes,
+    textOk: !t.text || f.text.trim().length > 0,
+    hoursOk: !t.hours || (f.start !== "" && f.end !== "" && f.start < f.end),
+  };
+}
+
+function ruleValues(t: Template, f: FormState, url: string, rules: Rule[] | null, settings: Settings | undefined, stopAfterMinutes: number | null): TemplateValues {
+  // A page template outranks rules already matching its page, or it would never
+  // run there. A site-wide template doesn't: more specific rules keep their pages.
+  const matching = t.scope === "page" ? (rules ?? []).filter((r) => r.enabled && !r.meta.draft && matchesAny(r.target.patterns, url) !== null) : [];
+  return {
+    url,
+    text: f.text,
+    seconds: f.seconds,
+    start: f.start,
+    end: f.end,
+    stopAfterMinutes: t.until ? stopAfterMinutes : null,
+    priority: priorityAbove(matching),
+    protects: settings ? settings.defaultSafety.pauseWhileTyping : true,
+    anyQuery: t.scope === "page" && f.anyQuery,
+  };
+}
+
+/**
+ * Create the template's rule: ask for site access first (inside the click),
+ * then, for a page template on an open tab, take that tab over from a
+ * tab-specific timer (which would outrank it) and check at once. Once the
+ * rule exists, the form closes whatever happens next (no duplicate on a
+ * second click): `note` says why it isn't running on the tab.
+ */
+async function createFromTemplate(t: Template, values: TemplateValues, url: string, pickedTab: TabInfo | null): Promise<{ name: string; note?: string }> {
+  const origin = originOf(url);
+  if (origin && !(await requestOrigins([origin]).catch(() => false))) {
+    throw new Error(`JustRefresh needs access to ${hostOf(url)} to read the page. Nothing was created.`);
+  }
+  const rule = (await api("createRule", { rule: t.build(values) })) as Rule;
+  if (!pickedTab || t.scope !== "page") return { name: rule.name };
+  const state = (await api("getTabState", { tabId: pickedTab.id })) as { override: { mode: string } | null };
+  if (state.override?.mode === "custom") await api("clearTabOverride", { tabId: pickedTab.id });
+  const after = (await api("getTabState", { tabId: pickedTab.id })) as { resolution: { kind: string; reason?: string; controllerId: string | null; controllerName: string | null } };
+  if (after.resolution.controllerId !== rule.id) return { name: rule.name, note: takeoverNote(after.resolution) };
+  await api("runNow", { tabId: pickedTab.id }).catch(() => undefined);
+  return { name: rule.name };
+}
+
+/** Escape closes the form; Tab keeps focus inside it. */
+function trapFocus(e: KeyboardEvent, box: HTMLElement | null, onClose: () => void) {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    onClose();
+    return;
+  }
+  if (e.key !== "Tab") return;
+  const items = [...(box?.querySelectorAll<HTMLElement>("button:not(:disabled), input, select") ?? [])];
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (!first || !last) return;
+  const atEdge = e.shiftKey ? document.activeElement === first : document.activeElement === last;
+  if (!atEdge) return;
+  e.preventDefault();
+  (e.shiftKey ? last : first).focus();
+}
+
+/** The template's blanks, in order, and what the rule will do. */
+function TemplateBlanks({ t, form, update, webTabs, v }: { t: Template; form: FormState; update: Update; webTabs: TabInfo[]; v: ReturnType<typeof formValues> }) {
+  const complete = v.values && v.textOk && v.hoursOk ? v.values : null;
+  return (
+    <>
+      {t.warning && <p className="notice small" style={{ margin: 0 }}>{t.warning}</p>}
+      <PageField t={t} form={form} update={update} webTabs={webTabs} url={v.url} />
+      {t.scope === "page" && v.url && <QueryChoice url={v.url} anyQuery={form.anyQuery} onChange={(anyQuery) => update({ anyQuery })} />}
+      {t.text && (
+        <label className="field">
+          <span className="field-label">{t.text.label}</span>
+          <input value={form.text} maxLength={200} onChange={(e) => update({ text: e.target.value })} />
+          <span className="field-hint">{t.text.hint}</span>
+        </label>
+      )}
+      {t.intervals && <IntervalField intervals={t.intervals} seconds={form.seconds} onPick={(seconds) => update({ seconds })} />}
+      {t.until && <StopAfterField minutes={v.stopAfterMinutes} onChange={(stopAfter) => update({ stopAfter })} />}
+      {t.hours && <HoursField start={form.start} end={form.end} ok={v.hoursOk} update={update} />}
+      {complete && (
+        <div className="info col" style={{ gap: 4 }}>
+          <span className="eyebrow">What it will do</span>
+          <span>{t.describe(complete)}</span>
+          <span className="small muted">Chrome may ask once for access to {hostOf(complete.url)} so JustRefresh can read the page.</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+function PageField({ t, form, update, webTabs, url }: { t: Template; form: FormState; update: Update; webTabs: TabInfo[]; url: string | null }) {
+  const typing = form.choice === ADDRESS;
+  const site = t.scope === "site";
+  const hint = typing && form.address && !url ? "That doesn't look like a web address." : site ? "Every page on this site." : "Pick one of your open tabs, or type an address.";
+  return (
+    <label className="field">
+      <span className="field-label">{site ? "Which site?" : "Which page?"}</span>
+      <select value={form.choice} onChange={(e) => update({ choice: e.target.value })}>
+        {webTabs.map((x) => (
+          <option key={x.id} value={x.id}>
+            {site ? hostOf(x.url) : `${x.title ? `${x.title} · ` : ""}${pageLabel(x.url)}`} (open tab)
+          </option>
+        ))}
+        <option value={ADDRESS}>Type an address…</option>
+      </select>
+      {typing && <input aria-label="Address" placeholder="shop.example.com/item/42" value={form.address} onChange={(e) => update({ address: e.target.value })} />}
+      <span className="field-hint">{hint}</span>
+    </label>
+  );
+}
+
+function IntervalField({ intervals, seconds, onPick }: { intervals: number[]; seconds: number; onPick: (s: number) => void }) {
+  return (
+    <div className="field">
+      <span className="field-label">Check every</span>
+      <div className="chips" style={{ gridTemplateColumns: `repeat(${intervals.length}, minmax(0, 1fr))` }} role="group" aria-label="Check every">
+        {intervals.map((s) => (
+          <button type="button" key={s} className={`chip${seconds === s ? " selected" : ""}`} aria-pressed={seconds === s} onClick={() => onPick(s)}>
+            {intervalLabel(s)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StopAfterField({ minutes, onChange }: { minutes: number | null; onChange: (m: number | null) => void }) {
+  return (
+    <label className="field">
+      <span className="field-label">Stop watching after</span>
+      <select value={minutes ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}>
+        {STOP_AFTER_CHOICES.map((m) => (
+          <option key={m ?? "none"} value={m ?? ""}>{stopAfterLabel(m)}</option>
+        ))}
+      </select>
+      <span className="field-hint">If it hasn't happened by then, it stops and tells you. Your default is in Settings.</span>
+    </label>
+  );
+}
+
+function HoursField({ start, end, ok, update }: { start: string; end: string; ok: boolean; update: Update }) {
+  return (
+    <div className="field">
+      <span className="field-label">Working hours, Monday to Friday</span>
+      <div className="row">
+        <input type="time" aria-label="From" value={start} onChange={(e) => update({ start: e.target.value })} />
+        <span>to</span>
+        <input type="time" aria-label="Until" value={end} onChange={(e) => update({ end: e.target.value })} />
+      </div>
+      {!ok && <span className="small field-error">The end time must be after the start time.</span>}
     </div>
   );
 }

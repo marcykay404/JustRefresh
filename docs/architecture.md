@@ -20,10 +20,10 @@
 
 | Layer | Files | Notes |
 |---|---|---|
-| Types & schema | `src/core/types.ts`, `src/core/rule-schema.ts`, `schemas/rule.schema.json` | Rule envelope in zod; node types validated by registry handlers. JSON Schema generated from the same source (`npm run gen:schema`), a test keeps it in sync. |
+| Types & schema | `src/core/types.ts`, `src/core/rule-schema.ts`, `schemas/*.json` | Rule envelope in zod (`zod/mini`); node types validated by registry handlers. JSON Schemas generated from the same source at build time (`npm run gen:schema`), a test keeps them in sync; the service worker reads them from the package when an agent asks for capabilities. |
 | Registries | `src/registries/*`, `src/conditions/*`, `src/triggers/*`, `src/actions/*` | Adding a capability = implement a handler + register it. The engine, scheduler and UI pick it up (the builder renders forms from the published JSON Schema). |
-| Engine | `src/core/rule-engine.ts` | Uses ports (`BrowserPort`, `AlarmPort`, `PagePort`, `ClockPort`, stores) — fully testable without Chrome. |
-| API | `src/api/rule-api.ts`, `src/api/permissions.ts` | Single entry point; the UI uses actor `user`, agents use actor `agent`. |
+| Engine | `src/core/rule-engine.ts`, `src/core/engine/*` | Uses ports (`engine/ports.ts`: `BrowserPort`, `AlarmPort`, `PagePort`, `ClockPort`, stores) — fully testable without Chrome. In layers: `base.ts` (per-tab locks, persistence, sync), `cycle.ts` (one refresh cycle, in named steps), `rule-engine.ts` (events, reconciliation, user controls); `fast-site-limit.ts` is the per-site turn-taking for fast intervals. |
+| API | `src/api/rule-api.ts`, `src/api/methods/*`, `src/api/permissions.ts` | Single entry point; the UI uses actor `user`, agents use actor `agent`. The service dispatches, authorizes and audits; the methods live by area (`rules`, `tabs`, `settings`, `agents`). Parameter schemas use `zod/mini`. |
 | Background | `src/background/*` | Chrome adapters, event wiring, startup reconciliation, tab restoration. |
 | Content | `src/content/*`, `src/conditions/dom-eval.ts` | Dependency-free (≈7 KB). Top frame only. |
 | Storage | `src/storage/*` | Config (one atomic key + backup) in `storage.local`; runtime in `storage.session`; bounded history/audit logs. |

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "../core/zod";
 import type { ConditionHandler } from "../registries/contracts";
 import { schemaValidator } from "../registries/contracts";
 import { checkRegexSafety } from "../core/url-pattern";
@@ -7,12 +7,12 @@ import { checkSelector, diag } from "./helpers";
 export const textOperators = ["contains", "not_contains", "equals", "not_equals", "starts_with", "ends_with", "matches"] as const;
 export const attributeOperators = ["exists", "missing", "equals", "not_equals", "contains", "matches"] as const;
 
-const selector = z.string().min(1).max(500).describe("CSS selector evaluated in the top-level document");
+const selector = z.string().check(z.minLength(1), z.maxLength(500), z.describe("CSS selector evaluated in the top-level document"));
 
 export const domExistsSchema = z.strictObject({
   type: z.literal("dom.exists"),
   selector,
-  minCount: z.number().int().min(1).max(10_000).optional().describe("Minimum number of matching elements (default 1)"),
+  minCount: z.optional(z.int().check(z.gte(1), z.lte(10_000))).check(z.describe("Minimum number of matching elements (default 1)")),
 });
 export const domMissingSchema = z.strictObject({
   type: z.literal("dom.missing"),
@@ -20,17 +20,17 @@ export const domMissingSchema = z.strictObject({
 });
 export const domTextSchema = z.strictObject({
   type: z.literal("dom.text"),
-  selector: selector.optional().describe("CSS selector; first match is compared. Defaults to body"),
+  selector: z.optional(selector).check(z.describe("CSS selector; first match is compared. Defaults to body")),
   operator: z.enum(textOperators),
-  value: z.string().max(1000),
-  caseSensitive: z.boolean().optional(),
+  value: z.string().check(z.maxLength(1000)),
+  caseSensitive: z.optional(z.boolean()),
 });
 export const domAttributeSchema = z.strictObject({
   type: z.literal("dom.attribute"),
   selector,
-  attribute: z.string().min(1).max(100),
+  attribute: z.string().check(z.minLength(1), z.maxLength(100)),
   operator: z.enum(attributeOperators),
-  value: z.string().max(1000).optional(),
+  value: z.optional(z.string().check(z.maxLength(1000))),
 });
 
 export type DomExists = z.infer<typeof domExistsSchema>;

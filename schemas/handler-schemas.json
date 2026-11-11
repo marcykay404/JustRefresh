@@ -1,0 +1,582 @@
+{
+  "conditions": {
+    "dom.exists": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "dom.exists"
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "CSS selector evaluated in the top-level document"
+        },
+        "minCount": {
+          "description": "Minimum number of matching elements (default 1)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      },
+      "required": [
+        "type",
+        "selector"
+      ],
+      "additionalProperties": false
+    },
+    "dom.missing": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "dom.missing"
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "CSS selector evaluated in the top-level document"
+        }
+      },
+      "required": [
+        "type",
+        "selector"
+      ],
+      "additionalProperties": false
+    },
+    "dom.text": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "dom.text"
+        },
+        "selector": {
+          "description": "CSS selector; first match is compared. Defaults to body",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "contains",
+            "not_contains",
+            "equals",
+            "not_equals",
+            "starts_with",
+            "ends_with",
+            "matches"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "caseSensitive": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "operator",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "dom.attribute": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "dom.attribute"
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "CSS selector evaluated in the top-level document"
+        },
+        "attribute": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "exists",
+            "missing",
+            "equals",
+            "not_equals",
+            "contains",
+            "matches"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      },
+      "required": [
+        "type",
+        "selector",
+        "attribute",
+        "operator"
+      ],
+      "additionalProperties": false
+    },
+    "url.match": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "url.match"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "exact",
+                    "domain",
+                    "glob",
+                    "regex"
+                  ]
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "pattern"
+      ],
+      "additionalProperties": false
+    },
+    "time.after": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "time.after"
+        },
+        "at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "ISO-8601 timestamp (e.g. \"2026-12-01T09:00:00Z\") or local time of day \"HH:MM\""
+        }
+      },
+      "required": [
+        "type",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "time.before": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "time.before"
+        },
+        "at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "ISO-8601 timestamp (e.g. \"2026-12-01T09:00:00Z\") or local time of day \"HH:MM\""
+        }
+      },
+      "required": [
+        "type",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "refreshCount": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "refreshCount"
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            ">=",
+            ">",
+            "<=",
+            "<",
+            "==",
+            "!="
+          ]
+        },
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "type",
+        "operator",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "tab.status": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "tab.status"
+        },
+        "value": {
+          "type": "string",
+          "enum": [
+            "loading",
+            "complete"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "all": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "all"
+        },
+        "conditions": {
+          "minItems": 1,
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": {}
+          }
+        }
+      },
+      "required": [
+        "type",
+        "conditions"
+      ],
+      "additionalProperties": false
+    },
+    "any": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "any"
+        },
+        "conditions": {
+          "minItems": 1,
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": {}
+          }
+        }
+      },
+      "required": [
+        "type",
+        "conditions"
+      ],
+      "additionalProperties": false
+    },
+    "not": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "not"
+        },
+        "condition": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "type",
+        "condition"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "triggers": {
+    "interval": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "interval"
+        },
+        "seconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 604800,
+          "description": "Seconds between refreshes: ≥30, or ≥5 when fast intervals are enabled in Settings"
+        },
+        "randomMaxSeconds": {
+          "description": "If set, each interval is chosen uniformly in [seconds, randomMaxSeconds]",
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 604800
+        }
+      },
+      "required": [
+        "type",
+        "seconds"
+      ],
+      "additionalProperties": false
+    },
+    "navigation": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "navigation"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "urlChange": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "urlChange"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "startup": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "startup"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "manual": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "manual"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "actions": {
+    "refresh": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "refresh"
+        },
+        "bypassCache": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "stopRefresh": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "stopRefresh"
+        },
+        "as": {
+          "description": "Final status (default: completed)",
+          "type": "string",
+          "enum": [
+            "completed",
+            "stopped"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "pauseRefresh": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "pauseRefresh"
+        },
+        "minutes": {
+          "description": "Auto-resume after this many minutes",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 1440
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "resumeRefresh": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "resumeRefresh"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "notify": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "notify"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "sound": {
+          "description": "Also play a short alert sound",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "log": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "log"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warn"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

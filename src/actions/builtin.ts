@@ -1,29 +1,29 @@
-import { z } from "zod";
+import { z } from "../core/zod";
 import type { ActionHandler } from "../registries/contracts";
 
 export const refreshSchema = z.strictObject({
   type: z.literal("refresh"),
-  bypassCache: z.boolean().optional(),
+  bypassCache: z.optional(z.boolean()),
 });
 export const stopSchema = z.strictObject({
   type: z.literal("stopRefresh"),
-  as: z.enum(["completed", "stopped"]).optional().describe("Final status (default: completed)"),
+  as: z.optional(z.enum(["completed", "stopped"])).check(z.describe("Final status (default: completed)")),
 });
 export const pauseSchema = z.strictObject({
   type: z.literal("pauseRefresh"),
-  minutes: z.number().min(1).max(24 * 60).optional().describe("Auto-resume after this many minutes"),
+  minutes: z.optional(z.number().check(z.gte(1), z.lte(24 * 60))).check(z.describe("Auto-resume after this many minutes")),
 });
 export const resumeSchema = z.strictObject({ type: z.literal("resumeRefresh") });
 export const notifySchema = z.strictObject({
   type: z.literal("notify"),
-  title: z.string().max(100).optional(),
-  message: z.string().max(300).optional(),
-  sound: z.boolean().optional().describe("Also play a short alert sound"),
+  title: z.optional(z.string().check(z.maxLength(100))),
+  message: z.optional(z.string().check(z.maxLength(300))),
+  sound: z.optional(z.boolean()).check(z.describe("Also play a short alert sound")),
 });
 export const logSchema = z.strictObject({
   type: z.literal("log"),
-  message: z.string().max(300).optional(),
-  level: z.enum(["info", "warn"]).optional(),
+  message: z.optional(z.string().check(z.maxLength(300))),
+  level: z.optional(z.enum(["info", "warn"])),
 });
 
 export const refreshAction: ActionHandler<z.infer<typeof refreshSchema>> = {

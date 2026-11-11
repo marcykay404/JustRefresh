@@ -8,6 +8,7 @@
  */
 import { RuleEngine } from "../core/rule-engine";
 import { RuleManagementService } from "../api/rule-api";
+import type { SchemaBundle } from "../api/capabilities";
 import { isApiRequest, isExtensionPage, toErrorResponse } from "../api/messaging";
 import { AuditRepository, ConfigRepository, HistoryRepository, RUNTIME_PREFIX, RuntimeRepository } from "../storage/repositories";
 import { chromeAlarms, chromeBrowser, chromePage, setShortTimerHandler, systemClock } from "./chrome-ports";
@@ -18,6 +19,15 @@ import { registerExternalMessaging } from "../integrations/external-messaging";
 import { bridgeStatus, setBridgeEnabled } from "../integrations/native-bridge";
 import { STATUS_LABELS, type TabRuntime } from "../core/types";
 import { tabBadge } from "../core/badge";
+
+/** The generated JSON Schemas ship as package files; read them once, when an agent first asks. */
+let schemaBundle: Promise<SchemaBundle> | null = null;
+function loadSchemas(): Promise<SchemaBundle> {
+  const read = (path: string) => fetch(chrome.runtime.getURL(path)).then((r) => r.json());
+  schemaBundle ??= Promise.all([read("schemas/rule.schema.json"), read("schemas/handler-schemas.json")]).then(([rule, handlers]) => ({ rule, handlers }));
+  schemaBundle.catch(() => (schemaBundle = null));
+  return schemaBundle;
+}
 
 const config = new ConfigRepository(chrome.storage.local);
 const runtime = new RuntimeRepository(chrome.storage.session);
@@ -42,6 +52,7 @@ const service = new RuleManagementService({
   browser: chromeBrowser,
   clock: systemClock,
   hostAccess: hasHostAccess,
+  schemas: loadSchemas,
   testSelector: (tabId, selector, includeText) => chromePage.testSelector(tabId, selector, includeText),
 });
 

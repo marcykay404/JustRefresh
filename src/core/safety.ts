@@ -26,50 +26,52 @@ export interface SafetyInput {
 
 export function decideSafety(input: SafetyInput): SafetyDecision {
   const { safety, activity } = input;
+  if (!(safety.pauseWhileTyping || safety.protectUnsavedChanges || safety.pauseOnMouse || safety.pauseOnScroll)) return ALLOWED;
+  if (!activity) return pageNotObservable(input);
+  return unsavedChanges(input, activity) ?? recentActivity(safety, activity) ?? ALLOWED;
+}
+
+const ALLOWED: SafetyDecision = { allowed: true };
+type Blocked = Exclude<SafetyDecision, { allowed: true }>;
+
+/** No activity signals (no site access, page not answering): the configured fail-safe. */
+function pageNotObservable(input: SafetyInput): SafetyDecision {
+  if (input.safety.onActivityUnavailable === "refresh") return ALLOWED;
+  return {
+    allowed: false,
+    status: "paused_activity",
+    reason: `Activity protection unavailable${input.unavailableReason ? `: ${input.unavailableReason}` : ""}`,
+    retryInMs: input.fallbackRetryMs,
+  };
+}
+
+function unsavedChanges(input: SafetyInput, activity: ActivitySnapshot): Blocked | null {
+  if (!input.safety.protectUnsavedChanges || input.ignoreUnsaved || activity.dirty === "clean") return null;
+  const reason = activity.dirty === "dirty" ? "A form on this page has unsaved changes" : "Possible unsaved changes (edited content)";
+  return { allowed: false, status: "paused_unsaved", reason, retryInMs: input.fallbackRetryMs };
+}
+
+/** Typing, mouse or scrolling within the quiet time: wait until it has passed. */
+function recentActivity(safety: SafetyConfig, activity: ActivitySnapshot): Blocked | null {
   const grace = safety.inactivityGraceSeconds * 1000;
-  const anyProtection = safety.pauseWhileTyping || safety.protectUnsavedChanges || safety.pauseOnMouse || safety.pauseOnScroll;
-
-  if (!anyProtection) return { allowed: true };
-
-  if (!activity) {
-    if (safety.onActivityUnavailable === "refresh") return { allowed: true };
-    return {
-      allowed: false,
-      status: "paused_activity",
-      reason: `Activity protection unavailable${input.unavailableReason ? `: ${input.unavailableReason}` : ""}`,
-      retryInMs: input.fallbackRetryMs,
-    };
-  }
-
-  if (safety.protectUnsavedChanges && !input.ignoreUnsaved) {
-    if (activity.dirty === "dirty") {
-      return { allowed: false, status: "paused_unsaved", reason: "A form on this page has unsaved changes", retryInMs: input.fallbackRetryMs };
-    }
-    if (activity.dirty === "unknown") {
-      return { allowed: false, status: "paused_unsaved", reason: "Possible unsaved changes (edited content)", retryInMs: input.fallbackRetryMs };
-    }
-  }
-
-  const recent = (since: number | null) => since !== null && since < grace;
+  const block = (reason: string, retryInMs: number): Blocked => ({ allowed: false, status: "paused_activity", reason, retryInMs });
   const waitFor = (since: number) => Math.max(grace - since, 1000);
-
+  const recent = (since: number | null): since is number => since !== null && since < grace;
   if (safety.pauseWhileTyping) {
-    if (activity.composing) {
-      return { allowed: false, status: "paused_activity", reason: "Text composition (IME) in progress", retryInMs: grace || 30_000 };
-    }
-    // The monitor started recently: we cannot know whether the user typed before.
-    if (activity.monitoringForMs < grace && activity.editing) {
-      return { allowed: false, status: "paused_activity", reason: "Activity monitoring just started while editing", retryInMs: waitFor(activity.monitoringForMs) };
-    }
-    const typing = [activity.sinceKeyMs, activity.sinceInputMs].filter((v): v is number => v !== null);
-    const last = typing.length ? Math.min(...typing) : null;
-    if (recent(last)) return { allowed: false, status: "paused_activity", reason: "Recent typing detected", retryInMs: waitFor(last!) };
+    const typing = typingState(activity, grace);
+    if (typing) return block(typing.reason, typing.retryInMs ?? waitFor(typing.since!));
   }
-  if (safety.pauseOnMouse && recent(activity.sincePointerMs)) {
-    return { allowed: false, status: "paused_activity", reason: "Recent mouse activity", retryInMs: waitFor(activity.sincePointerMs!) };
-  }
-  if (safety.pauseOnScroll && recent(activity.sinceScrollMs)) {
-    return { allowed: false, status: "paused_activity", reason: "Recent scrolling", retryInMs: waitFor(activity.sinceScrollMs!) };
-  }
-  return { allowed: true };
+  if (safety.pauseOnMouse && recent(activity.sincePointerMs)) return block("Recent mouse activity", waitFor(activity.sincePointerMs));
+  if (safety.pauseOnScroll && recent(activity.sinceScrollMs)) return block("Recent scrolling", waitFor(activity.sinceScrollMs));
+  return null;
+}
+
+/** Why typing protection holds the refresh: an IME composition, monitoring that just started while editing, or recent keys. */
+function typingState(activity: ActivitySnapshot, grace: number): { reason: string; since?: number; retryInMs?: number } | null {
+  if (activity.composing) return { reason: "Text composition (IME) in progress", retryInMs: grace || 30_000 };
+  // The monitor started recently: we cannot know whether the user typed before.
+  if (activity.monitoringForMs < grace && activity.editing) return { reason: "Activity monitoring just started while editing", since: activity.monitoringForMs };
+  const typing = [activity.sinceKeyMs, activity.sinceInputMs].filter((v): v is number => v !== null);
+  const last = typing.length ? Math.min(...typing) : null;
+  return last !== null && last < grace ? { reason: "Recent typing detected", since: last } : null;
 }

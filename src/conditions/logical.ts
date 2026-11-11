@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "../core/zod";
 import type { ConditionNode, EvaluationResult } from "../core/types";
 import type { ConditionHandler } from "../registries/contracts";
 import { schemaValidator } from "../registries/contracts";
@@ -6,15 +6,15 @@ import { diag } from "./helpers";
 
 export const MAX_GROUP_SIZE = 20;
 
-const node = z.looseObject({ type: z.string() }) as unknown as z.ZodType<ConditionNode>;
+const node = z.looseObject({ type: z.string() }) as unknown as z.ZodMiniType<ConditionNode>;
 
 export const allSchema = z.strictObject({
   type: z.literal("all"),
-  conditions: z.array(node).min(1).max(MAX_GROUP_SIZE),
+  conditions: z.array(node).check(z.minLength(1), z.maxLength(MAX_GROUP_SIZE)),
 });
 export const anySchema = z.strictObject({
   type: z.literal("any"),
-  conditions: z.array(node).min(1).max(MAX_GROUP_SIZE),
+  conditions: z.array(node).check(z.minLength(1), z.maxLength(MAX_GROUP_SIZE)),
 });
 export const notSchema = z.strictObject({
   type: z.literal("not"),

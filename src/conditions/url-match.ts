@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "../core/zod";
 import type { ConditionHandler } from "../registries/contracts";
 import { schemaValidator } from "../registries/contracts";
 import { compilePattern, validatePattern } from "../core/url-pattern";

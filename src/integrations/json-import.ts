@@ -6,7 +6,7 @@
  *  - a single rule object
  *  - an array of rule objects
  */
-import { z } from "zod";
+import { z } from "../core/zod";
 import type { Registries } from "../registries";
 import { validateRule } from "../core/rule-schema";
 import { urlPatternSchema } from "../core/pattern-schema";
@@ -50,10 +50,10 @@ export function exportBundle(config: Config, opts: { includeSettings: boolean; r
 
 const bundleSchema = z.looseObject({
   format: z.literal(BUNDLE_FORMAT),
-  version: z.number().int(),
-  rules: z.array(z.unknown()).max(1000),
-  exclusions: z.array(z.strictObject({ pattern: urlPatternSchema, reason: z.string().max(200).optional() })).max(1000).optional(),
-  settings: z.record(z.string(), z.unknown()).optional(),
+  version: z.int(),
+  rules: z.array(z.unknown()).check(z.maxLength(1000)),
+  exclusions: z.optional(z.array(z.strictObject({ pattern: urlPatternSchema, reason: z.optional(z.string().check(z.maxLength(200))) })).check(z.maxLength(1000))),
+  settings: z.optional(z.record(z.string(), z.unknown())),
 });
 
 const SETTINGS_KEYS: (keyof Settings)[] = [

@@ -1,9 +1,13 @@
 /**
- * Builds the authoritative JSON Schema (draft 2020-12) for rules from the
- * same zod schemas and registries used at runtime. Written to
- * schemas/rule.schema.json by `npm run gen:schema`; a test keeps it in sync.
+ * Builds the authoritative JSON Schema (draft 2020-12) for rules, and each
+ * condition/trigger/action's own schema, from the same zod schemas and
+ * registries used at runtime. Build-time only: `npm run gen:schema` writes
+ * schemas/rule.schema.json and schemas/handler-schemas.json, which ship in
+ * the extension package and are read when an agent asks for capabilities,
+ * instead of bundling zod's JSON Schema converter. A test keeps both in sync
+ * with the code.
  */
-import { z } from "zod";
+import { z } from "zod/mini";
 import type { Registries } from "../registries";
 import { defaultRegistries } from "../registries";
 import { ruleInputSchema } from "../core/rule-schema";
@@ -15,7 +19,7 @@ const strip = (s: Json): Json => {
   return rest;
 };
 
-const toSchema = (schema: z.ZodType): Json => strip(z.toJSONSchema(schema, { unrepresentable: "any", io: "input" }) as Json);
+const toSchema = (schema: z.ZodMiniType): Json => strip(z.toJSONSchema(schema, { unrepresentable: "any", io: "input" }) as Json);
 
 export function buildRuleJsonSchema(registries: Registries = defaultRegistries()): Json {
   const ref = (name: string) => ({ $ref: `#/$defs/${name}` });
@@ -46,5 +50,22 @@ export function buildRuleJsonSchema(registries: Registries = defaultRegistries()
       trigger: { oneOf: triggers },
       action: { oneOf: actions },
     },
+  };
+}
+
+/** Each registered condition/trigger/action's JSON Schema, by type (as getCapabilities reports them). */
+export function buildHandlerSchemas(registries: Registries = defaultRegistries()) {
+  const one = (schema: z.ZodMiniType): unknown => {
+    try {
+      return z.toJSONSchema(schema, { unrepresentable: "any", io: "input" });
+    } catch {
+      return {};
+    }
+  };
+  const byType = (list: { type: string; schema: z.ZodMiniType }[]) => Object.fromEntries(list.map((h) => [h.type, one(h.schema)]));
+  return {
+    conditions: byType(registries.conditions.list()),
+    triggers: byType(registries.triggers.list()),
+    actions: byType(registries.actions.list()),
   };
 }

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "../core/zod";
 import type { ConditionHandler } from "../registries/contracts";
 import { schemaValidator } from "../registries/contracts";
 import { diag } from "./helpers";
@@ -6,10 +6,7 @@ import { diag } from "./helpers";
 const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const atSchema = z
-  .string()
-  .min(1)
-  .max(40)
-  .describe('ISO-8601 timestamp (e.g. "2026-12-01T09:00:00Z") or local time of day "HH:MM"');
+  .string().check(z.minLength(1), z.maxLength(40), z.describe('ISO-8601 timestamp (e.g. "2026-12-01T09:00:00Z") or local time of day "HH:MM"'));
 
 export const timeAfterSchema = z.strictObject({ type: z.literal("time.after"), at: atSchema });
 export const timeBeforeSchema = z.strictObject({ type: z.literal("time.before"), at: atSchema });

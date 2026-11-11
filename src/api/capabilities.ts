@@ -1,24 +1,26 @@
 /**
  * Capability discovery for agents and the rule builder: every registered
- * condition/trigger/action with its description and JSON Schema.
+ * condition/trigger/action with its description and JSON Schema. The
+ * schemas are generated at build time (`npm run gen:schema`) and read from
+ * the extension package on demand, so the service worker ships neither
+ * zod's JSON Schema converter nor the schemas themselves.
  */
-import { z } from "zod";
 import type { Registries } from "../registries";
 import { MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_ACTIONS } from "../core/rule-schema";
 import { RULE_SCHEMA_VERSION } from "../core/types";
 import { FAST_MIN_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS } from "../triggers/interval";
 import type { Settings } from "../core/types";
-import { buildRuleJsonSchema } from "./json-schema";
 
-export function toJsonSchema(schema: z.ZodType): unknown {
-  try {
-    return z.toJSONSchema(schema, { unrepresentable: "any", io: "input" });
-  } catch {
-    return {};
-  }
+type SchemaMap = Record<string, unknown>;
+/** schemas/rule.schema.json and schemas/handler-schemas.json. */
+export interface SchemaBundle {
+  rule: unknown;
+  handlers: { conditions: SchemaMap; triggers: SchemaMap; actions: SchemaMap };
 }
+export const NO_SCHEMAS: SchemaBundle = { rule: {}, handlers: { conditions: {}, triggers: {}, actions: {} } };
+const schemaOf = (map: SchemaMap, type: string): unknown => map[type] ?? {};
 
-export function buildCapabilities(registries: Registries, settings?: Pick<Settings, "allowFastIntervals">) {
+export function buildCapabilities(registries: Registries, settings?: Pick<Settings, "allowFastIntervals">, schemas: SchemaBundle = NO_SCHEMAS) {
   const fast = settings?.allowFastIntervals === true;
   return {
     ruleSchemaVersion: RULE_SCHEMA_VERSION,
@@ -37,14 +39,14 @@ export function buildCapabilities(registries: Registries, settings?: Pick<Settin
       description: h.description,
       context: h.context,
       permissions: h.permissions,
-      schema: toJsonSchema(h.schema),
+      schema: schemaOf(schemas.handlers.conditions, h.type),
     })),
     triggers: registries.triggers.list().map((h) => ({
       type: h.type,
       title: h.title,
       description: h.description,
       allowsRefresh: h.allowsRefresh,
-      schema: toJsonSchema(h.schema),
+      schema: schemaOf(schemas.handlers.triggers, h.type),
     })),
     actions: registries.actions.list().map((h) => ({
       type: h.type,
@@ -52,9 +54,9 @@ export function buildCapabilities(registries: Registries, settings?: Pick<Settin
       description: h.description,
       disruptive: h.disruptive,
       permissions: h.permissions,
-      schema: toJsonSchema(h.schema),
+      schema: schemaOf(schemas.handlers.actions, h.type),
     })),
-    ruleSchema: buildRuleJsonSchema(registries),
+    ruleSchema: schemas.rule,
     evaluationOutcomes: ["matched", "not_matched", "unknown"],
     unknownPolicies: ["pause", "skip", "refresh", "stop"],
     urlPatternTypes: {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { RuleManagementService } from "@/api/rule-api";
 import type { AgentScope } from "@/core/types";
 import { createEnv } from "./fake-env";
@@ -15,6 +16,10 @@ export function createApiEnv() {
     clock: env.clock,
     hostAccess: async () => true,
     newId: (p) => `${p}-${++n}`,
+    schemas: async () => ({
+      rule: JSON.parse(readFileSync("schemas/rule.schema.json", "utf8")),
+      handlers: JSON.parse(readFileSync("schemas/handler-schemas.json", "utf8")),
+    }),
   });
   const user = { type: "user" } as const;
   const agent = (id = "native:claude") => ({ type: "agent", agentId: id }) as const;
