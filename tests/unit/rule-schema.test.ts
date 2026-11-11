@@ -33,8 +33,14 @@ describe("validateRule", () => {
     expect(v.valid).toBe(false);
     expect(v.diagnostics.map((d) => d.code)).toContain("unrecognized_keys");
 
-    const t = validateRule({ name: "x", target: { patterns: ["example.com"] }, trigger: { type: "interval", seconds: 5 } });
+    // Below the 5 s hard floor: always invalid.
+    const t = validateRule({ name: "x", target: { patterns: ["example.com"] }, trigger: { type: "interval", seconds: 4 } });
     expect(t.diagnostics[0].path).toBe("trigger.seconds");
+    // 5–29 s: only when the user enabled fast intervals (structural validation alone accepts it).
+    const fast = { name: "x", target: { patterns: ["example.com"] }, trigger: { type: "interval", seconds: 5 } };
+    expect(validateRule(fast, { allowFastIntervals: false }).diagnostics[0]).toMatchObject({ path: "trigger.seconds", code: "fast_intervals_disabled" });
+    expect(validateRule(fast, { allowFastIntervals: true }).valid).toBe(true);
+    expect(validateRule(fast).valid).toBe(true);
 
     const c = validateRule({
       name: "x",

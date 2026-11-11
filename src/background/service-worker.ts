@@ -10,7 +10,7 @@ import { RuleEngine } from "../core/rule-engine";
 import { RuleManagementService } from "../api/rule-api";
 import { isApiRequest, isExtensionPage, toErrorResponse } from "../api/messaging";
 import { AuditRepository, ConfigRepository, HistoryRepository, RUNTIME_PREFIX, RuntimeRepository } from "../storage/repositories";
-import { chromeAlarms, chromeBrowser, chromePage, systemClock } from "./chrome-ports";
+import { chromeAlarms, chromeBrowser, chromePage, setShortTimerHandler, systemClock } from "./chrome-ports";
 import { hasHostAccess, injectIntoOpenTabs, syncContentScripts } from "./host-access";
 import { createThrottle } from "./throttle";
 import { restoreTabOverrides } from "./tab-manager";
@@ -139,6 +139,7 @@ chrome.runtime.onInstalled.addListener(() => void after(() => syncContentScripts
 chrome.runtime.onStartup.addListener(() => void ready);
 
 chrome.alarms.onAlarm.addListener((alarm) => void after(() => engine.handleAlarm(alarm.name)));
+setShortTimerHandler((name) => void after(() => engine.handleAlarm(name)));
 
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.url === undefined && change.status === undefined && change.discarded === undefined) return;

@@ -76,11 +76,46 @@ async function playAlertSound() {
   }
 }
 
+/** Chrome clamps alarms to this minimum delay (Chrome 120+). */
+const ALARM_MIN_DELAY_MS = 30_000;
+const shortTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let onShortTimer: ((name: string) => void) | null = null;
+
+/** Where due short timers are delivered (same handler as chrome.alarms.onAlarm). */
+export function setShortTimerHandler(fn: (name: string) => void) {
+  onShortTimer = fn;
+}
+
+function clearShortTimer(name: string) {
+  const t = shortTimers.get(name);
+  if (t !== undefined) clearTimeout(t);
+  shortTimers.delete(name);
+}
+
+/**
+ * chrome.alarms, plus a service-worker timer for due times sooner than
+ * Chrome's 30 s alarm minimum (fast intervals, opt-in). The alarm is always
+ * set as a backstop: if the worker is terminated the alarm wakes it and the
+ * next cycle re-arms the short timer. Timers exist only while a fast tab is
+ * scheduled; nothing runs otherwise.
+ */
 export const chromeAlarms: AlarmPort = {
   async set(name, when) {
-    await chrome.alarms.create(name, { when });
+    clearShortTimer(name);
+    const delay = when - Date.now();
+    if (delay < ALARM_MIN_DELAY_MS) {
+      shortTimers.set(
+        name,
+        setTimeout(() => {
+          shortTimers.delete(name);
+          onShortTimer?.(name);
+        }, Math.max(0, delay)),
+      );
+    }
+    await chrome.alarms.create(name, { when: Math.max(when, Date.now() + ALARM_MIN_DELAY_MS) });
   },
   async clear(name) {
+    clearShortTimer(name);
     await chrome.alarms.clear(name);
   },
   async getAll() {

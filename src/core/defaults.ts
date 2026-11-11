@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   redactUrlsForAgents: true,
   nativeBridgeEnabled: false,
   allowedExtensionIds: [],
+  allowFastIntervals: false,
 };
 
 export const INTERVAL_PRESETS: { label: string; seconds: number }[] = [
@@ -35,6 +36,13 @@ export const INTERVAL_PRESETS: { label: string; seconds: number }[] = [
   { label: "15 minutes", seconds: 900 },
   { label: "30 minutes", seconds: 1800 },
   { label: "1 hour", seconds: 3600 },
+];
+
+/** Extra presets offered only when fast intervals are enabled (Settings → Advanced). */
+export const FAST_INTERVAL_PRESETS: { label: string; seconds: number }[] = [
+  { label: "5 seconds", seconds: 5 },
+  { label: "10 seconds", seconds: 10 },
+  { label: "15 seconds", seconds: 15 },
 ];
 
 export function defaultConfig(): Config {

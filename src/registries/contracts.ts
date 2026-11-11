@@ -62,7 +62,13 @@ export interface TriggerHandler<TConfig extends { type: string } = { type: strin
   nextDueAt?(config: TConfig, now: number, random: () => number): number;
   /** Whether a `refresh` action is allowed (false prevents reload loops). */
   allowsRefresh: boolean;
-  check?(config: TConfig, path: string): Diagnostic[];
+  check?(config: TConfig, path: string, ctx?: TriggerCheckContext): Diagnostic[];
+}
+
+/** User settings that affect which trigger configurations are allowed. */
+export interface TriggerCheckContext {
+  /** undefined = structural validation only (e.g. re-validating stored rules). */
+  allowFastIntervals?: boolean;
 }
 
 export interface NotifyOptions {

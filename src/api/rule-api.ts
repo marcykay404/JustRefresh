@@ -32,7 +32,7 @@ import type {
 } from "../core/types";
 import { ALL_AGENT_SCOPES, RULE_SCHEMA_VERSION } from "../core/types";
 import { defaultConfig } from "../core/defaults";
-import { MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS } from "../triggers/interval";
+import { FAST_MIN_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS } from "../triggers/interval";
 import { agentFor, ApiError, assertCanModify, authorize, redactUrl } from "./permissions";
 import { buildCapabilities } from "./capabilities";
 import { exportBundle, parseImport, type ImportReport } from "../integrations/json-import";
@@ -149,7 +149,7 @@ export class RuleManagementService {
   }
 
   private validateOrThrow(input: unknown, config: Config) {
-    const v = validateRule(input, { registries: this.registries, defaultSafety: config.settings.defaultSafety, now: this.deps.clock.now() });
+    const v = validateRule(input, { registries: this.registries, defaultSafety: config.settings.defaultSafety, now: this.deps.clock.now(), allowFastIntervals: config.settings.allowFastIntervals });
     if (!v.valid) throw new ApiError("validation_failed", "Rule failed validation", v.diagnostics);
     return v;
   }
@@ -285,7 +285,7 @@ export class RuleManagementService {
       getCapabilities: m({
         scope: "rules:read",
         params: none,
-        handler: async () => buildCapabilities(this.registries),
+        handler: async () => buildCapabilities(this.registries, (await d.config.get()).settings),
       }),
       listTabs: m({
         scope: "tabs:read",
@@ -303,7 +303,7 @@ export class RuleManagementService {
         params: z.strictObject({ rule: z.unknown() }),
         handler: async (_a, p) => {
           const config = await d.config.get();
-          const v = validateRule(p.rule, { registries: this.registries, defaultSafety: config.settings.defaultSafety, now: d.clock.now() });
+          const v = validateRule(p.rule, { registries: this.registries, defaultSafety: config.settings.defaultSafety, now: d.clock.now(), allowFastIntervals: config.settings.allowFastIntervals });
           return { valid: v.valid, diagnostics: v.diagnostics, normalized: v.normalized ? this.stripMeta(v.normalized) : undefined };
         },
       }),
@@ -352,7 +352,7 @@ export class RuleManagementService {
         params: z.strictObject({ rule: z.unknown(), tabId: z.number().int().nonnegative() }),
         handler: async (actor, p) => {
           const config = await d.config.get();
-          const v = validateRule(p.rule, { registries: this.registries, defaultSafety: config.settings.defaultSafety, now: d.clock.now() });
+          const v = validateRule(p.rule, { registries: this.registries, defaultSafety: config.settings.defaultSafety, now: d.clock.now(), allowFastIntervals: config.settings.allowFastIntervals });
           if (!v.valid) return { valid: false, diagnostics: v.diagnostics };
           const tab = await d.browser.getTab(p.tabId);
           if (!tab) throw new ApiError("not_found", "Tab not found");
@@ -490,11 +490,17 @@ export class RuleManagementService {
         scope: null,
         params: z.strictObject({
           tabId: z.number().int().nonnegative(),
-          intervalSeconds: z.number().int().min(MIN_INTERVAL_SECONDS).max(MAX_INTERVAL_SECONDS).optional(),
+          intervalSeconds: z.number().int().min(FAST_MIN_INTERVAL_SECONDS).max(MAX_INTERVAL_SECONDS).optional(),
           safety: tabSafety.optional(),
         }),
         handler: async (_a, p) => {
           const config = await d.config.get();
+          if (p.intervalSeconds !== undefined && p.intervalSeconds < MIN_INTERVAL_SECONDS && !config.settings.allowFastIntervals) {
+            throw new ApiError(
+              "invalid_params",
+              `Intervals under ${MIN_INTERVAL_SECONDS} seconds are disabled. Enable them in Settings → Advanced (minimum ${FAST_MIN_INTERVAL_SECONDS} s).`,
+            );
+          }
           await this.updateOverride(p.tabId, (o, tab) => {
             const prev = o?.mode === "custom" ? o : undefined;
             const safety = p.safety || prev?.safety ? { ...(prev?.safety ?? {}), ...(p.safety ?? {}) } : undefined;
@@ -646,6 +652,7 @@ export class RuleManagementService {
           skipDiscardedTabs: z.boolean().optional(),
           redactUrlsForAgents: z.boolean().optional(),
           nativeBridgeEnabled: z.boolean().optional(),
+          allowFastIntervals: z.boolean().optional(),
           allowedExtensionIds: z
             .array(z.string().regex(/^[a-p]{32}$/, "Chrome extension IDs are 32 letters a–p"))
             .max(50)
@@ -751,7 +758,7 @@ export class RuleManagementService {
         mutates: true,
         handler: async (_a, p) => {
           const config = await d.config.get();
-          const parsed = parseImport(p.json, { registries: this.registries, defaultSafety: config.settings.defaultSafety, now: d.clock.now() });
+          const parsed = parseImport(p.json, { registries: this.registries, defaultSafety: config.settings.defaultSafety, now: d.clock.now(), allowFastIntervals: config.settings.allowFastIntervals });
           const report: ImportReport = { imported: [], skipped: [], errors: parsed.errors, warnings: parsed.warnings };
           if (parsed.fatal) return report;
           await d.config.update((c) => {

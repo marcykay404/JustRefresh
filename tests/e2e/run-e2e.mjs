@@ -95,6 +95,19 @@ await test("per-tab refresh: alarm reloads the tab and navigation completion is 
   await page.close();
 });
 
+await test("fast intervals (opt-in): a 5 s tab refreshes on real time, below Chrome's 30 s alarm minimum", async () => {
+  await call("updateSettings", { allowFastIntervals: true });
+  const page = await context.newPage();
+  await page.goto(`${base}/fast`);
+  const tabId = await tabIdFor(`${base}/fast`);
+  await call("startTab", { tabId, intervalSeconds: 5 });
+  // No manual alarm firing: the service-worker short timer drives it.
+  await waitFor(() => (loads.get("/fast") ?? 0) >= 3, "two timed reloads within ~13 s", 13_000);
+  await call("stopTab", { tabId });
+  await call("updateSettings", { allowFastIntervals: false });
+  await page.close();
+});
+
 await test("typing protection postpones refresh; unsaved form blocks manual refresh", async () => {
   const page = await context.newPage();
   await page.goto(`${base}/form`);

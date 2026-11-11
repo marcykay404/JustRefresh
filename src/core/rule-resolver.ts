@@ -16,6 +16,18 @@ import { matchesAny, patternToString, restrictedReason } from "./url-pattern";
 import { DEFAULT_SAFETY } from "./defaults";
 import type { Config, Exclusion, Rule, TabOverride } from "./types";
 import { RULE_SCHEMA_VERSION } from "./types";
+import { clampToStandard, type IntervalTrigger } from "../triggers/interval";
+
+/**
+ * The rule as it runs under the user's settings: while fast intervals are
+ * disabled, a stored sub-30 s interval runs at the standard minimum instead
+ * (the rule itself is kept, so re-enabling restores it).
+ */
+function effective(rule: Rule, config: Config): Rule {
+  if (config.settings.allowFastIntervals || rule.trigger.type !== "interval") return rule;
+  const trigger = clampToStandard(rule.trigger as IntervalTrigger);
+  return trigger === rule.trigger ? rule : { ...rule, trigger };
+}
 
 export type Resolution =
   | { kind: "restricted"; reason: string }
@@ -78,8 +90,8 @@ export function resolveTab(tab: { id: number; url?: string }, config: Config): R
   const override = config.tabOverrides[String(tab.id)];
   const controllerFor = (): { controller: Rule; source: "tab" | "rule"; candidates: Rule[] } | null => {
     const candidates = matchingRules(Object.values(config.rules), url);
-    if (override?.mode === "custom") return { controller: ruleFromTabOverride(override, config), source: "tab", candidates };
-    if (candidates.length) return { controller: candidates[0], source: "rule", candidates };
+    if (override?.mode === "custom") return { controller: effective(ruleFromTabOverride(override, config), config), source: "tab", candidates };
+    if (candidates.length) return { controller: effective(candidates[0], config), source: "rule", candidates };
     return null;
   };
 

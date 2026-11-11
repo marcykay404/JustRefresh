@@ -3,6 +3,13 @@
 * **Timing is best-effort.** Chrome alarms have a 30-second minimum for packed
   extensions (Chrome 120+), may be delayed under load, and fire late (once)
   after sleep. The extension never assumes a reload happened at an exact time.
+* **Fast intervals (under 30 s) are opt-in** (Settings → Advanced, hard floor
+  5 s). Below the alarm minimum the scheduler uses a service-worker timer, with
+  a 30 s alarm as backstop: if Chrome terminates the worker, the next fast
+  refresh can be up to 30 s late, then the timer resumes. A fast tab keeps the
+  worker awake while it is scheduled. To limit load on sites, at most one fast
+  automatic refresh per site (host) happens every 5 s across all tabs.
+  Turning the setting off keeps fast rules but runs them every 30 s.
 * **Service-worker lifetime.** The worker is terminated when idle; all state
   is persisted and alarms wake it. The in-memory per-tab lock exists only
   while the worker is alive; the persisted `pendingReload` guard and

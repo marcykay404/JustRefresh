@@ -612,7 +612,7 @@
       "oneOf": [
         {
           "title": "Every interval",
-          "description": "Fires on a fixed (optionally randomized) interval using chrome.alarms. Minimum 30 seconds; timing is best-effort.",
+          "description": "Fires on a fixed (optionally randomized) interval. Minimum 30 seconds, or 5 seconds when the user enabled fast intervals in Settings; timing is best-effort.",
           "type": "object",
           "properties": {
             "type": {
@@ -621,13 +621,14 @@
             },
             "seconds": {
               "type": "integer",
-              "minimum": 30,
-              "maximum": 604800
+              "minimum": 5,
+              "maximum": 604800,
+              "description": "Seconds between refreshes: ≥30, or ≥5 when fast intervals are enabled in Settings"
             },
             "randomMaxSeconds": {
               "description": "If set, each interval is chosen uniformly in [seconds, randomMaxSeconds]",
               "type": "integer",
-              "minimum": 30,
+              "minimum": 5,
               "maximum": 604800
             }
           },

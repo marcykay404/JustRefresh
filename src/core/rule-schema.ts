@@ -150,6 +150,8 @@ export interface ValidateOptions {
   registries?: Registries;
   defaultSafety?: SafetyConfig;
   now?: number;
+  /** Settings → fast intervals. Omit for structural validation only. */
+  allowFastIntervals?: boolean;
 }
 
 export function validateRule(input: unknown, opts: ValidateOptions = {}): ValidationResult {
@@ -176,7 +178,7 @@ export function validateRule(input: unknown, opts: ValidateOptions = {}): Valida
   } else {
     const parsed = trigger.schema.safeParse(r.trigger);
     if (!parsed.success) out.push(...zodDiagnostics(parsed.error, "trigger"));
-    else if (trigger.check) out.push(...trigger.check(parsed.data, "trigger"));
+    else if (trigger.check) out.push(...trigger.check(parsed.data, "trigger", { allowFastIntervals: opts.allowFastIntervals }));
   }
 
   // Conditions

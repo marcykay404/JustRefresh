@@ -80,6 +80,21 @@ export function SettingsView() {
         <SiteAccess />
 
         <div className="card col">
+          <h2>Advanced</h2>
+          <Toggle
+            checked={s.allowFastIntervals}
+            onChange={(v) => update({ allowFastIntervals: v })}
+            label={<span>Allow intervals under 30 seconds <span className="muted small">(minimum 5 seconds)</span></span>}
+          />
+          <p className="small muted" style={{ margin: 0 }}>
+            For time-critical pages such as restocks or appointment slots. Refreshing this often puts real load on the website and may break its
+            terms of use, so JustRefresh never refreshes faster than every 5 seconds, and refreshes any one site at most once every 5 seconds
+            across all tabs. Fast intervals keep the extension's background worker awake while such a tab is scheduled. Turning this off keeps
+            existing fast rules but runs them every 30 seconds.
+          </p>
+        </div>
+
+        <div className="card col">
           <h2>History & privacy</h2>
           <Field label="Maximum history entries">
             <input type="number" min={10} max={5000} defaultValue={s.historyLimit} onBlur={(e) => update({ historyLimit: Number(e.target.value) })} />

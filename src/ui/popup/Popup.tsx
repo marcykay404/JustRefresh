@@ -3,7 +3,7 @@ import { api, originOf, requestOrigins } from "../shared/api";
 import { useApi, useNow } from "../shared/hooks";
 import { formatDuration, formatTime } from "../shared/format";
 import { ErrorBox, StatusPill, Toggle } from "../shared/components";
-import { INTERVAL_PRESETS } from "../../core/defaults";
+import { FAST_INTERVAL_PRESETS, INTERVAL_PRESETS } from "../../core/defaults";
 import type { SafetyConfig, Settings, TabInfo, TabOverride, TabRuntime } from "../../core/types";
 
 interface TabState {
@@ -125,10 +125,20 @@ export function Popup() {
     setDeclinedFor(null);
   };
 
+  const fastAllowed = overview.data?.settings.allowFastIntervals === true;
+  const minSeconds = fastAllowed ? 5 : 30;
+  const presets = fastAllowed ? [...FAST_INTERVAL_PRESETS, ...INTERVAL_PRESETS] : INTERVAL_PRESETS;
+
   /** Changing the interval applies at once only while auto refresh is on. */
   const setInterval = (seconds: number) => {
-    if (seconds < 30) {
-      setError(new Error("The minimum interval is 30 seconds"));
+    if (seconds < minSeconds) {
+      setError(
+        new Error(
+          fastAllowed
+            ? "The minimum interval is 5 seconds"
+            : "The minimum interval is 30 seconds (shorter intervals can be enabled in Dashboard → Settings → Advanced)",
+        ),
+      );
       return;
     }
     if (active) enable(seconds);
@@ -203,19 +213,19 @@ export function Popup() {
             <div className="row">
               <select
                 aria-label="Refresh interval"
-                value={INTERVAL_PRESETS.some((p) => p.seconds === shownInterval) ? shownInterval : "custom"}
+                value={presets.some((p) => p.seconds === shownInterval) ? shownInterval : "custom"}
                 onChange={(e) => e.target.value !== "custom" && setInterval(Number(e.target.value))}
               >
-                {INTERVAL_PRESETS.map((p) => (
+                {presets.map((p) => (
                   <option key={p.seconds} value={p.seconds}>Every {p.label}</option>
                 ))}
-                {!INTERVAL_PRESETS.some((p) => p.seconds === shownInterval) && <option value="custom">Every {shownInterval}s</option>}
+                {!presets.some((p) => p.seconds === shownInterval) && <option value="custom">Every {shownInterval}s</option>}
               </select>
               <input
                 aria-label="Custom interval"
                 style={{ width: 64 }}
                 type="number"
-                min={1}
+                min={customUnit === 1 ? minSeconds : 1}
                 placeholder="Custom"
                 value={customValue}
                 onChange={(e) => setCustomValue(e.target.value)}
