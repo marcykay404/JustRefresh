@@ -80,3 +80,31 @@ describe("re-checking only the tabs a change affects", () => {
     expect(writes).toEqual([]);
   });
 });
+
+describe("changes made at the same time (review)", () => {
+  it("a later change can't be overtaken by an earlier one stuck behind a busy tab", async () => {
+    const env = createApiEnv();
+    await env.service.call(env.user, "createRule", { rule: rule("a", "a.test") });
+    await env.service.call(env.user, "enableRule", { id: "a" });
+    env.browser.addTab(1, "https://a.test/1");
+    env.browser.addTab(2, "https://a.test/2");
+    await env.engine.reconcileAll("wake");
+
+    // Tab 1 is busy (e.g. a page check in progress).
+    let release!: () => void;
+    const busy = (env.engine as unknown as { withLock: (id: number, fn: () => Promise<void>) => Promise<void> }).withLock(1, () => new Promise<void>((r) => (release = r)));
+
+    const first = env.service.call(env.user, "disableRule", { id: "a" });
+    await new Promise((r) => setTimeout(r, 0));
+    const second = (async () => {
+      await env.service.call(env.user, "createRule", { rule: { ...rule("c", "a.test"), target: { patterns: ["https://a.test/2*"] } } });
+      await env.service.call(env.user, "enableRule", { id: "c" });
+    })();
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    await Promise.all([busy, first, second]);
+
+    expect(await env.runtime.get(2)).toMatchObject({ status: "scheduled", controllerId: "c" });
+    expect(env.alarms.alarms.has(alarmName(2))).toBe(true);
+  });
+});

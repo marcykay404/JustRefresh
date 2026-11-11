@@ -109,9 +109,10 @@ Exactly one controller per tab, so rules never cause duplicate reloads.
 * Countdown UIs compute from persisted `nextDueAt`.
 * After a change through the API (an agent's or the user's), only the tabs
   it affects are re-checked: each tab's resolution (kind, controller,
-  revision, effective trigger, reason) is compared with the one under the
+  revision, source, reason) is compared with the one under the
   config from before the change. A tab's run state is written only when it
-  actually changed, so a wake with nothing to do writes nothing.
+  actually changed, so a wake with nothing to do writes nothing. These
+  re-checks run one at a time, so a later one never overtakes an earlier one.
 
 ## Permissions
 
