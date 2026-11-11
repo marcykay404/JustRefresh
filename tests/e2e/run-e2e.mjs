@@ -638,16 +638,31 @@ await test("element picker: a click picks the element's selector without pressin
     window.picked = [];
     chrome.runtime.onMessage.addListener((m, sender) => void (m?.channel === "justrefresh-pick" && window.picked.push({ ...m, tab: sender.tab?.id })));
   });
-  const startPicker = () =>
-    dash.evaluate((id) => chrome.runtime.sendMessage({ channel: "justrefresh-api", method: "startPicker", params: { tabId: id } }), tabId);
-  assert.equal((await startPicker()).ok, true);
-  await page.hover("#add");
-  await page.click("#add");
+  const startPicker = (session) =>
+    dash.evaluate(
+      ([id, s]) => chrome.runtime.sendMessage({ channel: "justrefresh-api", method: "startPicker", params: { tabId: id, session: s } }),
+      [tabId, session],
+    );
+  // The picker's overlay covers the page, so point and click where the element is, like a user.
+  const at = async (sel) => {
+    const b = await page.locator(sel).boundingBox();
+    return [b.x + b.width / 2, b.y + b.height / 2];
+  };
+  assert.equal((await startPicker("e2e-1")).ok, true);
+  await page.mouse.move(...(await at("#add")));
+  await page.mouse.click(...(await at("#add")));
   await waitFor(() => dash.evaluate(() => window.picked.length === 1), "picked");
-  assert.deepEqual(await dash.evaluate(() => window.picked[0]), { channel: "justrefresh-pick", selector: "#add", count: 1, tab: tabId });
+  assert.deepEqual(await dash.evaluate(() => window.picked[0]), {
+    channel: "justrefresh-pick",
+    session: "e2e-1",
+    selector: "#add",
+    count: 1,
+    positional: false,
+    tab: tabId,
+  });
   assert.equal(await page.locator("#count").textContent(), "0", "picking didn't press the button");
-  await startPicker();
-  await page.hover("#buy");
+  await startPicker("e2e-2");
+  await page.mouse.move(...(await at("#buy")));
   await page.keyboard.press("Escape");
   await waitFor(() => dash.evaluate(() => window.picked.length === 2), "cancelled");
   assert.equal(await dash.evaluate(() => window.picked[1].selector), null);
@@ -679,8 +694,9 @@ await test("Rule Builder: Pick fills the selector with the element clicked in th
   await builder.getByLabel("Tab to test").selectOption(String(tabId));
   await builder.getByRole("button", { name: "Pick", exact: true }).click();
   await builder.getByRole("button", { name: "Picking… Cancel" }).waitFor();
-  await page.hover("#add");
-  await page.click("#add");
+  const box = await page.locator("#add").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await waitFor(async () => (await builder.getByLabel("CSS selector").first().inputValue()) === "#add", "selector filled in");
   assert.equal(await page.locator("#count").textContent(), "0");
   await builder.close();

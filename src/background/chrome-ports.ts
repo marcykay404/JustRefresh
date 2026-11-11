@@ -54,11 +54,21 @@ export const chromeBrowser: BrowserPort = {
    * A local webhook. Sent as a "simple" request (text/plain, no credentials),
    * so it needs no site access to localhost and no CORS setup on the
    * receiving program; the reply can't be read, only whether it got there.
+   * (no-cors can't refuse redirects; a program that redirects is passing the
+   * message on, as it could anyway once it has it.)
    */
   async post(url, body) {
     if (!isLocalWebhookUrl(url)) throw new Error("Not a local address");
     await withTimeout(
-      fetch(url, { method: "POST", mode: "no-cors", credentials: "omit", cache: "no-store", headers: { "content-type": "text/plain;charset=UTF-8" }, body }),
+      fetch(url, {
+        method: "POST",
+        mode: "no-cors",
+        credentials: "omit",
+        cache: "no-store",
+
+        headers: { "content-type": "text/plain;charset=UTF-8" },
+        body,
+      }),
       WEBHOOK_TIMEOUT_MS,
       "Webhook",
     );
@@ -203,13 +213,13 @@ async function ensureContent(
   }
 }
 
-const done = async (tabId: number, kind: "saveScroll" | "pick" | "cancelPick") => {
+const done = async (tabId: number, kind: "saveScroll" | "cancelPick") => {
   await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind }, "done");
 };
 
 export const chromePage: PagePort & {
   testSelector(tabId: number, selector: string, includeText: boolean): Promise<unknown>;
-  startPicker(tabId: number): Promise<{ ok: true } | { ok: false; error: string }>;
+  startPicker(tabId: number, session: string): Promise<{ ok: true } | { ok: false; error: string }>;
   cancelPicker(tabId: number): Promise<void>;
 } = {
   async evaluate(tabId: number, leaves: ConditionNode[], includeText: boolean): Promise<EvaluationResult[]> {
@@ -248,10 +258,10 @@ export const chromePage: PagePort & {
     if ((await ensureContent(tabId)).ok) await done(tabId, "saveScroll");
   },
   /** Show the element picker in the tab and bring the tab to the front; the choice arrives as a PickMessage. */
-  async startPicker(tabId) {
+  async startPicker(tabId, session) {
     const ok = await ensureContent(tabId);
     if (!ok.ok) return { ok: false, error: ok.reason };
-    await done(tabId, "pick");
+    await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "pick", session }, "done");
     const tab = await chrome.tabs.update(tabId, { active: true });
     if (tab) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
     return { ok: true };

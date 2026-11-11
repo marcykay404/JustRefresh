@@ -149,8 +149,8 @@ export function SettingsView() {
           />
           <p className="small muted" style={{ margin: 0 }}>
             For connecting your own tools. A rule's “Call a local webhook” action sends a short message (the rule, the tab, and what was found; the page address
-            only if the rule asks for it) to a program on this computer: localhost, 127.0.0.1 or [::1]. Nothing is sent anywhere else. Off by default, and never
-            included in exports.
+            only if the rule asks for it) to a program on this computer: localhost, 127.0.0.1 or [::1]. JustRefresh sends it nowhere else; what that program
+            does with it is up to the program. Off by default, and never included in exports.
           </p>
         </div>
 

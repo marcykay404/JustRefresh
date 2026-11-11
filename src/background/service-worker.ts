@@ -58,7 +58,7 @@ const service = new RuleManagementService({
   hostAccess: hasHostAccess,
   schemas: loadSchemas,
   testSelector: (tabId, selector, includeText) => chromePage.testSelector(tabId, selector, includeText),
-  picker: { start: (tabId) => chromePage.startPicker(tabId), cancel: (tabId) => chromePage.cancelPicker(tabId) },
+  picker: { start: (tabId, session) => chromePage.startPicker(tabId, session), cancel: (tabId) => chromePage.cancelPicker(tabId) },
 });
 
 /* ------------------------------------------------------------------ */

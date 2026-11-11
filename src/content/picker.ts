@@ -10,16 +10,23 @@ import { selectorFor } from "./selector";
 export interface PickResult {
   selector: string;
   count: number;
+  /** The selector counts siblings (:nth-of-type): it may point at another item if the list changes. */
+  positional: boolean;
 }
+
+/** How a picker ended: picked, cancelled by the user, or replaced by a newer picker. */
+export type PickOutcome = { picked: PickResult } | { cancelled: true } | { replaced: true };
 
 const BLOCKED = ["click", "dblclick", "auxclick", "contextmenu", "mousedown", "mouseup", "pointerdown", "pointerup", "submit"];
 
-let active: (() => void) | null = null;
+let active: ((how: "cancelled" | "replaced") => void) | null = null;
 
 /** Stop a picker that is running (as if cancelled). */
 export function cancelPicker() {
-  active?.();
+  active?.("cancelled");
 }
+
+export const isPositional = (selector: string) => selector.includes(":nth-of-type(");
 
 function countOf(doc: Document, selector: string): number {
   try {
@@ -31,7 +38,9 @@ function countOf(doc: Document, selector: string): number {
 
 function overlay(doc: Document) {
   const host = doc.createElement("div");
-  host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
+  // The overlay takes the pointer itself: nothing on the page, or inside its
+  // iframes (a payment form, say), can be pressed while picking.
+  host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483647;cursor:crosshair;";
   const root = host.attachShadow({ mode: "closed" });
   root.innerHTML = `<style>
     .box{position:fixed;border:2px solid #2563eb;background:rgba(37,99,235,.12);border-radius:3px;pointer-events:none;display:none}
@@ -43,9 +52,9 @@ function overlay(doc: Document) {
   return { host, box: root.querySelector(".box") as HTMLElement, tip: root.querySelector(".tip") as HTMLElement };
 }
 
-/** Start picking; `onDone` gets the choice, or null when cancelled. Starting again replaces a running picker. */
-export function startPicker(win: Window, onDone: (r: PickResult | null) => void) {
-  cancelPicker();
+/** Start picking; `onDone` says how it ended. Starting again replaces a running picker. */
+export function startPicker(win: Window, onDone: (r: PickOutcome) => void) {
+  active?.("replaced");
   const doc = win.document;
   const { host, box, tip } = overlay(doc);
   let target: Element | null = null;
@@ -65,23 +74,28 @@ export function startPicker(win: Window, onDone: (r: PickResult | null) => void)
     const n = countOf(doc, selector);
     const b = doc.createElement("b");
     b.textContent = selector;
-    tip.append(b, ` — ${n} ${n === 1 ? "match" : "matches"} · ${help}`);
+    const position = isPositional(selector) ? " · by position: may pick another item if the list changes" : "";
+    tip.append(b, ` — ${n} ${n === 1 ? "match" : "matches"}${position} · ${help}`);
   };
 
-  const finish = (pick: boolean) => {
+  const finish = (how: "picked" | "cancelled" | "replaced") => {
     for (const t of BLOCKED) win.removeEventListener(t, onBlocked, true);
     win.removeEventListener("mousemove", onMove, true);
     win.removeEventListener("keydown", onKey, true);
     win.removeEventListener("scroll", render, true);
     host.remove();
     active = null;
-    const selector = pick && target ? selectorFor(target) : null;
-    onDone(selector ? { selector, count: countOf(doc, selector) } : null);
+    if (how === "picked" && target) {
+      const selector = selectorFor(target);
+      return onDone({ picked: { selector, count: countOf(doc, selector), positional: isPositional(selector) } });
+    }
+    onDone(how === "replaced" ? { replaced: true } : { cancelled: true });
   };
 
   const onMove = (e: MouseEvent) => {
-    const el = doc.elementFromPoint(e.clientX, e.clientY);
-    if (!el || el === host || el === target) return;
+    // The overlay is on top: look underneath it.
+    const el = doc.elementsFromPoint(e.clientX, e.clientY).find((x) => x !== host && x !== doc.documentElement);
+    if (!el || el === target) return;
     target = el;
     narrower.length = 0;
     render();
@@ -89,11 +103,11 @@ export function startPicker(win: Window, onDone: (r: PickResult | null) => void)
   const onBlocked = (e: Event) => {
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (e.type === "click" && (e as MouseEvent).button === 0 && target) finish(true);
+    if (e.type === "click" && (e as MouseEvent).button === 0 && target) finish("picked");
   };
   const onKey = (e: KeyboardEvent) => {
     const moves: Record<string, () => void> = {
-      Escape: () => finish(false),
+      Escape: () => finish("cancelled"),
       ArrowUp: () => {
         const parent = target?.parentElement;
         if (!target || !parent || parent === doc.documentElement) return;
@@ -116,6 +130,6 @@ export function startPicker(win: Window, onDone: (r: PickResult | null) => void)
   win.addEventListener("mousemove", onMove, true);
   win.addEventListener("keydown", onKey, true);
   win.addEventListener("scroll", render, { capture: true, passive: true });
-  active = () => finish(false);
+  active = (how) => finish(how);
   render();
 }

@@ -16,10 +16,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createLineDecoder, createMcpHandler, createNativeDecoder, encodeNative, isNonce, newNonce, proofOf, sameSecret, sanitizeClientId } from "./lib.mjs";
-import { install, parseInstallArgs, uninstall } from "./install-lib.mjs";
+import { install, parseInstallArgs, restrictToUser, uninstall } from "./install-lib.mjs";
 
 const DIR = process.env.JUSTREFRESH_BRIDGE_DIR ?? path.join(os.homedir(), ".justrefresh");
 const isWin = process.platform === "win32";
@@ -27,21 +26,13 @@ const SOCKET = isWin ? `\\\\.\\pipe\\justrefresh-${os.userInfo().username}` : pa
 const TOKEN_FILE = path.join(DIR, "token");
 const log = (...a) => process.stderr.write(`[justrefresh-bridge] ${a.join(" ")}\n`);
 const line = (msg) => JSON.stringify(msg) + "\n";
+/** Both ends must finish the handshake within this time. */
+const HANDSHAKE_MS = 10_000;
 
-/**
- * The folder holds the token and agent keys: only this user may read it.
- * Unix: mode 0700. Windows: file modes don't apply, so drop inherited access
- * and grant this account alone (icacls).
- */
+/** The folder holds the token and agent keys: only this user may read it (see restrictToUser). */
 function ensureDir() {
   fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
-  if (!isWin) return fs.chmodSync(DIR, 0o700);
-  const account = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${os.userInfo().username}` : os.userInfo().username;
-  try {
-    execFileSync("icacls", [DIR, "/inheritance:r", "/grant:r", `${account}:(OI)(CI)F`], { stdio: "ignore" });
-  } catch (e) {
-    log(`Could not limit ${DIR} to your Windows account (${e.message}); other accounts on this PC may be able to read it.`);
-  }
+  restrictToUser(DIR, { log });
 }
 
 /* ------------------------------------------------------------------ */
@@ -92,18 +83,26 @@ function runNativeHost() {
   const server = net.createServer((socket) => {
     const challenge = newNonce();
     let client = null;
+    // A client that doesn't finish the handshake in time is dropped.
+    const unproven = setTimeout(() => socket.destroy(), HANDSHAKE_MS);
     socket.write(line({ type: "challenge", nonce: challenge }));
     socket.on(
       "data",
-      createLineDecoder((msg) => {
-        if (client) return relay(socket, client, msg);
-        client = admit(msg, token, challenge);
-        if (!client) return void socket.end(line({ type: "error", error: "Invalid token" }));
-        socket.write(line({ type: "ready", proof: proofOf(token, "server", msg.nonce) }));
-      }),
+      createLineDecoder(
+        (msg) => {
+          if (client) return relay(socket, client, msg);
+          client = admit(msg, token, challenge);
+          if (!client) return void socket.end(line({ type: "error", error: "Invalid token" }));
+          clearTimeout(unproven);
+          socket.write(line({ type: "ready", proof: proofOf(token, "server", msg.nonce) }));
+        },
+        undefined,
+        () => socket.destroy(), // garbage on the socket: drop that client
+      ),
     );
     socket.on("error", () => undefined);
     socket.on("close", () => {
+      clearTimeout(unproven);
       for (const [k, v] of pending) if (v.socket === socket) pending.delete(k);
     });
   });
@@ -133,9 +132,15 @@ function agentKeys(agentId) {
       }
     },
     save(key) {
-      ensureDir();
-      fs.mkdirSync(path.dirname(file()), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(file(), key, { mode: 0o600 });
+      try {
+        ensureDir();
+        fs.mkdirSync(path.dirname(file()), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(file(), key, { mode: 0o600 });
+        if (!isWin) fs.chmodSync(file(), 0o600); // an existing file keeps its old mode otherwise
+      } catch (e) {
+        // Not fatal: until a key is used, the extension issues a new one on the next call.
+        log(`Could not save this agent's key: ${e.message}`);
+      }
     },
   };
 }
@@ -151,11 +156,11 @@ function runMcp() {
 
   function onMessage(msg, handshake) {
     if (msg.type) return handshake(msg);
+    // A key from the extension is kept even if the call it came with already timed out.
+    if (typeof msg.agentKey === "string" && /^[0-9a-f]{64}$/.test(msg.agentKey)) keys.save(msg.agentKey);
     const w = waiting.get(msg.id);
     if (!w) return;
     waiting.delete(msg.id);
-    // Approved for the first time: keep the key the extension issued.
-    if (typeof msg.agentKey === "string") keys.save(msg.agentKey);
     const { agentKey: _k, ...reply } = msg;
     w(reply);
   }
@@ -171,23 +176,35 @@ function runMcp() {
         return;
       }
       const ours = newNonce();
+      let proven = false;
+      const fail = (message) => {
+        socket.destroy();
+        reject(new Error(message));
+      };
+      const timer = setTimeout(() => fail("The bridge didn't answer in time."), HANDSHAKE_MS);
       const handshake = (msg) => {
         if (msg.type === "challenge" && isNonce(msg.nonce)) {
           return socket.write(
             line({ type: "hello", proof: proofOf(token, "client", msg.nonce), nonce: ours, client: { id: agentId(), name: clientInfo.name } }),
           );
         }
-        if (msg.type === "ready" && sameSecret(msg.proof, proofOf(token, "server", ours))) return resolve();
-        socket.destroy();
-        reject(new Error(msg.type === "error" ? msg.error : "The bridge couldn't prove it is JustRefresh's; not connecting."));
+        clearTimeout(timer);
+        if (msg.type === "ready" && sameSecret(msg.proof, proofOf(token, "server", ours))) {
+          proven = true;
+          return resolve();
+        }
+        fail(msg.type === "error" ? msg.error : "The bridge couldn't prove it is JustRefresh's; not connecting.");
       };
       socket = net.createConnection(SOCKET);
       socket.on("error", (e) => {
         ready = null;
+        clearTimeout(timer);
         reject(new Error(`Cannot reach the extension bridge: ${e.message}`));
       });
       socket.on("close", () => {
         ready = null;
+        clearTimeout(timer);
+        if (!proven) reject(new Error("The bridge closed the connection before it was ready."));
         for (const w of waiting.values()) w({ ok: false, error: { code: "internal", message: "Bridge disconnected" } });
         waiting.clear();
       });
@@ -230,10 +247,14 @@ function runMcp() {
 
   process.stdin.on(
     "data",
-    createLineDecoder(async (msg) => {
-      const res = await handle(msg);
-      if (res) process.stdout.write(line(res));
-    }),
+    createLineDecoder(
+      async (msg) => {
+        const res = await handle(msg);
+        if (res) process.stdout.write(line(res));
+      },
+      undefined,
+      (why) => process.stdout.write(line({ jsonrpc: "2.0", id: null, error: { code: -32700, message: `Parse error: ${why}` } })),
+    ),
   );
   process.stdin.on("end", () => process.exit(0));
 }

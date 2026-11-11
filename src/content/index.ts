@@ -62,7 +62,14 @@ if (g[FLAG] !== version) {
     },
     pick: (msg) => {
       startPicker(window, (r) => {
-        const message: PickMessage = { channel: PICK_CHANNEL, selector: r?.selector ?? null, count: r?.count };
+        const picked = "picked" in r ? r.picked : null;
+        const message: PickMessage = {
+          channel: PICK_CHANNEL,
+          session: msg.session,
+          selector: picked?.selector ?? null,
+          ...(picked ? { count: picked.count, positional: picked.positional } : {}),
+          ...("replaced" in r ? { replaced: true } : {}),
+        };
         void chrome.runtime.sendMessage(message).catch(() => undefined);
       });
       return { requestId: msg.requestId, kind: "done" };

@@ -117,3 +117,13 @@ describe("unknown trigger or condition names (review)", () => {
     expect(describeRule({ trigger: { type: "__proto__" } as never, actions })).toBe("Refreshing on its __proto__ trigger");
   });
 });
+
+it("describes click and webhook actions plainly, saying where a webhook sends and whether the page address goes too", async () => {
+  const { actionsPhrase } = await import("@/ui/popup/describe");
+  expect(actionsPhrase([{ type: "click", selector: "#add" } as never, { type: "stopRefresh" }])).toBe("click #add and stop");
+  expect(actionsPhrase([{ type: "webhook", url: "http://localhost:9000/hook" } as never])).toBe("send a message to http://localhost:9000/hook");
+  expect(actionsPhrase([{ type: "webhook", url: "http://127.0.0.1:2375/x", includePageUrl: true } as never])).toBe(
+    "send a message to http://127.0.0.1:2375/x (with the page address)",
+  );
+  expect(actionsPhrase([{ type: "refresh", keepScroll: true } as never])).toBe("refresh (keeping the scroll position)");
+});

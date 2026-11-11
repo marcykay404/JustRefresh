@@ -342,7 +342,12 @@ export abstract class CycleEngine extends EngineBase {
         if (!allowRefresh) throw new Error("Clicking is not allowed in this phase");
         const { activity, reason } = await this.page.activity(tab.id);
         this.checkSafety(rule, tab, run.rt, activity, reason, this.now());
-        return this.page.click(tab.id, selector);
+        const result = await this.page.click(tab.id, selector);
+        // The rule's later actions (often "stop") still run: say so, rather than only in History.
+        if (!result.ok && config.settings.notificationsEnabled) {
+          await this.deps.browser.notify(`justrefresh:click:${tab.id}:${this.now()}`, `${rule.name}: couldn't click`, result.error);
+        }
+        return result;
       },
       webhook: (url, payload) => this.callWebhook(config, url, payload),
       setStatus: (status, reason, resumeAt) => {

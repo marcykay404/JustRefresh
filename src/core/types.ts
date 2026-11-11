@@ -272,11 +272,13 @@ export interface AgentRecord {
   createdAt: number;
   lastSeenAt?: number;
   /**
-   * Desktop (bridge) agents: SHA-256 of the key issued when the agent was first
-   * seen approved. Afterwards every call must carry that key, so another program
-   * can't take over an approved agent by using its name.
+   * Desktop (bridge) agents: SHA-256 of the key bound to the agent (see
+   * checkAgentKey). Every call must carry that key, so a program that only
+   * knows the agent's name can't use its approval.
    */
   keyHash?: string;
+  /** The key issued last and not yet used by the agent (bound on first use). */
+  pendingKeyHash?: string;
 }
 
 export interface ApprovalRequest {

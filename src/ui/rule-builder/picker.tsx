@@ -15,45 +15,68 @@ async function focusThisPage() {
   await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
 }
 
+const newSession = () => `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
 export function PickButton({ tabId, onPicked }: { tabId: number | null; onPicked: (selector: string) => void }) {
-  const [picking, setPicking] = useState(false);
+  /** The running pick (its session), or null. */
+  const [session, setSession] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [positional, setPositional] = useState(false);
   const picked = useRef(onPicked);
   picked.current = onPicked;
 
   useEffect(() => {
-    if (!picking || tabId === null) return;
+    if (session === null || tabId === null) return;
     const onMessage = (msg: unknown, sender: chrome.runtime.MessageSender) => {
       const m = msg as PickMessage | undefined;
-      // Only the answer from the tab we asked, sent by our own content script.
-      if (m?.channel !== PICK_CHANNEL || sender.id !== chrome.runtime.id || sender.tab?.id !== tabId) return;
-      setPicking(false);
-      if (m.selector) picked.current(m.selector);
+      // Only this button's pick, from the tab we asked, sent by our own content script.
+      if (m?.channel !== PICK_CHANNEL || m.session !== session || sender.id !== chrome.runtime.id || sender.tab?.id !== tabId) return;
+      setSession(null);
+      if (m.replaced) return; // another Pick took over that tab
+      if (m.selector) {
+        picked.current(m.selector);
+        setPositional(m.positional === true);
+      }
       void focusThisPage();
     };
     chrome.runtime.onMessage.addListener(onMessage);
-    return () => chrome.runtime.onMessage.removeListener(onMessage);
-  }, [picking, tabId]);
+    return () => {
+      chrome.runtime.onMessage.removeListener(onMessage);
+    };
+  }, [session, tabId]);
+
+  // Leaving the builder mid-pick: don't leave the picker swallowing clicks in that tab.
+  const running = useRef<{ session: string | null; tabId: number | null }>({ session: null, tabId: null });
+  running.current = { session, tabId };
+  useEffect(
+    () => () => {
+      const { session: s, tabId: t } = running.current;
+      if (s !== null && t !== null) void api("cancelPicker", { tabId: t }).catch(() => undefined);
+    },
+    [],
+  );
 
   const start = async () => {
     if (tabId === null) return;
     setError(null);
-    setPicking(true); // listen before the picker can answer
+    setPositional(false);
+    const s = newSession();
+    setSession(s); // listen before the picker can answer
     try {
-      await api("startPicker", { tabId });
+      await api("startPicker", { tabId, session: s });
     } catch (e) {
-      setPicking(false);
+      setSession(null);
       setError(e);
     }
   };
   const cancel = () => {
-    setPicking(false);
+    setSession(null);
     if (tabId !== null) void api("cancelPicker", { tabId }).catch(() => undefined);
   };
 
   return (
     <>
-      {picking ? (
+      {session !== null ? (
         <button className="small" type="button" onClick={cancel} title="Stop picking">
           Picking… Cancel
         </button>
@@ -67,6 +90,11 @@ export function PickButton({ tabId, onPicked }: { tabId: number | null; onPicked
         >
           Pick
         </button>
+      )}
+      {positional && (
+        <span className="small warn-text" title="The selector counts the element's position among its siblings">
+          By position: may match another item if the list changes
+        </span>
       )}
       {error !== null && <ErrorBox error={error} />}
     </>

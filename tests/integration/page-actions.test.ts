@@ -153,3 +153,27 @@ describe("keep the scroll position", () => {
     expect(env.browser.reloads).toEqual([1]);
   });
 });
+
+describe("agents and page actions", () => {
+  it("an agent can't add a webhook that sends page addresses while addresses are hidden from agents", async () => {
+    const { createApiEnv } = await import("../helpers/api-env");
+    const env = createApiEnv();
+    await env.pairAgent();
+    const rule = (includePageUrl: boolean) => ({
+      name: "hook",
+      target: { patterns: ["https://shop.example.com/*"] },
+      trigger: { type: "interval", seconds: 60 },
+      actions: { onNotMatched: [{ type: "webhook", url: "http://localhost:9000/x", includePageUrl }] },
+    });
+    await expect(env.service.call(env.agent(), "createRule", { rule: rule(true) })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(env.service.call(env.agent(), "createRule", { rule: rule(false) })).resolves.toMatchObject({ meta: { draft: true } });
+    await env.service.call(env.user, "updateSettings", { redactUrlsForAgents: false });
+    await expect(env.service.call(env.agent(), "createRule", { rule: rule(true) })).resolves.toBeDefined();
+  });
+
+  it("a click that doesn't happen says so in a notification, since the rule's later actions still run", async () => {
+    const env = await setup(whenInStock([{ type: "click", selector: "#buy" }, { type: "stopRefresh" }]));
+    await env.engine.runCycle(1, "manual");
+    expect(env.browser.notifications).toEqual([{ title: "r1: couldn't click", message: expect.stringMatching(/submit a form/) }]);
+  });
+});

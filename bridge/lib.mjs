@@ -39,22 +39,46 @@ export function createNativeDecoder(onMessage) {
       if (buf.length < 4 + len) break;
       const body = buf.subarray(4, 4 + len).toString("utf8");
       buf = buf.subarray(4 + len);
-      onMessage(JSON.parse(body));
+      let msg;
+      try {
+        msg = JSON.parse(body);
+      } catch {
+        continue; // one bad message from Chrome: skip it (the framing is still intact)
+      }
+      onMessage(msg);
     }
   };
 }
 
-/** Newline-delimited JSON for the local socket. */
-export function createLineDecoder(onMessage, maxLine = 4 * 1024 * 1024) {
+/**
+ * Newline-delimited JSON for the local socket and MCP stdio. A line that isn't
+ * a JSON object, or one that grows past `maxLine`, is dropped and reported to
+ * `onBad` instead of crashing the process.
+ */
+export function createLineDecoder(onMessage, maxLine = 4 * 1024 * 1024, onBad = () => undefined) {
   let buf = "";
+  const parse = (line) => {
+    try {
+      const msg = JSON.parse(line);
+      return msg && typeof msg === "object" && !Array.isArray(msg) ? msg : null;
+    } catch {
+      return null;
+    }
+  };
   return (chunk) => {
     buf += chunk.toString("utf8");
-    if (buf.length > maxLine) throw new Error("Line too long");
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i).trim();
       buf = buf.slice(i + 1);
-      if (line) onMessage(JSON.parse(line));
+      if (!line) continue;
+      const msg = parse(line);
+      if (msg) onMessage(msg);
+      else onBad("Not a JSON object");
+    }
+    if (buf.length > maxLine) {
+      buf = "";
+      onBad("Line too long");
     }
   };
 }

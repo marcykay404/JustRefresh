@@ -223,10 +223,10 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
     // The user picks an element in a tab; the selector goes straight back to the builder page.
     startPicker: m({
       scope: null,
-      params: z.strictObject({ tabId: z.int().check(z.nonnegative()) }),
+      params: z.strictObject({ tabId: z.int().check(z.nonnegative()), session: z.string().check(z.regex(/^[\w-]{1,64}$/)) }),
       handler: async (_a, p) => {
         if (!d.picker) throw new ApiError("unsupported_method", "The element picker is unavailable");
-        const r = await d.picker.start(p.tabId);
+        const r = await d.picker.start(p.tabId, p.session);
         if (!r.ok) throw new ApiError("conflict", `Can't pick on that tab: ${r.error}`);
         return { started: true };
       },

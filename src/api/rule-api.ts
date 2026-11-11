@@ -45,7 +45,7 @@ export interface ApiDeps {
   testSelector?: (tabId: number, selector: string, includeText: boolean) => Promise<unknown>;
   /** The in-page element picker (Rule Builder → Pick). */
   picker?: {
-    start(tabId: number): Promise<{ ok: true } | { ok: false; error: string }>;
+    start(tabId: number, session: string): Promise<{ ok: true } | { ok: false; error: string }>;
     cancel(tabId: number): Promise<void>;
   };
   registries?: Registries;
@@ -57,6 +57,19 @@ export interface ApiDeps {
 
 /** "Last seen" is informational: record it at most this often (each write rewrites the config). */
 export const AGENT_LAST_SEEN_RESOLUTION_MS = 60_000;
+
+/**
+ * What agents' rules may not do. With query strings hidden from agents, a
+ * webhook that sends the page address to a local program (possibly the agent
+ * itself) would hand them over anyway.
+ */
+function checkAgentRule(rule: Rule, settings: Config["settings"]) {
+  if (!settings.redactUrlsForAgents) return;
+  const actions = [...rule.actions.onMatched, ...rule.actions.onNotMatched, ...(rule.actions.onUnknown ?? [])];
+  if (actions.some((a) => a.type === "webhook" && (a as { includePageUrl?: boolean }).includePageUrl)) {
+    throw new ApiError("forbidden", "Agents can't add webhooks that send the page address while page addresses are hidden from agents (Settings)");
+  }
+}
 
 function randomKey(): string {
   const bytes = new Uint8Array(32);
@@ -197,6 +210,7 @@ export class RuleManagementService {
     let saved!: Rule;
     await this.deps.config.update((c) => {
       const n = this.validateOrThrow(input, c).normalized!;
+      if (actor.type === "agent") checkAgentRule(n, c.settings);
       const id = existing?.id ?? (n.id || this.newId("rule"));
       if (!existing && c.rules[id]) throw new ApiError("conflict", `A rule with id "${id}" already exists`);
       const { enabled, draft } = ownership(actor, existing, n.enabled);
@@ -300,31 +314,49 @@ export class RuleManagementService {
   /* ------------------------------------------------------------------ */
 
   /**
-   * Desktop agents identify themselves by name, so an approved one is bound to
-   * a key: issued (returned) the first time it calls while approved, required
-   * on every call after that. Returns a newly issued key, or undefined.
+   * Desktop agents name themselves, so an approved one is bound to a key.
+   * While none is bound, each call by the approved agent is issued a fresh key
+   * (returned here); the first call that presents the latest one binds it.
+   * After that every call must carry the bound key. Issuing until one is used
+   * means a lost or late reply can't lock the agent out.
    */
   async checkAgentKey(agentId: string, key: string | undefined): Promise<string | undefined> {
     const agent = (await this.deps.config.get()).agents[agentId];
     if (!agent || agent.transport !== "native") return undefined;
+    const presented = key ? await sha256Hex(key) : undefined;
     if (agent.keyHash) {
-      if (!key || (await sha256Hex(key)) !== agent.keyHash) {
-        throw new ApiError(
-          "forbidden",
-          `This program's key for "${agent.name}" doesn't match. If you reinstalled it, remove the agent in JustRefresh → Agent Integrations and approve it again.`,
-        );
-      }
+      if (presented !== agent.keyHash) await this.refuseKey(agent);
       return undefined;
     }
-    if (agent.status !== "approved") return undefined;
+    if (presented && presented === agent.pendingKeyHash) {
+      await this.deps.config.update((c) => {
+        const a = c.agents[agentId];
+        if (a?.pendingKeyHash !== presented) return;
+        a.keyHash = presented;
+        delete a.pendingKeyHash;
+      });
+      return undefined;
+    }
+    return agent.status === "approved" ? this.issueKey(agentId) : undefined;
+  }
+
+  private async issueKey(agentId: string): Promise<string | undefined> {
     const issued = randomKey();
     const hash = await sha256Hex(issued);
     await this.deps.config.update((c) => {
       const a = c.agents[agentId];
-      if (a && !a.keyHash) a.keyHash = hash;
+      if (a && !a.keyHash) a.pendingKeyHash = hash;
     });
-    // Another call may have issued one first: only hand out the key that was stored.
-    return (await this.deps.config.get()).agents[agentId]?.keyHash === hash ? issued : undefined;
+    // Another call may have bound or replaced it meanwhile: only hand out the key that was stored.
+    return (await this.deps.config.get()).agents[agentId]?.pendingKeyHash === hash ? issued : undefined;
+  }
+
+  private async refuseKey(agent: AgentRecord): Promise<never> {
+    void this.deps.audit.append({ at: this.deps.clock.now(), agentId: agent.id, operation: "call", outcome: "denied", detail: "Wrong or missing agent key" });
+    throw new ApiError(
+      "forbidden",
+      `This program's key for "${agent.name}" doesn't match. If you reinstalled it, remove the agent in JustRefresh → Agent Integrations and approve it again.`,
+    );
   }
 
   /** Register (or look up) an agent identity. New agents start pending with no scopes. */

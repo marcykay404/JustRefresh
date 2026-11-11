@@ -9,18 +9,23 @@
 const STABLE_ATTRS = ["data-testid", "data-test", "data-qa", "data-cy", "aria-label", "name"];
 const MAX_CLASSES = 2;
 
-/** Ids and classes from build tools or counters change between loads. */
-const looksGenerated = (s: string) => s.length > 40 || /\d{3,}|[0-9a-f]{6,}|^(css|sc|jsx|emotion|svelte|_)-?[a-z0-9]{4,}$/i.test(s);
+/** A run of 6+ hex characters with a digit in it (a hash), but not words like "feedback". */
+const hasHash = (s: string) => (s.match(/[0-9a-f]{6,}/gi) ?? []).some((run) => /\d/.test(run));
+
+/** Ids and classes from build tools, counters or React's useId (`:r1:`, `«r1»`) change between loads. */
+const looksGenerated = (s: string) =>
+  s.length > 40 || /\d{3,}/.test(s) || hasHash(s) || /^(css|sc|jsx|emotion|svelte|_)-?[a-z0-9]{4,}$/i.test(s) || /^(:r[0-9a-z]*:|«r[0-9a-z]*»)$/i.test(s);
 
 /** CSS.escape for identifiers (not available in every environment). */
 export function cssEscape(s: string): string {
   let out = "";
   for (let i = 0; i < s.length; i++) {
     const ch = s[i]!;
+    const code = ch.charCodeAt(0);
     const leadingDigit = /\d/.test(ch) && (i === 0 || (i === 1 && s[0] === "-"));
-    if (leadingDigit) out += `\\${ch.charCodeAt(0).toString(16)} `;
+    if (leadingDigit || code < 0x20 || code === 0x7f) out += `\\${code.toString(16)} `;
     else if (ch === "-" && s.length === 1) out += "\\-";
-    else if (/[\w-]/.test(ch) || ch.charCodeAt(0) >= 0x80) out += ch;
+    else if (/[\w-]/.test(ch) || code >= 0x80) out += ch;
     else out += `\\${ch}`;
   }
   return out;
@@ -42,7 +47,7 @@ function directSelectors(el: Element): string[] {
   const out: string[] = [];
   const id = el.getAttribute("id");
   if (id && !looksGenerated(id)) out.push(`#${cssEscape(id)}`);
-  const tag = el.tagName.toLowerCase();
+  const tag = el.localName; // SVG keeps its case (foreignObject); HTML is lower case
   for (const attr of STABLE_ATTRS) {
     const v = el.getAttribute(attr);
     if (v && v.length <= 80 && !looksGenerated(v)) out.push(`${tag}[${attr}=${quote(v)}]`);
@@ -57,7 +62,7 @@ function segment(el: Element): string {
     .slice(0, MAX_CLASSES)
     .map((c) => `.${cssEscape(c)}`)
     .join("");
-  const base = el.tagName.toLowerCase() + classes;
+  const base = el.localName + classes;
   const parent = el.parentElement;
   if (!parent) return base;
   const alike = [...parent.children].filter((s) => s.tagName === el.tagName && safeMatches(s, base));

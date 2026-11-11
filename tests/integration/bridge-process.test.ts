@@ -8,6 +8,7 @@ import { createLineDecoder, createNativeDecoder, encodeNative, newNonce, proofOf
 
 const isWin = process.platform === "win32";
 const BRIDGE = "bridge/justrefresh-bridge.mjs";
+const KEY = "ab".repeat(32);
 const wait = async (ok: () => unknown, what: string) => {
   for (let i = 0; i < 200; i++) {
     const v = ok();
@@ -27,6 +28,7 @@ function startMcp(env) {
   );
   return {
     proc: mcp,
+    replies,
     send: (m: unknown) => mcp.stdin.write(JSON.stringify(m) + "\n"),
     reply: (id: number) => wait(() => replies.find((x) => x.id === id), `reply ${id}`),
   };
@@ -43,7 +45,7 @@ describe.skipIf(isWin)("bridge processes", () => {
       "data",
       createNativeDecoder((msg) => {
         seen.push(msg);
-        const agentKey = msg.method === "listRules" && !msg.client.key ? { agentKey: "k-123" } : {};
+        const agentKey = msg.method === "listRules" && !msg.client.key ? { agentKey: KEY } : {};
         host.stdin.write(encodeNative({ id: msg.id, ok: true, result: { echo: msg.method, client: msg.client }, ...agentKey }));
       }),
     );
@@ -59,10 +61,10 @@ describe.skipIf(isWin)("bridge processes", () => {
     expect((await mcp.reply(2)).result.structuredContent).toEqual({ echo: "listRules", client: { id: "test-agent", name: "Test Agent" } });
     // The issued key is kept privately and sent with every later call.
     const keyFile = join(dir, "agents", "test-agent.key");
-    expect(readFileSync(keyFile, "utf8")).toBe("k-123");
+    expect(readFileSync(keyFile, "utf8")).toBe(KEY);
     expect(statSync(keyFile).mode & 0o777).toBe(0o600);
     mcp.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "refresh_list_rules", arguments: {} } });
-    expect((await mcp.reply(3)).result.structuredContent.client).toEqual({ id: "test-agent", name: "Test Agent", key: "k-123" });
+    expect((await mcp.reply(3)).result.structuredContent.client).toEqual({ id: "test-agent", name: "Test Agent", key: KEY });
     expect(seen.map((s) => s.method)).toEqual(["pair", "listRules", "listRules"]);
     expect(JSON.stringify(seen)).not.toContain(readFileSync(join(dir, "token"), "utf8")); // the token itself never travels
 
@@ -142,4 +144,64 @@ describe.skipIf(isWin)("bridge processes", () => {
     expect(existsSync(join(home, hostsDir, "com.justrefresh.bridge.json"))).toBe(false);
     expect(existsSync(bin)).toBe(false);
   });
+
+  it("doesn't hang when the other end drops the connection mid-handshake", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
+    writeFileSync(join(dir, "token"), "t", { mode: 0o600 });
+    const dropper = net.createServer((s) => {
+      s.write(JSON.stringify({ type: "challenge", nonce: newNonce() }) + "\n");
+      s.on("data", () => s.destroy());
+    });
+    await new Promise<void>((r) => dropper.listen(join(dir, "bridge.sock"), r));
+    const mcp = startMcp({ ...process.env, JUSTREFRESH_BRIDGE_DIR: dir });
+    mcp.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: "A" } } });
+    expect((await mcp.reply(1)).result).toBeDefined();
+    mcp.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "refresh_list_rules", arguments: {} } });
+    expect(JSON.stringify(await mcp.reply(2))).toMatch(/closed the connection/);
+    // Garbage from the MCP app gets a JSON-RPC parse error, not a crash.
+    mcp.proc.stdin.write("not json\n");
+    const parseError = await wait(() => mcp.replies.find((r) => r.error?.code === -32700), "parse error");
+    expect(parseError.id).toBeNull();
+    mcp.proc.kill();
+    dropper.close();
+  }, 15_000);
+
+  it("drops a socket client that sends garbage, and keeps serving others", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
+    const host = spawn(process.execPath, [BRIDGE, "native-host"], { env: { ...process.env, JUSTREFRESH_BRIDGE_DIR: dir } });
+    await wait(() => existsSync(join(dir, "bridge.sock")), "socket");
+    const bad = net.createConnection(join(dir, "bridge.sock"));
+    bad.resume(); // read (and ignore) the challenge, so the close is reported
+    bad.write("{not json\n");
+    await new Promise((r) => bad.on("close", r));
+    const good = net.createConnection(join(dir, "bridge.sock"));
+    const msgs: any[] = [];
+    good.on(
+      "data",
+      createLineDecoder((m) => msgs.push(m)),
+    );
+    await wait(() => msgs.length, "challenge from the same host");
+    expect(host.exitCode).toBeNull();
+    good.destroy();
+    host.stdin.end();
+  }, 15_000);
+
+  it("the launcher works from a home folder with a space, a quote and a $ in its name; uninstall leaves other files alone", async () => {
+    // Under /tmp: a Unix socket path must stay under ~104 characters.
+    const home = join(mkdtempSync("/tmp/jr-"), "o'neil $HOME x");
+    const dataDir = join(home, ".justrefresh");
+    const env = { ...process.env, HOME: home, JUSTREFRESH_BRIDGE_DIR: dataDir };
+    const run = (...args: string[]) => spawnSync(process.execPath, args, { env, encoding: "utf8" });
+    expect(run(BRIDGE, "install", "--extension-id", "abcdefghijklmnopabcdefghijklmnop").status).toBe(0);
+    const bin = join(dataDir, "bin");
+    writeFileSync(join(bin, "mine.txt"), "keep me");
+    // Start the native host the way Chrome does: through the launcher.
+    const host = spawn(join(bin, "justrefresh-native-host.sh"), ["chrome-extension://abcdefghijklmnopabcdefghijklmnop/"], { env });
+    await wait(() => existsSync(join(dataDir, "bridge.sock")), "host started via launcher");
+    host.stdin.end();
+    await new Promise((r) => host.on("exit", r));
+    expect(run(BRIDGE, "uninstall").status).toBe(0);
+    expect(readFileSync(join(bin, "mine.txt"), "utf8")).toBe("keep me");
+    expect(existsSync(join(bin, "justrefresh-bridge.mjs"))).toBe(false);
+  }, 15_000);
 });

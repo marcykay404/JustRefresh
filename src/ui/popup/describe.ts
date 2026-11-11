@@ -116,7 +116,7 @@ function withCondition(when: string, cond: string, { onMatched, onNotMatched }: 
   return `${cap(when)}: when ${cond}, ${actionsPhrase(onMatched)}; otherwise ${actionsPhrase(onNotMatched)}`;
 }
 
-type ActionWords = ActionConfig & { minutes?: number; selector?: string; keepScroll?: boolean };
+type ActionWords = ActionConfig & { minutes?: number; selector?: string; keepScroll?: boolean; url?: string; includePageUrl?: boolean };
 
 const ACTION_WORDS: Record<string, (a: ActionWords) => string> = {
   refresh: (a) => (a.keepScroll ? "refresh (keeping the scroll position)" : "refresh"),
@@ -126,7 +126,8 @@ const ACTION_WORDS: Record<string, (a: ActionWords) => string> = {
   notify: () => "notify me",
   log: () => "note it in History",
   click: (a) => `click ${a.selector}`,
-  webhook: () => "call the local webhook",
+  // Shown when approving agents' rules: say exactly where it goes and what it sends.
+  webhook: (a) => `send a message to ${a.url}${a.includePageUrl ? " (with the page address)" : ""}`,
 };
 
 /** "refresh", "notify me and stop", … ("do nothing" for none). */

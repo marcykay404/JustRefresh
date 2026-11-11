@@ -100,7 +100,13 @@ describe("agent keys (desktop agents)", () => {
       { protocol: "justrefresh-agent/1", method: "listRules" },
     ) as Promise<{ ok: boolean; agentKey?: string; error?: { code: string; message: string } }>;
 
-  it("issues a key on the first call after approval, then requires it", async () => {
+  const approve = async (env: ReturnType<typeof createApiEnv>) => {
+    await env.service.ensureAgent({ id: "native:claude", name: "Claude", transport: "native" });
+    await env.service.call(env.user, "updateAgent", { id: "native:claude", status: "approved", scopes: ["rules:read"] });
+  };
+  const agentOf = async (env: ReturnType<typeof createApiEnv>) => (await env.config.get()).agents["native:claude"]!;
+
+  it("issues a key after approval and binds it when the agent first uses it; then requires it", async () => {
     const env = createApiEnv();
     await env.service.ensureAgent({ id: "native:claude", name: "Claude", transport: "native" });
     expect((await call(env)).agentKey).toBeUndefined(); // pending: nothing to bind yet
@@ -108,24 +114,54 @@ describe("agent keys (desktop agents)", () => {
     const first = await call(env);
     expect(first.ok).toBe(true);
     expect(first.agentKey).toMatch(/^[0-9a-f]{64}$/);
+    expect((await agentOf(env)).keyHash).toBeUndefined(); // issued, not bound yet
+    const second = await call(env, first.agentKey);
+    expect(second).toMatchObject({ ok: true });
+    expect(second.agentKey).toBeUndefined();
     // Only a hash is stored.
-    const stored = (await env.config.get()).agents["native:claude"]!.keyHash;
-    expect(stored).toMatch(/^[0-9a-f]{64}$/);
-    expect(stored).not.toBe(first.agentKey);
+    const bound = (await agentOf(env)).keyHash;
+    expect(bound).toMatch(/^[0-9a-f]{64}$/);
+    expect(bound).not.toBe(first.agentKey);
     expect(await call(env, first.agentKey)).toMatchObject({ ok: true });
-    expect((await call(env, first.agentKey)).agentKey).toBeUndefined();
   });
 
-  it("refuses another program using the same agent name, with or without a guessed key", async () => {
+  it("a lost reply doesn't lock the agent out: until a key is used, each call gets a fresh one", async () => {
     const env = createApiEnv();
-    await env.service.ensureAgent({ id: "native:claude", name: "Claude", transport: "native" });
-    await env.service.call(env.user, "updateAgent", { id: "native:claude", status: "approved", scopes: ["rules:read"] });
-    await call(env);
+    await approve(env);
+    const lost = (await call(env)).agentKey; // say this reply never arrived
+    const next = await call(env);
+    expect(next.agentKey).toBeDefined();
+    expect(next.agentKey).not.toBe(lost);
+    expect(await call(env, lost)).toMatchObject({ ok: true }); // stale: just issued another
+    const latest = (await call(env)).agentKey;
+    expect(await call(env, latest)).toMatchObject({ ok: true });
+    expect((await agentOf(env)).keyHash).toBeDefined();
+  });
+
+  it("a failed call still delivers the key", async () => {
+    const env = createApiEnv();
+    await approve(env);
+    const r = (await handleAgentMessage(
+      env.service,
+      new RateLimiter(1000, 60_000),
+      { id: "native:claude", name: "Claude", transport: "native" },
+      { protocol: "justrefresh-agent/1", method: "getRule", params: { id: "nope" } },
+    )) as { ok: boolean; agentKey?: string };
+    expect(r.ok).toBe(false);
+    expect(r.agentKey).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("once bound, refuses another program using the same agent name, with or without a guessed key, and records it", async () => {
+    const env = createApiEnv();
+    await approve(env);
+    await call(env, (await call(env)).agentKey);
     for (const key of [undefined, "0".repeat(64)]) {
       const r = await call(env, key);
       expect(r).toMatchObject({ ok: false, error: { code: "forbidden" } });
       expect(r.error!.message).toMatch(/key .* doesn't match/);
     }
+    await new Promise((r) => setTimeout(r, 0));
+    expect((await env.audit.list()).filter((a) => a.outcome === "denied" && /agent key/.test(a.detail ?? ""))).toHaveLength(2);
   });
 
   it("starts over when the user removes the agent: the next approval issues a new key", async () => {
@@ -133,6 +169,7 @@ describe("agent keys (desktop agents)", () => {
     await env.service.ensureAgent({ id: "native:claude", name: "Claude", transport: "native" });
     await env.service.call(env.user, "updateAgent", { id: "native:claude", status: "approved", scopes: ["rules:read"] });
     const old = (await call(env)).agentKey;
+    await call(env, old);
     await env.service.call(env.user, "removeAgent", { id: "native:claude" });
     await env.service.ensureAgent({ id: "native:claude", name: "Claude", transport: "native" });
     await env.service.call(env.user, "updateAgent", { id: "native:claude", status: "approved", scopes: ["rules:read"] });

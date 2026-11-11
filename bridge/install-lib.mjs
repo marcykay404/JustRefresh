@@ -24,11 +24,12 @@ const PROFILE_DIRS = {
     edge: "Library/Application Support/Microsoft Edge",
     brave: "Library/Application Support/BraveSoftware/Brave-Browser",
   },
+  // Relative to $XDG_CONFIG_HOME (default ~/.config).
   linux: {
-    chrome: ".config/google-chrome",
-    chromium: ".config/chromium",
-    edge: ".config/microsoft-edge",
-    brave: ".config/BraveSoftware/Brave-Browser",
+    chrome: "google-chrome",
+    chromium: "chromium",
+    edge: "microsoft-edge",
+    brave: "BraveSoftware/Brave-Browser",
   },
   win32: {
     chrome: "Google/Chrome/User Data",
@@ -56,8 +57,13 @@ export function parseInstallArgs(argv) {
 /** Where things go. `env` overrides exist for tests. */
 export function locations({ home = os.homedir(), platform = process.platform, env = process.env } = {}) {
   const dataDir = env.JUSTREFRESH_BRIDGE_DIR ?? path.join(home, ".justrefresh");
-  const profileBase = platform === "win32" ? (env.LOCALAPPDATA ?? path.join(home, "AppData", "Local")) : home;
-  return { home, platform, dataDir, bin: path.join(dataDir, "bin"), profileBase, profiles: PROFILE_DIRS[platform] ?? PROFILE_DIRS.linux };
+  const bases = {
+    win32: env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"),
+    darwin: home,
+    linux: env.XDG_CONFIG_HOME ?? path.join(home, ".config"),
+  };
+  const known = Object.hasOwn(PROFILE_DIRS, platform) ? platform : "linux";
+  return { home, platform, dataDir, bin: path.join(dataDir, "bin"), profileBase: bases[known], profiles: PROFILE_DIRS[known] };
 }
 
 /** The browsers to register with: the one named, else every one found, else Chrome. */
@@ -80,16 +86,49 @@ function copyBridge(sourceDir, bin) {
   }
 }
 
+/** A path as one word for sh: single-quoted, so $, ` and " stay literal. */
+export const shQuote = (p) => `'${p.replace(/'/g, "'\\''")}'`;
+
+/**
+ * A stable path to Node: Homebrew and similar installs run a versioned binary
+ * (…/Cellar/node/22.1.0/bin/node) behind a symlink that survives upgrades.
+ */
+export function stableNode(execPath = process.execPath, candidates = ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"]) {
+  const real = (p) => {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return null;
+    }
+  };
+  const target = real(execPath);
+  return candidates.find((c) => target && real(c) === target) ?? execPath;
+}
+
 function writeLauncher(loc, node) {
   const script = path.join(loc.bin, "justrefresh-bridge.mjs");
   if (loc.platform === "win32") {
     const launcher = path.join(loc.bin, "justrefresh-native-host.bat");
-    fs.writeFileSync(launcher, `@echo off\r\n"${node}" "${script}" native-host %*\r\n`);
+    // %~dp0 is this file's folder, so the user's profile path never appears in it; UTF-8 for a non-ASCII Node path, %% for a literal %.
+    const nodePath = node.replace(/%/g, "%%");
+    fs.writeFileSync(launcher, `@echo off\r\nchcp 65001 >nul\r\n"${nodePath}" "%~dp0justrefresh-bridge.mjs" native-host %*\r\n`);
     return { launcher, script };
   }
   const launcher = path.join(loc.bin, "justrefresh-native-host.sh");
-  fs.writeFileSync(launcher, `#!/bin/sh\nexec "${node}" "${script}" native-host "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(launcher, `#!/bin/sh\nexec ${shQuote(node)} ${shQuote(script)} native-host "$@"\n`, { mode: 0o755 });
   return { launcher, script };
+}
+
+/** Windows: limit a folder to this account (file modes don't apply there). Unix: 0700. */
+export function restrictToUser(dir, { platform = process.platform, run = execFileSync, log = console.warn } = {}) {
+  if (platform !== "win32") return fs.chmodSync(dir, 0o700);
+  const user = os.userInfo().username;
+  const account = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${user}` : user;
+  try {
+    run("icacls", [dir, "/inheritance:r", "/grant:r", `${account}:(OI)(CI)F`], { stdio: "ignore" });
+  } catch (e) {
+    log(`Could not limit ${dir} to your Windows account (${e.message}); other accounts on this PC may be able to read it.`);
+  }
 }
 
 function register(loc, browsers, manifest, run) {
@@ -108,11 +147,13 @@ function register(loc, browsers, manifest, run) {
   });
 }
 
-export function install({ extensionId, browser, sourceDir, node = process.execPath, loc = locations(), run = execFileSync, log = console.log }) {
+export function install({ extensionId, browser, sourceDir, node = stableNode(), loc = locations(), run = execFileSync, log = console.log }) {
   if (!/^[a-p]{32}$/.test(extensionId ?? "")) {
     throw new Error("Pass --extension-id <32-letter id>. JustRefresh shows it in Dashboard → Agent Integrations, with this command ready to copy.");
   }
   const browsers = targetBrowsers(loc, browser);
+  fs.mkdirSync(loc.dataDir, { recursive: true, mode: 0o700 });
+  restrictToUser(loc.dataDir, { platform: loc.platform, run, log });
   copyBridge(sourceDir, loc.bin);
   const { launcher, script } = writeLauncher(loc, node);
   const manifest = {
@@ -128,6 +169,7 @@ export function install({ extensionId, browser, sourceDir, node = process.execPa
   log("\nNext: restart JustRefresh if the dashboard asks, then add this to your AI app's MCP settings:");
   log(JSON.stringify({ mcpServers: { justrefresh: { command: node, args: [script, "mcp"] } } }, null, 2));
   log("\nWhen the app first connects, approve it in JustRefresh → Dashboard → Agent Integrations.");
+  log("If you switch Node versions (nvm, a new Homebrew Node), run this install again.");
   return { browsers, launcher, script };
 }
 
@@ -141,6 +183,13 @@ export function uninstall({ loc = locations(), run = execFileSync, log = console
       }
     } else fs.rmSync(path.join(manifestDir(loc, b), `${HOST}.json`), { force: true });
   }
-  fs.rmSync(loc.bin, { recursive: true, force: true });
-  log(`Removed the JustRefresh bridge (${loc.bin}) and its registration with your browsers.`);
+  // Only what install put there; the folder goes only if nothing else is in it.
+  for (const f of [...BRIDGE_FILES, "justrefresh-native-host.sh", "justrefresh-native-host.bat", `${HOST}.json`])
+    fs.rmSync(path.join(loc.bin, f), { force: true });
+  try {
+    fs.rmdirSync(loc.bin);
+  } catch {
+    /* not empty (other files) or already gone */
+  }
+  log(`Removed the JustRefresh bridge from ${loc.bin} and its registration with your browsers.`);
 }

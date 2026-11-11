@@ -242,8 +242,8 @@ function BridgeCard({ enabled, status, act }: { enabled: boolean; status: Bridge
       <h2>Desktop AI apps (MCP bridge)</h2>
       <p className="small muted" style={{ margin: 0 }}>
         Optional. Lets AI apps on this computer that support MCP (Model Context Protocol) connect to JustRefresh, through a small helper program. Everything
-        stays on this computer, and each app has to be approved above before it can do anything. Once approved, an app gets its own key, so another program
-        can't use its name.
+        stays on this computer, and each app has to be approved above before it can do anything. Once approved, an app gets its own key, so a program that only
+        knows its name can't use its approval.
       </p>
       <div className="row">
         <Toggle checked={enabled} label="Allow desktop AI apps to connect" onChange={toggle} />

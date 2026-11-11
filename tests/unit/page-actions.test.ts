@@ -28,9 +28,18 @@ describe("selectorFor", () => {
     expect(document.querySelector(selectorFor($("p")))).toBe($("p"));
   });
 
+  it("keeps real words and drops React's generated ids", () => {
+    html(`<span id="feedback">x</span><span id=":r1:">y</span><svg><foreignObject class="fo"></foreignObject></svg>`);
+    expect(selectorFor($("#feedback"))).toBe("#feedback");
+    expect(selectorFor(document.getElementById(":r1:")!)).not.toContain(":r1:");
+    const fo = document.querySelector("foreignObject")!;
+    expect(document.querySelector(selectorFor(fo))).toBe(fo);
+  });
+
   it("escapes awkward ids", () => {
     expect(cssEscape("1st")).toBe("\\31 st");
     expect(cssEscape("a.b:c")).toBe("a\\.b\\:c");
+    expect(cssEscape("a\nb")).toBe("a\\a b");
     html(`<span id="a.b">x</span>`);
     expect(document.querySelector(selectorFor($("span")))).toBe($("span"));
   });
@@ -54,6 +63,40 @@ describe("click guard", () => {
     expect(clickBlocker($("#plain"))).toBeNull();
     expect(clickBlocker($("#outside"))).toBeNull();
     expect(clickBlocker($("#off"))).toMatch(/disabled/);
+  });
+
+  it("also refuses a submit button inside a label for something else, form= buttons, resets and custom-element submit buttons", () => {
+    html(`<form id="f" action="/order" method="post">
+        <input type="checkbox" id="cb"><label for="cb"><button id="in-label">Buy</button></label>
+        <button id="reset" type="reset">Clear</button>
+        <fieldset disabled><button id="in-fieldset" type="button">x</button></fieldset>
+        <sl-button id="custom" type="submit"><span id="custom-text">Pay</span></sl-button>
+      </form>
+      <button id="outside-form" form="f">Pay</button>`);
+    expect(clickBlocker($("#in-label"))).toMatch(/submit a form/);
+    expect(clickBlocker($("#outside-form"))).toMatch(/submit a form/);
+    expect(clickBlocker($("#reset"))).toMatch(/reset a form/);
+    expect(clickBlocker($("#custom-text"))).toMatch(/submit a form/);
+    expect(clickBlocker($("#in-fieldset"))).toMatch(/disabled/);
+  });
+
+  it("stops a submission that a click sets off by script, also inside a shadow root", () => {
+    html(`<form id="f" action="/order" method="post"><button id="js" type="button">Buy</button></form><div id="host"></div>`);
+    const submitted = vi.fn();
+    $("#f").addEventListener("submit", submitted);
+    $("#js").addEventListener("click", () => ($("#f") as HTMLFormElement).requestSubmit());
+    expect(clickElement(document, "#js")).toMatchObject({ ok: false, error: expect.stringMatching(/tried to submit a form/) });
+    expect(submitted).not.toHaveBeenCalled();
+
+    const root = $("#host").attachShadow({ mode: "open" });
+    root.innerHTML = `<form><button type="button">Buy</button></form>`;
+    const shadowSubmit = vi.fn();
+    root.querySelector("form")!.addEventListener("submit", shadowSubmit);
+    const inner = root.querySelector("button")!;
+    inner.addEventListener("click", () => root.querySelector("form")!.requestSubmit());
+    $("#host").addEventListener("click", () => inner.click());
+    expect(clickElement(document, "#host")).toMatchObject({ ok: false });
+    expect(shadowSubmit).not.toHaveBeenCalled();
   });
 
   it("clicks the first match and reports what went wrong otherwise", () => {
@@ -110,6 +153,21 @@ describe("scroll restore", () => {
     expect(after.scrollY).toBe(0);
   });
 
+  it("stops when something else moves the page (scrollbar drag, find-in-page)", () => {
+    const store = window.sessionStorage;
+    const w = fakeWindow("https://a.test/feed");
+    w.scrollY = 900;
+    saveScroll(w as unknown as Window, store, 1000);
+    const next = fakeWindow("https://a.test/feed");
+    next.maxY = 5000;
+    restoreScroll(next as unknown as Window, store, 1500);
+    vi.advanceTimersByTime(100);
+    expect(next.scrollY).toBe(900);
+    next.scrollY = 300; // the user dragged the scrollbar
+    vi.advanceTimersByTime(1000);
+    expect(next.scrollY).toBe(300);
+  });
+
   it("gives way to the user, and ignores old or other pages' positions", () => {
     const store = window.sessionStorage;
     const w = fakeWindow("https://a.test/feed");
@@ -141,8 +199,9 @@ describe("scroll restore", () => {
 describe("element picker", () => {
   let under: Element | null = null;
   beforeEach(() => {
-    html(`<div id="card"><button id="buy" type="button">Buy</button></div>`);
-    document.elementFromPoint = () => under;
+    html(`<div id="card"><button id="buy" type="button">Buy</button></div><ul><li class="i">a</li><li class="i">b</li></ul>`);
+    // The overlay sits on top of everything: the picker looks underneath it.
+    document.elementsFromPoint = () => [document.documentElement.lastElementChild!, ...(under ? [under] : []), document.documentElement];
   });
   afterEach(() => cancelPicker());
   const move = (el: Element) => {
@@ -150,32 +209,50 @@ describe("element picker", () => {
     window.dispatchEvent(new MouseEvent("mousemove", { clientX: 1, clientY: 1 }));
   };
   const key = (k: string) => window.dispatchEvent(new KeyboardEvent("keydown", { key: k, cancelable: true }));
+  const clickOverlay = () => document.documentElement.lastElementChild!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
 
-  it("picks the element clicked, without the page seeing the click", () => {
+  it("picks the element under the overlay without the page seeing the click", () => {
     const done = vi.fn();
     let pageSaw = 0;
-    $("#buy").addEventListener("click", () => pageSaw++);
+    document.addEventListener("click", () => pageSaw++);
     startPicker(window, done);
     move($("#buy"));
-    $("#buy").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
-    expect(done).toHaveBeenCalledWith({ selector: "#buy", count: 1 });
+    clickOverlay();
+    expect(done).toHaveBeenCalledWith({ picked: { selector: "#buy", count: 1, positional: false } });
     expect(pageSaw).toBe(0);
-    expect(document.documentElement.lastElementChild?.shadowRoot ?? null).toBeNull(); // overlay gone
+    expect([...document.documentElement.children].some((c) => c.tagName === "DIV")).toBe(false); // overlay gone
   });
 
-  it("↑ widens to the parent, ↓ goes back, Esc cancels", () => {
+  it("↑ widens to the parent, ↓ goes back, Esc cancels; says when a selector depends on position", () => {
     const done = vi.fn();
     startPicker(window, done);
     move($("#buy"));
     key("ArrowUp");
-    $("#buy").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
-    expect(done).toHaveBeenLastCalledWith({ selector: "#card", count: 1 });
+    clickOverlay();
+    expect(done).toHaveBeenLastCalledWith({ picked: { selector: "#card", count: 1, positional: false } });
 
     startPicker(window, done);
     move($("#buy"));
     key("ArrowUp");
     key("ArrowDown");
     key("Escape");
-    expect(done).toHaveBeenLastCalledWith(null);
+    expect(done).toHaveBeenLastCalledWith({ cancelled: true });
+
+    startPicker(window, done);
+    move(document.querySelectorAll("li")[1]!);
+    clickOverlay();
+    expect(done).toHaveBeenLastCalledWith({ picked: { selector: "li.i:nth-of-type(2)", count: 1, positional: true } });
+  });
+
+  it("a newer picker replaces a running one, which reports that it was replaced (not cancelled)", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    startPicker(window, first);
+    startPicker(window, second);
+    expect(first).toHaveBeenCalledWith({ replaced: true });
+    expect(second).not.toHaveBeenCalled();
+    move($("#buy"));
+    clickOverlay();
+    expect(second).toHaveBeenCalledWith({ picked: expect.objectContaining({ selector: "#buy" }) });
   });
 });

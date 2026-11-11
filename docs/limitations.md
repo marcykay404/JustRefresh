@@ -75,10 +75,16 @@
   form (a submit button, an image input, text inside one, or its label). A
   button that sends an order with script (fetch/XHR) instead of a form looks
   like any other button and can't be recognised: choose what a rule clicks
-  with care. Clicks run in the top frame only.
+  with care. Any form submission a click still sets off is cancelled, also
+  inside open shadow roots; closed shadow roots can't be watched. Clicks run
+  in the top frame only.
+- **Picked selectors** that count position (`:nth-of-type`) are flagged: on a
+  list that gains items they can point at a different item later.
 - **Webhooks** are sent as simple `text/plain` requests without credentials,
   so the reply can't be read: History shows whether the program was reached,
   not what it answered. Only `localhost`, `127.0.0.1` and `[::1]` are allowed.
+  Such requests can't refuse redirects: a local program that redirects the
+  message is passing it on, which it could do anyway once it has it.
 - **Keep scroll position** restores the position for up to 10 seconds while
   the page fills in, and stops as soon as you scroll, click or type. Pages
   that rebuild themselves later than that, or keep the scroll inside an inner
