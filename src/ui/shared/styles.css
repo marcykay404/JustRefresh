@@ -119,6 +119,13 @@ body.popup { width: 380px; }
 .main { padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+/* Grid items default to min-width:auto and would grow past their column with wide content. */
+.grid-2 > * { min-width: 0; }
+.site-list { display: flex; flex-direction: column; }
+.site-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.site-row:first-child { border-top: 1px solid var(--border); }
+.site-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.site-origin { overflow-wrap: anywhere; }
 
 /* Rule builder */
 .builder { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); gap: 14px; align-items: start; }

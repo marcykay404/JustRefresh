@@ -80,6 +80,21 @@ export function SettingsView() {
         <SiteAccess />
 
         <div className="card col">
+          <h2>Advanced</h2>
+          <Toggle
+            checked={s.allowFastIntervals}
+            onChange={(v) => update({ allowFastIntervals: v })}
+            label={<span>Allow intervals under 30 seconds <span className="muted small">(minimum 5 seconds)</span></span>}
+          />
+          <p className="small muted" style={{ margin: 0 }}>
+            For time-critical pages such as restocks or appointment slots. Refreshing this often puts real load on the website and may break its
+            terms of use, so JustRefresh never refreshes faster than every 5 seconds, and refreshes any one site at most once every 5 seconds
+            across all tabs. Fast intervals keep the extension's background worker awake while such a tab is scheduled. Turning this off keeps
+            existing fast rules but runs them every 30 seconds.
+          </p>
+        </div>
+
+        <div className="card col">
           <h2>History & privacy</h2>
           <Field label="Maximum history entries">
             <input type="number" min={10} max={5000} defaultValue={s.historyLimit} onBlur={(e) => update({ historyLimit: Number(e.target.value) })} />
@@ -238,22 +253,23 @@ function SiteAccess() {
       ) : origins.length === 0 ? (
         <span className="muted small">No site access granted.</span>
       ) : (
-        <table>
-          <thead><tr><th>Site</th><th>Used by rules</th><th /></tr></thead>
-          <tbody>
-            {origins.map((o) => {
-              const { label, host } = siteLabel(o);
-              const used = usedBy(host);
-              return (
-                <tr key={o}>
-                  <td className="mono small">{label}</td>
-                  <td className="small">{used.length ? used.map((r) => r.name).join(", ") : <span className="muted">—</span>}</td>
-                  <td><button className="small" onClick={() => void remove([o], label)}>Remove</button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        // A stacked list, not a table: full site addresses cannot wrap nicely in
+        // table cells and overflowed the narrow card.
+        <div className="site-list">
+          {origins.map((o) => {
+            const { label, host } = siteLabel(o);
+            const used = usedBy(host);
+            return (
+              <div key={o} className="site-row">
+                <div className="site-main">
+                  <code className="site-origin">{label}</code>
+                  <span className="small muted">{used.length ? `Used by: ${used.map((r) => r.name).join(", ")}` : "Not used by any rule"}</span>
+                </div>
+                <button className="small" onClick={() => void remove([o], label)}>Remove</button>
+              </div>
+            );
+          })}
+        </div>
       )}
       <ErrorBox error={error} />
       <div className="row">

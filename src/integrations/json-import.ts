@@ -70,7 +70,7 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
 
 export function parseImport(
   json: string,
-  opts: { registries: Registries; defaultSafety: SafetyConfig; now: number },
+  opts: { registries: Registries; defaultSafety: SafetyConfig; now: number; allowFastIntervals?: boolean },
 ): { fatal: boolean; rules: Rule[]; exclusions: Omit<Exclusion, "id" | "createdAt">[]; settings?: Partial<Settings>; errors: ImportReport["errors"]; warnings: string[] } {
   const errors: ImportReport["errors"] = [];
   const warnings: string[] = [];
@@ -107,7 +107,7 @@ export function parseImport(
   const rules: Rule[] = [];
   const seen = new Set<string>();
   rawRules.forEach((raw, index) => {
-    const v = validateRule(raw, { registries: opts.registries, defaultSafety: opts.defaultSafety, now: opts.now });
+    const v = validateRule(raw, { registries: opts.registries, defaultSafety: opts.defaultSafety, now: opts.now, allowFastIntervals: opts.allowFastIntervals });
     if (!v.valid) {
       errors.push({ index, name: (raw as { name?: string })?.name, diagnostics: v.diagnostics });
       return;

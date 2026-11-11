@@ -16,6 +16,7 @@ import { decideSafety } from "./safety";
 import { checkLimits, inActiveWindow, MIN_ALARM_DELAY_MS, nextWindowStart, restoredDueAt } from "./schedule";
 import { isPaused, isTerminal, newRuntime, transition } from "./state-machine";
 import { TimeoutError, withTimeout } from "./timeout";
+import { FAST_SITE_SPACING_MS, MIN_INTERVAL_SECONDS } from "../triggers/interval";
 import type {
   ActionConfig,
   Actor,
@@ -116,6 +117,8 @@ class SafetyBlock extends Error {
     public readonly status: ExecutionStatus,
     public readonly reason: string,
     public readonly retryAt: number,
+    /** Routine deferrals (e.g. the per-site rate limit) are not written to history. */
+    public readonly quiet = false,
   ) {
     super(reason);
   }
@@ -134,6 +137,8 @@ export interface CycleResult {
 export class RuleEngine {
   private readonly registries: Registries;
   private readonly locks = new Map<number, Promise<unknown>>();
+  /** Last fast-interval automatic reload per host (in memory; resets with the worker). */
+  private readonly lastFastReloadByHost = new Map<string, number>();
   private readonly timeouts: EngineTimeouts;
   /** Page port with bounded waits: a stalled page yields "unavailable"/"unknown", never a hang. */
   private readonly page: PagePort;
@@ -663,7 +668,7 @@ export class RuleEngine {
         if (result.terminal) ended = true;
       } catch (e) {
         if (e instanceof SafetyBlock) {
-          this.log({ ruleId: rule.id, tabId: tab.id, url: tab.url, trigger: event, condition, action: action.type, outcome: "skipped", reason: e.reason });
+          if (!e.quiet) this.log({ ruleId: rule.id, tabId: tab.id, url: tab.url, trigger: event, condition, action: action.type, outcome: "skipped", reason: e.reason });
           rt = transition(rt, e.status, { reason: e.reason, nextDueAt: e.retryAt });
           break;
         }
@@ -688,6 +693,19 @@ export class RuleEngine {
     });
     if (!decision.allowed) {
       throw new SafetyBlock(decision.status, decision.reason, now + Math.max(decision.retryInMs, MIN_ALARM_DELAY_MS));
+    }
+    // Fast intervals (< 30 s): at most one automatic refresh per site per
+    // FAST_SITE_SPACING_MS across all tabs, so many tabs on one site cannot
+    // add up to a flood of requests.
+    const intervalMs = this.nextDue(rule, 0);
+    const host = siteKey(tab.url);
+    const fast = intervalMs !== null && intervalMs < MIN_INTERVAL_SECONDS * 1000 && host !== null;
+    if (fast) {
+      const last = this.lastFastReloadByHost.get(host) ?? -Infinity;
+      if (now - last < FAST_SITE_SPACING_MS) {
+        throw new SafetyBlock("scheduled", "Waiting: at most one fast refresh per site every 5 seconds", last + FAST_SITE_SPACING_MS, true);
+      }
+      this.lastFastReloadByHost.set(host, now);
     }
     if (this.deps.throttle) await this.deps.throttle();
     const next = transition(rt, "refreshing", {
@@ -839,4 +857,14 @@ export class RuleEngine {
   }
 
   isPausedStatus = isPaused;
+}
+
+/** Host used for the per-site fast-refresh limit (null for non-web URLs). */
+function siteKey(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.host : null;
+  } catch {
+    return null;
+  }
 }

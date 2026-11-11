@@ -6,7 +6,8 @@ import { z } from "zod";
 import type { Registries } from "../registries";
 import { MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_ACTIONS } from "../core/rule-schema";
 import { RULE_SCHEMA_VERSION } from "../core/types";
-import { MIN_INTERVAL_SECONDS } from "../triggers/interval";
+import { FAST_MIN_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS } from "../triggers/interval";
+import type { Settings } from "../core/types";
 import { buildRuleJsonSchema } from "./json-schema";
 
 export function toJsonSchema(schema: z.ZodType): unknown {
@@ -17,11 +18,15 @@ export function toJsonSchema(schema: z.ZodType): unknown {
   }
 }
 
-export function buildCapabilities(registries: Registries) {
+export function buildCapabilities(registries: Registries, settings?: Pick<Settings, "allowFastIntervals">) {
+  const fast = settings?.allowFastIntervals === true;
   return {
     ruleSchemaVersion: RULE_SCHEMA_VERSION,
     limits: {
-      minIntervalSeconds: MIN_INTERVAL_SECONDS,
+      /** Effective minimum for new rules under the user's current settings. */
+      minIntervalSeconds: fast ? FAST_MIN_INTERVAL_SECONDS : MIN_INTERVAL_SECONDS,
+      fastIntervalsEnabled: fast,
+      fastIntervalFloorSeconds: FAST_MIN_INTERVAL_SECONDS,
       maxConditionDepth: MAX_CONDITION_DEPTH,
       maxConditionNodes: MAX_CONDITION_NODES,
       maxActionsPerList: MAX_ACTIONS,

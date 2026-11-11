@@ -235,6 +235,11 @@ export interface Settings {
    * Empty by default: other extensions are rejected before pairing.
    */
   allowedExtensionIds: string[];
+  /**
+   * Advanced: allow intervals under 30 s (hard floor 5 s, at most one fast
+   * refresh per site every 5 s). Off by default.
+   */
+  allowFastIntervals: boolean;
 }
 
 /* ------------------------------------------------------------------ */

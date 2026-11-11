@@ -5,7 +5,8 @@ user activity and programmable conditions — with a declarative, versioned
 rule engine that the popup, a visual rule builder, JSON import and external
 AI agents all drive through **one** Rule Management API.
 
-* **Quick controls** — per-tab refresh from the popup: presets (30 s – 1 h) or
+* **Quick controls** — per-tab refresh from the popup: presets (30 s – 1 h; down
+  to 5 s with the opt-in fast intervals setting) or
   custom intervals, countdown, pause/resume, refresh now, exclude tab.
 * **URL rules** — exact / domain / glob / regex patterns, exclusions,
   priorities with deterministic tie-breaking, conflict hints, pattern tester.

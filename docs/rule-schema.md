@@ -55,7 +55,7 @@ so an unattended "refresh until" never ends silently.
 
 | type | Fields | Fires on | Can refresh |
 |---|---|---|---|
-| `interval` | `seconds` (≥30), `randomMaxSeconds?` | chrome.alarms | yes |
+| `interval` | `seconds` (≥30; ≥5 with fast intervals enabled), `randomMaxSeconds?` | chrome.alarms (+ worker timer below 30 s) | yes |
 | `navigation` | — | page load completed | no (loop) |
 | `urlChange` | — | tab URL changed | no (loop) |
 | `startup` | — | extension start | yes |
