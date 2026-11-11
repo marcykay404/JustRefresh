@@ -18,27 +18,29 @@ export type SiteGroup = {
 
 const ALL_SITE_PATTERNS = ["http://*/*", "https://*/*"];
 
+const BOTH_SCHEMES = ["http", "https"] as const;
+const ALL_WEBSITES = { key: "all", kind: "all", label: "All websites" } as const;
+
+/** One granted pattern: the site it belongs to and the schemes it covers. */
+function parseOrigin(o: string): Pick<SiteGroup, "key" | "kind" | "label"> & { schemes: readonly string[] } {
+  // Not requested by JustRefresh, but shown correctly if granted some other way.
+  if (o === "<all_urls>") return { ...ALL_WEBSITES, schemes: BOTH_SCHEMES };
+  if (o.startsWith("file://")) return { key: "file", kind: "file", label: "Local files (file://)", schemes: [] };
+  const m = /^([a-z*]+):\/\/([^/]+)\//.exec(o);
+  const host = m?.[2] ?? o;
+  const scheme = m?.[1];
+  const schemes = scheme === "*" ? BOTH_SCHEMES : scheme ? [scheme] : [];
+  return host === "*" ? { ...ALL_WEBSITES, schemes } : { key: host, kind: "host", label: host, schemes };
+}
+
 export function groupOrigins(origins: readonly string[]): SiteGroup[] {
   const groups = new Map<string, SiteGroup>();
   for (const o of origins) {
-    let key: string, kind: SiteGroup["kind"], label: string, scheme: string | null;
-    if (o === "<all_urls>") {
-      // Not requested by JustRefresh, but shown correctly if granted some other way.
-      [key, kind, label, scheme] = ["all", "all", "All websites", null];
-    } else if (o.startsWith("file://")) {
-      [key, kind, label, scheme] = ["file", "file", "Local files (file://)", null];
-    } else {
-      const m = /^([a-z*]+):\/\/([^/]+)\//.exec(o);
-      const host = m?.[2] ?? o;
-      scheme = m?.[1] ?? null;
-      if (host === "*") [key, kind, label] = ["all", "all", "All websites"];
-      else [key, kind, label] = [host, "host", host];
-    }
-    const g = groups.get(key) ?? { key, kind, label, schemes: [], origins: [] };
+    const { schemes, ...site } = parseOrigin(o);
+    const g = groups.get(site.key) ?? { ...site, schemes: [], origins: [] };
     g.origins.push(o);
-    const schemes = scheme === "*" ? ["http", "https"] : scheme ? [scheme] : o === "<all_urls>" ? ["http", "https"] : [];
     for (const s of schemes) if (!g.schemes.includes(s)) g.schemes.push(s);
-    groups.set(key, g);
+    groups.set(site.key, g);
   }
   const rank = { all: 0, file: 1, host: 2 } as const;
   return [...groups.values()]

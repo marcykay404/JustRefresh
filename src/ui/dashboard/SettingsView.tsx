@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, requestOrigins } from "../shared/api";
 import { useApi } from "../shared/hooks";
-import { ALL_SITE_PATTERNS, describeUsage, groupOrigins, hasAllSites, inUse, siteUsage } from "../shared/site-access";
+import { ALL_SITE_PATTERNS, describeUsage, groupOrigins, hasAllSites, inUse, siteUsage, type SiteGroup, type SiteUsage } from "../shared/site-access";
 import { downloadJson } from "../shared/format";
 import { ErrorBox, Field, Toggle } from "../shared/components";
 import { INTERVAL_PRESETS, STOP_AFTER_CHOICES } from "../../core/defaults";
@@ -244,19 +244,14 @@ function ImportExport({ onDone }: { onDone: () => void }) {
 const COLLAPSED_SITES = 5;
 const FILTER_AFTER = 8;
 
-/**
- * Granted site access, per site, with removal. Chrome's own extension page
- * cannot revoke runtime-granted sites individually, so this is the place.
- */
-export function SiteAccess() {
-  const [origins, setOrigins] = useState<string[] | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const [filter, setFilter] = useState("");
-  const dialog = useDialog();
-  const [expanded, setExpanded] = useState(false);
-  const rules = useApi<Rule[]>("listRules", undefined, { live: ["config"] });
-  const overview = useApi<{ tabs: { tab: { url: string }; status: string }[] }>("getOverview", undefined, { live: ["runtime", "config", "tabs"] });
+type SiteEntry = { g: SiteGroup; usage: SiteUsage; used: boolean };
+type RemoveAccess = (list: string[], what: string) => Promise<void>;
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** The granted origins, kept current as access is granted or removed anywhere. */
+function useGrantedOrigins(): string[] | null {
+  const [origins, setOrigins] = useState<string[] | null>(null);
   useEffect(() => {
     const load = () => void chrome.permissions.getAll().then((p) => setOrigins([...(p.origins ?? [])].sort()));
     load();
@@ -267,7 +262,13 @@ export function SiteAccess() {
       chrome.permissions.onRemoved.removeListener(load);
     };
   }, []);
+  return origins;
+}
 
+/** Granted sites with what uses them. */
+function useSites(origins: string[] | null): { sites: SiteEntry[]; loaded: boolean } {
+  const rules = useApi<Rule[]>("listRules", undefined, { live: ["config"] });
+  const overview = useApi<{ tabs: { tab: { url: string }; status: string }[] }>("getOverview", undefined, { live: ["runtime", "config", "tabs"] });
   // Usage is only trusted once tabs and rules have loaded; until then nothing
   // counts as unused, so "Remove unused" cannot remove a site in use.
   const loaded = !!overview.data && !!rules.data;
@@ -282,69 +283,122 @@ export function SiteAccess() {
       // "All websites" first, then sites in use, then the rest by name.
       .sort((a, b) => Number(b.g.kind === "all") - Number(a.g.kind === "all") || Number(b.used) - Number(a.used));
   }, [origins, overview.data, rules.data, loaded]);
+  return { sites, loaded };
+}
 
-  const unused = sites.filter((s) => !s.used && s.g.kind !== "all");
+function describeSite({ g, usage }: SiteEntry, loaded: boolean): string {
+  if (g.kind === "all") {
+    const parts = [usage.tabs ? plural(usage.tabs, "tab") : null, usage.rules.length ? plural(usage.rules.length, "rule") : null].filter(Boolean);
+    const scope = g.schemes.length === 1 ? `Every ${g.schemes[0]} site` : "Every http and https site";
+    return [scope, parts.length ? `used by ${parts.join(" and ")}` : null].filter(Boolean).join(" · ");
+  }
+  const httpOnly = g.schemes.length === 1 && g.schemes[0] === "http" ? "http only" : null;
+  return [httpOnly, loaded ? describeUsage(usage) : null].filter(Boolean).join(" · ");
+}
+
+function accessSummary(sites: SiteEntry[], unused: number, loaded: boolean): string {
+  const siteCount = sites.filter((s) => s.g.kind !== "all").length;
+  if (sites.some((s) => s.g.kind === "all")) {
+    return `Allowed on all websites${siteCount ? `, plus ${plural(siteCount, "site")} granted earlier` : ""}`;
+  }
+  return `Allowed on ${plural(siteCount, "site")}${loaded ? ` · ${siteCount - unused} in use` : ""}`;
+}
+
+/** Confirm, then remove access; a failure goes to `setError`. */
+function useAccessRemoval(setError: (e: unknown) => void) {
+  const dialog = useDialog();
+  const removeAfter = async (ask: () => Promise<boolean>, origins: string[]) => {
+    setError(null);
+    if (!(await ask())) return;
+    try {
+      await chrome.permissions.remove({ origins });
+    } catch (e) {
+      setError(e);
+    }
+  };
+  const remove: RemoveAccess = (list, what) =>
+    removeAfter(
+      () =>
+        dialog.confirm({
+        title: `Remove access to ${what}?`,
+        message: `Tabs and rules on ${list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing (unless set to refresh without protection), and page conditions will report “unknown”.`,
+        confirmLabel: "Remove access",
+        danger: true,
+      }),
+      list,
+    );
+  const removeUnused = (unused: SiteEntry[]) => {
+    const names = unused.map((s) => s.g.label);
+    return removeAfter(
+      () =>
+        dialog.confirm({
+        title: `Remove access to ${plural(names.length, "unused site")}?`,
+        message: (
+          <>
+            <p>No running tab or rule uses {names.length === 1 ? "it" : "them"}. JustRefresh asks again the next time you turn on refresh there.</p>
+            <ul>
+              {names.slice(0, 10).map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+            {names.length > 10 && <p>…and {names.length - 10} more.</p>}
+          </>
+        ),
+        confirmLabel: "Remove access",
+        danger: true,
+      }),
+      unused.flatMap((s) => s.g.origins),
+    );
+  };
+  return { remove, removeUnused };
+}
+
+/** The site rows, with a filter for long lists and a collapsed view. */
+function SiteList({ sites, loaded, remove }: { sites: SiteEntry[]; loaded: boolean; remove: RemoveAccess }) {
+  const [filter, setFilter] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const q = filter.trim().toLowerCase();
   const matching = q ? sites.filter((s) => s.g.label.toLowerCase().includes(q)) : sites;
   const shown = expanded || q ? matching : matching.slice(0, COLLAPSED_SITES);
-  const allSites = sites.some((s) => s.g.kind === "all");
+  return (
+    <>
+      {sites.length > FILTER_AFTER && (
+        <input type="search" placeholder="Filter sites…" aria-label="Filter sites" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      )}
+      {/* One row per site: Chrome keeps a pattern per scheme (all sites = http + https). */}
+      <div className="site-list">
+        {shown.map((s) => (
+          <div key={s.g.key} className="site-row">
+            <div className="site-main" title={s.g.origins.join("\n")}>
+              <code className="site-origin">{s.g.label}</code>
+              <span className="small muted">{describeSite(s, loaded)}</span>
+            </div>
+            <button className="small" onClick={() => void remove(s.g.origins, s.g.kind === "all" ? "all websites" : s.g.label)}>
+              Remove
+            </button>
+          </div>
+        ))}
+        {q && matching.length === 0 && <span className="small muted site-row">No sites match “{filter}”.</span>}
+      </div>
+      {!q && matching.length > COLLAPSED_SITES && (
+        <button className="link small" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>
+          {expanded ? "Show fewer" : `Show all ${matching.length} sites`}
+        </button>
+      )}
+    </>
+  );
+}
 
-  const describe = ({ g, usage }: (typeof sites)[number]) => {
-    const httpOnly = g.schemes.length === 1 && g.schemes[0] === "http" ? "http only" : null;
-    if (g.kind === "all") {
-      const parts = [usage.tabs && `${usage.tabs} tab${usage.tabs === 1 ? "" : "s"}`, usage.rules.length && `${usage.rules.length} rule${usage.rules.length === 1 ? "" : "s"}`].filter(Boolean);
-      return [g.schemes.length === 1 ? `Every ${g.schemes[0]} site` : "Every http and https site", parts.length ? `used by ${parts.join(" and ")}` : null].filter(Boolean).join(" · ");
-    }
-    return [httpOnly, loaded ? describeUsage(usage) : null].filter(Boolean).join(" · ");
-  };
-
-  const remove = async (list: string[], what: string) => {
-    setError(null);
-    const ok = await dialog.confirm({
-      title: `Remove access to ${what}?`,
-      message: `Tabs and rules on ${list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing (unless set to refresh without protection), and page conditions will report “unknown”.`,
-      confirmLabel: "Remove access",
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      await chrome.permissions.remove({ origins: list });
-    } catch (e) {
-      setError(e);
-    }
-  };
-
-  const removeUnused = async () => {
-    setError(null);
-    const names = unused.map((s) => s.g.label);
-    const ok = await dialog.confirm({
-      title: `Remove access to ${names.length} unused site${names.length === 1 ? "" : "s"}?`,
-      message: (
-        <>
-          <p>No running tab or rule uses {names.length === 1 ? "it" : "them"}. JustRefresh asks again the next time you turn on refresh there.</p>
-          <ul>
-            {names.slice(0, 10).map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-          </ul>
-          {names.length > 10 && <p>…and {names.length - 10} more.</p>}
-        </>
-      ),
-      confirmLabel: "Remove access",
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      await chrome.permissions.remove({ origins: unused.flatMap((s) => s.g.origins) });
-    } catch (e) {
-      setError(e);
-    }
-  };
-
-  const siteCount = sites.filter((s) => s.g.kind !== "all").length;
-  const summary = allSites
-    ? `Allowed on all websites${siteCount ? `, plus ${siteCount} site${siteCount === 1 ? "" : "s"} granted earlier` : ""}`
-    : `Allowed on ${siteCount} site${siteCount === 1 ? "" : "s"}${loaded ? ` · ${siteCount - unused.length} in use` : ""}`;
+/**
+ * Granted site access, per site, with removal. Chrome's own extension page
+ * cannot revoke runtime-granted sites individually, so this is the place.
+ */
+export function SiteAccess() {
+  const origins = useGrantedOrigins();
+  const { sites, loaded } = useSites(origins);
+  const [error, setError] = useState<unknown>(null);
+  const { remove, removeUnused } = useAccessRemoval(setError);
+  const unused = sites.filter((s) => !s.used && s.g.kind !== "all");
 
   return (
     <div className="card col">
@@ -353,50 +407,28 @@ export function SiteAccess() {
         JustRefresh installs without access to any website and asks per site when you turn on refresh. Access lets it wait while you're typing or have
         unsaved form changes, and lets rules check a page's content.
       </p>
-      {origins === null ? (
-        <span className="muted small">Loading…</span>
-      ) : sites.length === 0 ? (
-        <span className="muted small">No site access granted.</span>
-      ) : (
+      {origins === null && <span className="muted small">Loading…</span>}
+      {origins !== null && sites.length === 0 && <span className="muted small">No site access granted.</span>}
+      {sites.length > 0 && (
         <>
           <div className="site-summary">
-            <span className="small">{summary}</span>
+            <span className="small">{accessSummary(sites, unused.length, loaded)}</span>
             {unused.length > 0 && (
-              <button className="small" onClick={() => void removeUnused()}>
+              <button className="small" onClick={() => void removeUnused(unused)}>
                 Remove unused ({unused.length})
               </button>
             )}
           </div>
-          {sites.length > FILTER_AFTER && (
-            <input type="search" placeholder="Filter sites…" aria-label="Filter sites" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          )}
-          {/* One row per site: Chrome keeps a pattern per scheme (all sites = http + https). */}
-          <div className="site-list">
-            {shown.map((s) => (
-              <div key={s.g.key} className="site-row">
-                <div className="site-main" title={s.g.origins.join("\n")}>
-                  <code className="site-origin">{s.g.label}</code>
-                  <span className="small muted">{describe(s)}</span>
-                </div>
-                <button className="small" onClick={() => void remove(s.g.origins, s.g.kind === "all" ? "all websites" : s.g.label)}>
-                  Remove
-                </button>
-              </div>
-            ))}
-            {q && matching.length === 0 && <span className="small muted site-row">No sites match “{filter}”.</span>}
-          </div>
-          {!q && matching.length > COLLAPSED_SITES && (
-            <button className="link small" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>
-              {expanded ? "Show fewer" : `Show all ${matching.length} sites`}
-            </button>
-          )}
+          <SiteList sites={sites} loaded={loaded} remove={remove} />
         </>
       )}
       <ErrorBox error={error} />
-      <div className="row">
-        {origins && !hasAllSites(origins) && <button onClick={() => void requestOrigins(ALL_SITE_PATTERNS)}>Allow access to all sites</button>}
-        {origins && origins.length > 0 && <button onClick={() => void remove(origins, "all sites")}>Remove all</button>}
-      </div>
+      {origins && (
+        <div className="row">
+          {!hasAllSites(origins) && <button onClick={() => void requestOrigins(ALL_SITE_PATTERNS)}>Allow access to all sites</button>}
+          {origins.length > 0 && <button onClick={() => void remove(origins, "all sites")}>Remove all</button>}
+        </div>
+      )}
     </div>
   );
 }

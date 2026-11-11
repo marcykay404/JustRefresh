@@ -1,16 +1,25 @@
 /**
  * Cyclomatic and cognitive complexity stay within the limits in
- * eslint.config.js. Functions already over them are in
- * complexity-baseline.json and may only get simpler (see scripts/complexity.mjs).
+ * eslint.config.js. complexity-baseline.json (empty now) can list functions
+ * allowed over them, which may only get simpler (see scripts/complexity.mjs).
  */
 // @ts-expect-error plain JS module without types
-import { compare, measure, readBaseline } from "../../scripts/complexity.mjs";
+import { compare, lowered, measure, readBaseline } from "../../scripts/complexity.mjs";
 
-it("no function is more complex than allowed (or than its baseline)", async () => {
+it("no function is more complex than allowed", async () => {
   const { offenders, errors } = await measure();
   expect(errors).toEqual([]);
   expect(compare(offenders, readBaseline())).toEqual([]);
 }, 60_000);
+
+it("the limits are 15 and nothing is excused: the baseline stays empty", async () => {
+  const { ESLint } = await import("eslint");
+  const config = await new ESLint({ cwd: process.cwd() }).calculateConfigForFile("src/any.ts");
+  expect(config.rules.complexity).toEqual([2, { max: 15 }]);
+  expect(config.rules["sonarjs/cognitive-complexity"]).toEqual([2, 15]);
+  // Simplify a function instead of listing it here.
+  expect(readBaseline()).toEqual({ cyclomatic: {}, cognitive: {} });
+});
 
 describe("the ratchet", () => {
   const base = { cyclomatic: { "a.ts | function a()": 20 }, cognitive: {} };
@@ -28,6 +37,14 @@ describe("the ratchet", () => {
   });
   it("asks to remove a listed function once it is within the limit", () => {
     expect(compare({ cyclomatic: {}, cognitive: {} }, base)[0]).toMatch(/now within the limit: a.ts/);
+  });
+  it("--update only lowers the baseline: never adds a new offender or raises one", () => {
+    expect(lowered({ cyclomatic: { "a.ts | function a()": 18 }, cognitive: {} }, base)).toEqual({ cyclomatic: { "a.ts | function a()": 18 }, cognitive: {} });
+    expect(lowered({ cyclomatic: {}, cognitive: {} }, base)).toEqual({ cyclomatic: {}, cognitive: {} });
+    const worse = { cyclomatic: { "a.ts | function a()": 25, "b.ts | function b()": 16 }, cognitive: { "c.ts | function c()": 30 } };
+    const next = lowered(worse, base);
+    expect(next).toEqual(base);
+    expect(compare(worse, next)).toHaveLength(3);
   });
 });
 

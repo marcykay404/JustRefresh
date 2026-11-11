@@ -68,42 +68,49 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
   "redactUrlsForAgents",
 ];
 
-export function parseImport(
-  json: string,
-  opts: { registries: Registries; defaultSafety: SafetyConfig; now: number; allowFastIntervals?: boolean },
-): { fatal: boolean; rules: Rule[]; exclusions: Omit<Exclusion, "id" | "createdAt">[]; settings?: Partial<Settings>; errors: ImportReport["errors"]; warnings: string[] } {
-  const errors: ImportReport["errors"] = [];
-  const warnings: string[] = [];
-  let data: unknown;
-  try {
-    data = JSON.parse(json);
-  } catch (e) {
-    return { fatal: true, rules: [], exclusions: [], errors: [{ index: -1, diagnostics: [{ path: "$", code: "json_invalid", message: `Not valid JSON: ${(e as Error).message}`, severity: "error" }] }], warnings };
-  }
+type ExclusionInput = Omit<Exclusion, "id" | "createdAt">;
+type ParsedImport = { fatal: boolean; rules: Rule[]; exclusions: ExclusionInput[]; settings?: Partial<Settings>; errors: ImportReport["errors"]; warnings: string[] };
+type ImportOptions = { registries: Registries; defaultSafety: SafetyConfig; now: number; allowFastIntervals?: boolean };
+/** What an import holds before its rules are validated. */
+interface ImportSource {
+  rawRules: unknown[];
+  exclusions: ExclusionInput[];
+  settings?: Partial<Settings>;
+}
 
-  let rawRules: unknown[];
-  let exclusions: Omit<Exclusion, "id" | "createdAt">[] = [];
-  let settings: Partial<Settings> | undefined;
-  if (Array.isArray(data)) rawRules = data;
-  else if (data && typeof data === "object" && (data as { format?: unknown }).format === BUNDLE_FORMAT) {
-    const b = bundleSchema.safeParse(data);
-    if (!b.success) {
-      return { fatal: true, rules: [], exclusions: [], errors: [{ index: -1, diagnostics: b.error.issues.map((i) => ({ path: i.path.join("."), code: i.code, message: i.message, severity: "error" as const })) }], warnings };
-    }
-    if (b.data.version > CONFIG_SCHEMA_VERSION) warnings.push(`Bundle version ${b.data.version} is newer than supported; importing compatible parts`);
-    rawRules = b.data.rules;
-    exclusions = (b.data.exclusions ?? []).filter((e) => {
-      const p = validatePattern(e.pattern);
-      if (p) warnings.push(`Skipped exclusion: ${p}`);
-      return !p;
-    });
-    if (b.data.settings) {
-      settings = {};
-      for (const k of SETTINGS_KEYS) if (k in b.data.settings) (settings as Record<string, unknown>)[k] = b.data.settings[k];
-    }
-  } else if (data && typeof data === "object") rawRules = [data];
-  else return { fatal: true, rules: [], exclusions: [], errors: [{ index: -1, diagnostics: [{ path: "$", code: "shape_invalid", message: "Expected a rule, an array of rules, or an export bundle", severity: "error" }] }], warnings };
+const fatalImport = (diagnostics: Diagnostic[], warnings: string[]): ParsedImport => ({ fatal: true, rules: [], exclusions: [], errors: [{ index: -1, diagnostics }], warnings });
+const importError = (path: string, code: string, message: string): Diagnostic => ({ path, code, message, severity: "error" });
 
+/** Only the importable settings (never integration access). */
+function pickSettings(raw: Record<string, unknown> | undefined): Partial<Settings> | undefined {
+  if (!raw) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const k of SETTINGS_KEYS) if (k in raw) out[k] = raw[k];
+  return out as Partial<Settings>;
+}
+
+function readBundle(data: unknown, warnings: string[]): ImportSource | Diagnostic[] {
+  const b = bundleSchema.safeParse(data);
+  if (!b.success) return b.error.issues.map((i) => importError(i.path.join("."), i.code, i.message));
+  if (b.data.version > CONFIG_SCHEMA_VERSION) warnings.push(`Bundle version ${b.data.version} is newer than supported; importing compatible parts`);
+  const exclusions = (b.data.exclusions ?? []).filter((e) => {
+    const p = validatePattern(e.pattern);
+    if (p) warnings.push(`Skipped exclusion: ${p}`);
+    return !p;
+  });
+  return { rawRules: b.data.rules, exclusions, settings: pickSettings(b.data.settings) };
+}
+
+/** A bundle, an array of rules, or one rule; diagnostics when it is none of these. */
+function readSource(data: unknown, warnings: string[]): ImportSource | Diagnostic[] {
+  if (Array.isArray(data)) return { rawRules: data, exclusions: [] };
+  if (!data || typeof data !== "object") return [importError("$", "shape_invalid", "Expected a rule, an array of rules, or an export bundle")];
+  if ((data as { format?: unknown }).format === BUNDLE_FORMAT) return readBundle(data, warnings);
+  return { rawRules: [data], exclusions: [] };
+}
+
+/** Validate each rule; a repeated id is cleared so the rule gets a new one. */
+function validateRules(rawRules: unknown[], opts: ImportOptions, errors: ImportReport["errors"], warnings: string[]): Rule[] {
   const rules: Rule[] = [];
   const seen = new Set<string>();
   rawRules.forEach((raw, index) => {
@@ -120,5 +127,20 @@ export function parseImport(
     if (rule.id) seen.add(rule.id);
     rules.push(rule);
   });
-  return { fatal: false, rules, exclusions, settings, errors, warnings };
+  return rules;
+}
+
+export function parseImport(json: string, opts: ImportOptions): ParsedImport {
+  const errors: ImportReport["errors"] = [];
+  const warnings: string[] = [];
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch (e) {
+    return fatalImport([importError("$", "json_invalid", `Not valid JSON: ${(e as Error).message}`)], warnings);
+  }
+  const source = readSource(data, warnings);
+  if (Array.isArray(source)) return fatalImport(source, warnings);
+  const rules = validateRules(source.rawRules, opts, errors, warnings);
+  return { fatal: false, rules, exclusions: source.exclusions, settings: source.settings, errors, warnings };
 }

@@ -39,16 +39,18 @@ export const operationLabel = (op: string) => {
 };
 const OUTCOME_LABEL: Record<AuditEntry["outcome"], string> = { ok: "Done", pending_approval: "Waiting for your OK", denied: "Refused", error: "Failed" };
 
+type Act = (method: string, params: unknown) => Promise<void>;
+type BridgeStatus = { connected: boolean; wanted: boolean; restartRequired: boolean };
+
 export function AgentsView() {
-  const dialog = useDialog();
   const { data, error, reload } = useApi<AgentsData>("listAgents", undefined, { live: ["config"] });
   const audit = useApi<AuditEntry[]>("getAudit", undefined, { live: ["audit"] });
   const rules = useApi<Rule[]>("listRules", undefined, { live: ["config"] });
   const overview = useApi<{ settings: Settings }>("getOverview", undefined, { live: ["config"] });
-  const bridge = useApi<{ connected: boolean; wanted: boolean; restartRequired: boolean }>("bridgeStatus", undefined, { live: ["bridge", "config"] });
+  const bridge = useApi<BridgeStatus>("bridgeStatus", undefined, { live: ["bridge", "config"] });
   const [actionError, setActionError] = useState<unknown>(null);
 
-  const act = async (method: string, params: unknown) => {
+  const act: Act = async (method, params) => {
     setActionError(null);
     try {
       await api(method, params);
@@ -58,10 +60,10 @@ export function AgentsView() {
     }
   };
 
-  const pendingApprovals = data?.approvals.filter((a) => a.status === "pending") ?? [];
+  const agents = data?.agents ?? [];
   const ruleById = new Map((rules.data ?? []).map((r) => [r.id, r]));
-  const pendingAgents = data?.agents.filter((a) => a.status === "pending").length ?? 0;
-  const agentName = (id: string) => data?.agents.find((a) => a.id === id)?.name ?? id;
+  const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? id;
+  const settings = overview.data?.settings;
 
   return (
     <>
@@ -72,115 +74,163 @@ export function AgentsView() {
         agent. You can take an agent's access away at any time.
       </p>
       <ErrorBox error={error ?? actionError} />
-
-      <div className="card col">
-        <h2>Waiting for your OK {pendingApprovals.length > 0 && <span className="badge">{pendingApprovals.length}</span>}</h2>
-        {pendingApprovals.length === 0 ? (
-          <span className="muted">
-            {pendingAgents > 0
-              ? `No rule changes are waiting. ${pendingAgents === 1 ? "1 agent is" : `${pendingAgents} agents are`} asking to connect: see Agents below.`
-              : "Nothing is waiting for your OK."}
-          </span>
-        ) : (
-          pendingApprovals.map((a) => {
-            const rule = ruleById.get(a.ruleId);
-            return (
-              <div key={a.id} className="info col">
-                <div className="row">
-                  <strong>{a.kind === "activate" ? "Switch on" : "Delete"} rule “{rule?.name ?? a.ruleId}”</strong>
-                  <span className="muted small" title={`Rule version ${a.ruleRevision}`}>asked by {agentName(a.agentId)} · {formatTime(a.createdAt)}</span>
-                  <span className="spacer" />
-                  <a className="btn small" href={`#/builder/${a.ruleId}`} style={{ textDecoration: "none" }}>Review & test</a>
-                  <button className="small primary" onClick={() => act("resolveApproval", { id: a.id, approve: true })}>Approve</button>
-                  <button className="small danger" onClick={() => act("resolveApproval", { id: a.id, approve: false })}>Reject</button>
-                </div>
-                {rule && <RuleInWords rule={rule} />}
-                {rule && (
-                  <details>
-                    <summary className="small">Show the rule's full definition (JSON)</summary>
-                    <pre>{JSON.stringify({ ...rule, meta: undefined }, null, 2)}</pre>
-                  </details>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
-
+      <ApprovalsCard
+        approvals={data?.approvals ?? []}
+        pendingAgents={agents.filter((a) => a.status === "pending").length}
+        ruleById={ruleById}
+        agentName={agentName}
+        act={act}
+      />
       <div className="card col">
         <h2>Agents</h2>
-        {!data?.agents.length ? (
+        {agents.length === 0 ? (
           <Empty>No agents have asked for access yet.</Empty>
         ) : (
-          data.agents.map((a) => <AgentCard key={a.id} agent={a} allScopes={data.allScopes} act={act} />)
+          agents.map((a) => <AgentCard key={a.id} agent={a} allScopes={data?.allScopes ?? []} act={act} />)
         )}
       </div>
-
-      <AllowedExtensions ids={overview.data?.settings.allowedExtensionIds ?? []} save={(ids) => act("updateSettings", { allowedExtensionIds: ids })} />
-
-      <div className="card col">
-        <h2>Desktop AI apps (MCP bridge)</h2>
-        <p className="small muted" style={{ margin: 0 }}>
-          Optional. Lets AI apps on this computer that support MCP (Model Context Protocol) connect to JustRefresh. It needs a small helper program
-          installed from the <code>bridge/</code> folder; see <code>docs/agent-integration.md</code>. Everything stays on this computer, and each app has to
-          be approved above before it can do anything.
-        </p>
-        <div className="row">
-          <Toggle
-            checked={!!overview.data?.settings.nativeBridgeEnabled}
-            label="Allow desktop AI apps to connect"
-            onChange={(on) => {
-              const ask = on ? chrome.permissions.request({ permissions: ["nativeMessaging"] }).catch(() => false) : Promise.resolve(true);
-              void ask.then((granted) => { if (granted) void act("updateSettings", { nativeBridgeEnabled: on }); });
-            }}
-          />
-          <span className={`pill pill-${bridge.data?.connected ? "ok" : "muted"}`}>{bridge.data?.connected ? "Connected" : "Not connected"}</span>
-          <span className="small muted">Extension ID (used when installing the helper): <code>{chrome.runtime.id}</code></span>
-        </div>
-        {bridge.data?.restartRequired && (
-          <div className="row">
-            <span className="small">
-              One more step: Chrome only allows this connection after JustRefresh restarts. Your rules and schedules are kept; open JustRefresh pages
-              (like this one) will close.
-            </span>
-            <button className="small primary" onClick={() => chrome.runtime.reload()}>
-              Restart JustRefresh
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="card col">
-        <div className="row">
-          <h2>Activity log</h2>
-          <span className="spacer" />
-          <button className="small" onClick={async () =>
-              (await dialog.confirm({ title: "Clear the activity log?", message: "The record of what agents asked JustRefresh to do is deleted.", confirmLabel: "Clear log", danger: true })) &&
-              act("clearAudit", undefined)
-            }>Clear</button>
-        </div>
-        <p className="small muted" style={{ margin: 0 }}>Everything agents have asked JustRefresh to do, newest first.</p>
-        {!audit.data?.length ? (
-          <Empty>No agent activity yet.</Empty>
-        ) : (
-          <table>
-            <thead><tr><th>Time</th><th>Agent</th><th>Request</th><th>Rule</th><th>Result</th><th>Details</th></tr></thead>
-            <tbody>
-              {audit.data.slice(0, 300).map((e, i) => (
-                <tr key={i}>
-                  <td className="small">{formatTime(e.at)}</td>
-                  <td className="small" title={e.agentId}>{agentName(e.agentId)}</td>
-                  <td className="small" title={e.operation}>{operationLabel(e.operation)}</td>
-                  <td className="small" title={e.ruleId}>{e.ruleId ? (ruleById.get(e.ruleId)?.name ?? e.ruleId) : "—"}</td>
-                  <td><span className={`pill pill-${e.outcome === "ok" ? "ok" : e.outcome === "pending_approval" ? "warn" : "error"}`}>{OUTCOME_LABEL[e.outcome] ?? e.outcome}</span></td>
-                  <td className="small muted">{e.detail}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <AllowedExtensions ids={settings?.allowedExtensionIds ?? []} save={(ids) => act("updateSettings", { allowedExtensionIds: ids })} />
+      <BridgeCard enabled={!!settings?.nativeBridgeEnabled} status={bridge.data} act={act} />
+      <ActivityLog entries={audit.data ?? []} ruleById={ruleById} agentName={agentName} act={act} />
     </>
+  );
+}
+
+function ApprovalsCard({
+  approvals,
+  pendingAgents,
+  ruleById,
+  agentName,
+  act,
+}: {
+  approvals: ApprovalRequest[];
+  pendingAgents: number;
+  ruleById: Map<string, Rule>;
+  agentName: (id: string) => string;
+  act: Act;
+}) {
+  const pending = approvals.filter((a) => a.status === "pending");
+  const agentsWaiting = pendingAgents === 1 ? "1 agent is" : `${pendingAgents} agents are`;
+  return (
+    <div className="card col">
+      <h2>Waiting for your OK {pending.length > 0 && <span className="badge">{pending.length}</span>}</h2>
+      {pending.length === 0 ? (
+        <span className="muted">
+          {pendingAgents > 0 ? `No rule changes are waiting. ${agentsWaiting} asking to connect: see Agents below.` : "Nothing is waiting for your OK."}
+        </span>
+      ) : (
+        pending.map((a) => <ApprovalRow key={a.id} approval={a} rule={ruleById.get(a.ruleId)} agentName={agentName} act={act} />)
+      )}
+    </div>
+  );
+}
+
+function ApprovalRow({ approval: a, rule, agentName, act }: { approval: ApprovalRequest; rule?: Rule; agentName: (id: string) => string; act: Act }) {
+  return (
+    <div className="info col">
+      <div className="row">
+        <strong>{a.kind === "activate" ? "Switch on" : "Delete"} rule “{rule?.name ?? a.ruleId}”</strong>
+        <span className="muted small" title={`Rule version ${a.ruleRevision}`}>asked by {agentName(a.agentId)} · {formatTime(a.createdAt)}</span>
+        <span className="spacer" />
+        <a className="btn small" href={`#/builder/${a.ruleId}`} style={{ textDecoration: "none" }}>Review & test</a>
+        <button className="small primary" onClick={() => act("resolveApproval", { id: a.id, approve: true })}>Approve</button>
+        <button className="small danger" onClick={() => act("resolveApproval", { id: a.id, approve: false })}>Reject</button>
+      </div>
+      {rule && (
+        <>
+          <RuleInWords rule={rule} />
+          <details>
+            <summary className="small">Show the rule's full definition (JSON)</summary>
+            <pre>{JSON.stringify({ ...rule, meta: undefined }, null, 2)}</pre>
+          </details>
+        </>
+      )}
+    </div>
+  );
+}
+
+function BridgeCard({ enabled, status, act }: { enabled: boolean; status: BridgeStatus | null; act: Act }) {
+  const connected = !!status?.connected;
+  const toggle = (on: boolean) => {
+    const ask = on ? chrome.permissions.request({ permissions: ["nativeMessaging"] }).catch(() => false) : Promise.resolve(true);
+    void ask.then((granted) => {
+      if (granted) void act("updateSettings", { nativeBridgeEnabled: on });
+    });
+  };
+  return (
+    <div className="card col">
+      <h2>Desktop AI apps (MCP bridge)</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        Optional. Lets AI apps on this computer that support MCP (Model Context Protocol) connect to JustRefresh. It needs a small helper program
+        installed from the <code>bridge/</code> folder; see <code>docs/agent-integration.md</code>. Everything stays on this computer, and each app has to
+        be approved above before it can do anything.
+      </p>
+      <div className="row">
+        <Toggle checked={enabled} label="Allow desktop AI apps to connect" onChange={toggle} />
+        <span className={`pill pill-${connected ? "ok" : "muted"}`}>{connected ? "Connected" : "Not connected"}</span>
+        <span className="small muted">Extension ID (used when installing the helper): <code>{chrome.runtime.id}</code></span>
+      </div>
+      {status?.restartRequired && (
+        <div className="row">
+          <span className="small">
+            One more step: Chrome only allows this connection after JustRefresh restarts. Your rules and schedules are kept; open JustRefresh pages
+            (like this one) will close.
+          </span>
+          <button className="small primary" onClick={() => chrome.runtime.reload()}>
+            Restart JustRefresh
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const OUTCOME_PILL: Record<AuditEntry["outcome"], string> = { ok: "ok", pending_approval: "warn", denied: "error", error: "error" };
+
+function ActivityLog({
+  entries,
+  ruleById,
+  agentName,
+  act,
+}: {
+  entries: AuditEntry[];
+  ruleById: Map<string, Rule>;
+  agentName: (id: string) => string;
+  act: Act;
+}) {
+  const dialog = useDialog();
+  const clear = async () => {
+    const ok = await dialog.confirm({ title: "Clear the activity log?", message: "The record of what agents asked JustRefresh to do is deleted.", confirmLabel: "Clear log", danger: true });
+    if (ok) await act("clearAudit", undefined);
+  };
+  return (
+    <div className="card col">
+      <div className="row">
+        <h2>Activity log</h2>
+        <span className="spacer" />
+        <button className="small" onClick={clear}>Clear</button>
+      </div>
+      <p className="small muted" style={{ margin: 0 }}>Everything agents have asked JustRefresh to do, newest first.</p>
+      {entries.length === 0 ? (
+        <Empty>No agent activity yet.</Empty>
+      ) : (
+        <table>
+          <thead><tr><th>Time</th><th>Agent</th><th>Request</th><th>Rule</th><th>Result</th><th>Details</th></tr></thead>
+          <tbody>
+            {entries.slice(0, 300).map((e, i) => (
+              <tr key={i}>
+                <td className="small">{formatTime(e.at)}</td>
+                <td className="small" title={e.agentId}>{agentName(e.agentId)}</td>
+                <td className="small" title={e.operation}>{operationLabel(e.operation)}</td>
+                <td className="small" title={e.ruleId}>{e.ruleId ? (ruleById.get(e.ruleId)?.name ?? e.ruleId) : "—"}</td>
+                <td><span className={`pill pill-${OUTCOME_PILL[e.outcome] ?? "error"}`}>{OUTCOME_LABEL[e.outcome] ?? e.outcome}</span></td>
+                <td className="small muted">{e.detail}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 

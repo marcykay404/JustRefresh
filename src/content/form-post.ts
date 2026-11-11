@@ -38,22 +38,66 @@ function safeStore(get: () => Store): Store | null {
 
 const noHash = (url: string) => url.split("#")[0]!;
 
+/** Where a submitted form's result loads: the same tab for these targets (or none). */
+const SAME_TAB = ["", "_self", "_top", "_parent"];
+
+/** The address a submit event posts to and loads in this tab, or null (GET, handled by script, other tab/frame). */
+export function postedAction(e: Event, win: Window): string | null {
+  const form = e.target as HTMLFormElement | null;
+  if (e.defaultPrevented || form?.tagName !== "FORM") return null;
+  const submitter = (e as SubmitEvent).submitter;
+  // The button's own formmethod / formtarget / formaction win over the form's.
+  const either = (own: string, ofForm: string) => submitter?.getAttribute(own) || form.getAttribute(ofForm) || "";
+  if ((either("formmethod", "method") || "get").toLowerCase() !== "post") return null;
+  // A result that opens in another tab or a (hidden) frame doesn't replace this page.
+  if (!SAME_TAB.includes(either("formtarget", "target").toLowerCase())) return null;
+  const formaction = submitter?.getAttribute("formaction");
+  return noHash(formaction ? new URL(formaction, win.location.href).href : form.action || win.location.href);
+}
+
 /** Remember POST submissions that load their result in this tab (not ones handled by script). */
 export function watchFormPosts(win: Window, getStore: () => Store = () => win.sessionStorage, now = () => Date.now()) {
   // Bubble phase on window: runs after the page's own submit handlers, so
   // defaultPrevented tells whether the page took over (fetch/XHR).
   win.addEventListener("submit", (e) => {
-    const form = e.target as HTMLFormElement | null;
-    if (e.defaultPrevented || form?.tagName !== "FORM") return;
-    const submitter = (e as SubmitEvent).submitter;
-    const method = (submitter?.getAttribute("formmethod") || form.getAttribute("method") || "get").toLowerCase();
-    if (method !== "post") return;
-    // A result that opens in another tab or a (hidden) frame doesn't replace this page.
-    const target = (submitter?.getAttribute("formtarget") || form.getAttribute("target") || "").toLowerCase();
-    if (target && !["_self", "_top", "_parent"].includes(target)) return;
-    const action = submitter?.getAttribute("formaction") ? new URL(submitter.getAttribute("formaction")!, win.location.href).href : form.action || win.location.href;
-    safeStore(getStore)?.setItem(SUBMIT_KEY, JSON.stringify({ at: now(), action: noHash(action) }));
+    const action = postedAction(e, win);
+    if (action !== null) safeStore(getStore)?.setItem(SUBMIT_KEY, JSON.stringify({ at: now(), action }));
   });
+}
+
+function readJson<T extends object>(store: Store, key: string): Partial<T> {
+  try {
+    return JSON.parse(store.getItem(key) ?? "{}") ?? {};
+  } catch {
+    return {};
+  }
+}
+
+interface Submitted {
+  at: number;
+  action: string;
+}
+interface Result {
+  href: string;
+  timeOrigin: number;
+}
+
+/** This page is what the form loaded: a fresh submission to this address (ignoring #…), no redirect. */
+function loadedByForm(href: string, nav: NavigationInfo, submitted: Partial<Submitted>, now: number): boolean {
+  const fresh = !!submitted.at && now - submitted.at < SUBMIT_FRESH_MS;
+  return nav.type === "navigate" && nav.redirectCount === 0 && fresh && submitted.action === noHash(href);
+}
+
+/**
+ * Still the remembered POST result: reloaded, revisited via back/forward, the
+ * same document with a newly injected content script, or restored after
+ * Memory Saver discarded the tab (the restore counts as "navigate" but
+ * reloads the form result).
+ */
+function stillResult(href: string, nav: NavigationInfo, result: Partial<Result>, timeOrigin: number, wasDiscarded: boolean): boolean {
+  if (result.href !== href) return false;
+  if (nav.type === "reload" || nav.type === "back_forward" || wasDiscarded) return true;
+  return !!timeOrigin && result.timeOrigin === timeOrigin;
 }
 
 /**
@@ -72,34 +116,18 @@ export function detectFormResult(
 ): boolean {
   const store = safeStore(getStore);
   if (!store || !nav) return false;
-  let submitted: { at?: number; action?: string } = {};
-  try {
-    submitted = JSON.parse(store.getItem(SUBMIT_KEY) ?? "{}") ?? {};
-  } catch {
-    /* ignore */
-  }
+  const submitted = readJson<Submitted>(store, SUBMIT_KEY);
   store.removeItem(SUBMIT_KEY);
-  let result: { href?: string; timeOrigin?: number } = {};
-  try {
-    result = JSON.parse(store.getItem(RESULT_KEY) ?? "{}") ?? {};
-  } catch {
-    /* ignore */
-  }
-  const fresh = !!submitted.at && now - submitted.at < SUBMIT_FRESH_MS;
-  // This page is what the form loaded: same address (ignoring #…), no redirect.
-  if (nav.type === "navigate" && fresh && submitted.action === noHash(href) && nav.redirectCount === 0) {
-    store.setItem(RESULT_KEY, JSON.stringify({ href, timeOrigin }));
+  const result = readJson<Result>(store, RESULT_KEY);
+  const remember = () => store.setItem(RESULT_KEY, JSON.stringify({ href, timeOrigin }));
+  if (loadedByForm(href, nav, submitted, now)) {
+    remember();
     return true;
   }
-  if (result.href === href) {
-    // Reloaded, revisited via back/forward, the same document with a newly
-    // injected content script, or restored after Memory Saver discarded the tab
-    // (the restore counts as "navigate" but reloads the form result).
-    if (nav.type === "reload" || nav.type === "back_forward" || wasDiscarded) {
-      if (wasDiscarded) store.setItem(RESULT_KEY, JSON.stringify({ href, timeOrigin }));
-      return true;
-    }
-    if (timeOrigin && result.timeOrigin === timeOrigin) return true;
+  if (stillResult(href, nav, result, timeOrigin, wasDiscarded)) {
+    // A restored document has a new timeOrigin.
+    if (wasDiscarded) remember();
+    return true;
   }
   store.removeItem(RESULT_KEY);
   return false;

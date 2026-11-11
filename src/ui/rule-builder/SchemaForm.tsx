@@ -45,6 +45,45 @@ export function defaultsFor(type: string, schema: JsonSchema | undefined): Recor
   return out;
 }
 
+/** "type:value" for a pattern object, else the value as text. */
+const asText = (v: unknown) => (typeof v === "object" && v ? `${(v as { type: string }).type}:${(v as { value: string }).value}` : String(v ?? ""));
+
+/** One field's control, chosen by its schema; `set(undefined)` clears it. */
+function FieldInput({ schema: s, value: v, label, required, set }: { schema: JsonSchema; value: unknown; label: string; required: boolean; set: (v: unknown) => void }) {
+  const none = required ? null : <option value="">—</option>;
+  if (s.enum) {
+    return (
+      <select value={String(v ?? "")} onChange={(e) => set(e.target.value || undefined)} aria-label={label}>
+        {none}
+        {s.enum.map((o) => <option key={String(o)} value={String(o)}>{String(o).replace(/_/g, " ")}</option>)}
+      </select>
+    );
+  }
+  if (s.type === "boolean") {
+    return (
+      <select value={v === undefined ? "" : String(v)} onChange={(e) => set(e.target.value === "" ? undefined : e.target.value === "true")} aria-label={label}>
+        {none}
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    );
+  }
+  if (s.type === "number" || s.type === "integer") {
+    return (
+      <input
+        type="number"
+        aria-label={label}
+        min={s.minimum}
+        max={s.maximum}
+        value={v === undefined ? "" : String(v)}
+        onChange={(e) => set(e.target.value === "" ? undefined : Number(e.target.value))}
+        style={{ width: 110 }}
+      />
+    );
+  }
+  return <input aria-label={label} value={asText(v)} onChange={(e) => set(e.target.value)} placeholder={s.description ?? ""} />;
+}
+
 export function SchemaForm({
   schema,
   value,
@@ -58,10 +97,11 @@ export function SchemaForm({
 }) {
   const fields = editableFields(schema);
   if (!fields.length) return null;
+  const isRequired = (k: string) => !!schema?.required?.includes(k);
   const set = (k: string, v: unknown) => {
     const next = { ...value };
     if (v === undefined || v === "") {
-      if (schema?.required?.includes(k)) next[k] = v ?? "";
+      if (isRequired(k)) next[k] = v ?? "";
       else delete next[k];
     } else next[k] = v;
     onChange(next);
@@ -69,46 +109,12 @@ export function SchemaForm({
   return (
     <div className="row" style={{ alignItems: "flex-end" }}>
       {fields.map(([k, s]) => {
-        const required = schema?.required?.includes(k);
-        const label = `${humanize(k)}${required ? "" : " (optional)"}`;
-        const v = value[k];
-        let input: ReactNode;
-        if (s.enum) {
-          input = (
-            <select value={String(v ?? "")} onChange={(e) => set(k, e.target.value || undefined)} aria-label={label}>
-              {!required && <option value="">—</option>}
-              {s.enum.map((o) => <option key={String(o)} value={String(o)}>{String(o).replace(/_/g, " ")}</option>)}
-            </select>
-          );
-        } else if (s.type === "boolean") {
-          input = (
-            <select value={v === undefined ? "" : String(v)} onChange={(e) => set(k, e.target.value === "" ? undefined : e.target.value === "true")} aria-label={label}>
-              {!required && <option value="">—</option>}
-              <option value="true">Yes</option>
-              <option value="false">No</option>
-            </select>
-          );
-        } else if (s.type === "number" || s.type === "integer") {
-          input = (
-            <input
-              type="number"
-              aria-label={label}
-              min={s.minimum}
-              max={s.maximum}
-              value={v === undefined ? "" : String(v)}
-              onChange={(e) => set(k, e.target.value === "" ? undefined : Number(e.target.value))}
-              style={{ width: 110 }}
-            />
-          );
-        } else {
-          const str = typeof v === "object" && v ? `${(v as { type: string }).type}:${(v as { value: string }).value}` : String(v ?? "");
-          input = <input aria-label={label} value={str} onChange={(e) => set(k, e.target.value)} placeholder={s.description ?? ""} />;
-        }
+        const label = `${humanize(k)}${isRequired(k) ? "" : " (optional)"}`;
         return (
           <label key={k} className="field" title={s.description}>
             <span className="field-label">{label}</span>
             <div className="row" style={{ flexWrap: "nowrap" }}>
-              {input}
+              <FieldInput schema={s} value={value[k]} label={label} required={isRequired(k)} set={(v) => set(k, v)} />
               {extra?.(k)}
             </div>
           </label>

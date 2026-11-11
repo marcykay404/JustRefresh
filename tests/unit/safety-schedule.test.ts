@@ -50,6 +50,19 @@ describe("scheduling", () => {
     expect(inActiveWindow(night, at(1, 0, 5))).toBe(false);
     expect(nextWindowStart(w, at(18, 0, 5))).toBe(at(9, 0, 8));
   });
+  it("active windows: days without hours, every-day wraps, and equal start and end", () => {
+    expect(inActiveWindow({ days: [0, 6] }, at(3, 0, 6))).toBe(true);
+    expect(inActiveWindow({ days: [0, 6] }, at(3, 0, 2))).toBe(false);
+    const everyNight = { startTime: "22:00", endTime: "02:00" };
+    expect(inActiveWindow(everyNight, at(23, 30, 3))).toBe(true);
+    expect(inActiveWindow(everyNight, at(1, 59, 3))).toBe(true);
+    expect(inActiveWindow(everyNight, at(2, 0, 3))).toBe(false);
+    expect(inActiveWindow(everyNight, at(12, 0, 3))).toBe(false);
+    // A Friday-night window is closed on Friday evening before it opens.
+    expect(inActiveWindow({ days: [5], startTime: "22:00", endTime: "02:00" }, at(21, 59, 5))).toBe(false);
+    expect(inActiveWindow({ days: [1], startTime: "08:00", endTime: "08:00" }, at(3, 0, 1))).toBe(true);
+    expect(inActiveWindow({ days: [1], startTime: "08:00", endTime: "08:00" }, at(3, 0, 2))).toBe(false);
+  });
   it("limits", () => {
     expect(checkLimits({ maxRefreshes: 3 }, { refreshCount: 3, startedAt: 0 }, 1).reached).toBe(true);
     expect(checkLimits({ maxDurationSeconds: 60 }, { refreshCount: 0, startedAt: 0 }, 59_000).reached).toBe(false);

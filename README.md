@@ -66,7 +66,7 @@ npm run typecheck
 npm run build             # → dist/
 npm run test:e2e          # builds, loads dist/ into Chromium via Playwright
 npm run gen:schema        # regenerate schemas/*.json after changing handlers
-npm run complexity        # cyclomatic + cognitive complexity against the baseline
+npm run complexity        # cyclomatic + cognitive complexity (max 15 each)
 npm run complexity:update # lower the baseline after simplifying a listed function
 npm run bundle:report     # what the service worker bundle is made of (budget 200 KB)
 npm run check             # typecheck + tests + build + bundle budget
@@ -74,10 +74,12 @@ npm run check             # typecheck + tests + build + bundle budget
 
 **Complexity.** Every function in `src/` stays at or below 15 for both
 cyclomatic complexity (ESLint `complexity`) and cognitive complexity
-(`sonarjs/cognitive-complexity`); see `eslint.config.js`. Functions that were
-over when the check was introduced are listed in `complexity-baseline.json`
-and may only get simpler: the test fails if one gets worse, a new one
-appears, or one improves without the baseline being lowered.
+(`sonarjs/cognitive-complexity`); see `eslint.config.js`. `npm test` fails
+on any function over the limit, and the limits can't be switched off with an
+inline comment. `complexity-baseline.json` is a ratchet for exceptions: a
+listed function may only get simpler, and `complexity:update` only lowers or
+removes entries, never adds one. A test keeps it empty, so every function is
+within the limits.
 
 **Bundle.** The service worker uses `zod/mini` (via `src/core/zod.ts`) and
 ships the generated JSON Schemas as package files read on demand, instead of

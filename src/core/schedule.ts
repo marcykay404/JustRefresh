@@ -11,26 +11,28 @@ function minutesOf(hhmm: string): number {
   return h * 60 + m;
 }
 
+/** Whether the window covers `day` (0 = Sunday); no days listed means every day. */
+const onDay = (w: ActiveWindow, day: number) => !w.days?.length || w.days.includes(day);
+
+/** The window's hours wrap midnight (e.g. 22:00–06:00). */
+const wrapsMidnight = (w: ActiveWindow) => !!(w.startTime && w.endTime) && minutesOf(w.endTime!) < minutesOf(w.startTime!);
+
+/** Whether minute-of-day `cur` falls in start–end on `day`. */
+function inHours(w: ActiveWindow, start: number, end: number, cur: number, day: number): boolean {
+  if (start === end) return true;
+  if (start < end) return cur >= start && cur < end;
+  // Wraps midnight: the late part belongs to today, the early part to the previous day.
+  if (cur >= start) return onDay(w, day);
+  return cur < end && onDay(w, (day + 6) % 7);
+}
+
 export function inActiveWindow(w: ActiveWindow | undefined, now: number): boolean {
   if (!w) return true;
   const d = new Date(now);
-  if (w.days && w.days.length && !w.days.includes(d.getDay())) {
-    // When the window wraps midnight, early hours belong to the previous day.
-    if (!(w.startTime && w.endTime && minutesOf(w.endTime) < minutesOf(w.startTime))) return false;
-  }
+  // When the window wraps midnight, early hours belong to the previous day.
+  if (!onDay(w, d.getDay()) && !wrapsMidnight(w)) return false;
   if (!w.startTime || !w.endTime) return true;
-  const cur = d.getHours() * 60 + d.getMinutes();
-  const s = minutesOf(w.startTime);
-  const e = minutesOf(w.endTime);
-  if (s === e) return true;
-  if (s < e) return cur >= s && cur < e;
-  // Wraps midnight.
-  if (cur >= s) return !w.days?.length || w.days.includes(d.getDay());
-  if (cur < e) {
-    const prev = (d.getDay() + 6) % 7;
-    return !w.days?.length || w.days.includes(prev);
-  }
-  return false;
+  return inHours(w, minutesOf(w.startTime), minutesOf(w.endTime), d.getHours() * 60 + d.getMinutes(), d.getDay());
 }
 
 /** Next moment (minute resolution, within 8 days) when the window opens. */
