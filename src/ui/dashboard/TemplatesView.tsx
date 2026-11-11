@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
 import { useApi } from "../shared/hooks";
 import { ErrorBox } from "../shared/components";
-import type { Rule, TabInfo } from "../../core/types";
-import { intervalLabel } from "../popup/describe";
+import type { Rule, Settings, TabInfo } from "../../core/types";
+import { STOP_AFTER_CHOICES } from "../../core/defaults";
+import { matchesAny } from "../../core/url-pattern";
+import { intervalLabel, priorityAbove, stopAfterLabel } from "../popup/describe";
 import { hostOf, normalizeAddress, pageLabel, stashBuilderDraft, TEMPLATES, type Template, type TemplateValues } from "./templates";
 
 /** Dashboard → Templates: ready-made rules you fill in. */
@@ -37,7 +39,7 @@ export function TemplatesView() {
             <p className="small muted" style={{ margin: 0 }}>You fill in: {t.fills}</p>
             {t.warning && <p className="notice small" style={{ margin: 0 }}>{t.warning}</p>}
             <span className="spacer" />
-            <button style={{ alignSelf: "flex-start" }} onClick={() => { setCreated(null); setOpen(t); }}>
+            <button style={{ alignSelf: "flex-start" }} aria-label={`Use template: ${t.title}`} onClick={() => { setCreated(null); setOpen(t); }}>
               Use template
             </button>
           </article>
@@ -64,6 +66,10 @@ const ADDRESS = "__address__";
 
 function TemplateForm({ template: t, onClose, onCreated }: { template: Template; onClose: () => void; onCreated: (name: string) => void }) {
   const tabs = useApi<TabInfo[]>("listTabs");
+  const rules = useApi<Rule[]>("listRules");
+  const overview = useApi<{ settings: Settings }>("getOverview");
+  const settings = overview.data?.settings;
+  const [stopAfter, setStopAfter] = useState<number | null | undefined>(undefined);
   const webTabs = (tabs.data ?? []).filter((x) => /^https?:/.test(x.url));
   const [choice, setChoice] = useState<string>("");
   const [address, setAddress] = useState("");
@@ -89,7 +95,11 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
 
   const pickedTab = webTabs.find((x) => String(x.id) === choice) ?? null;
   const url = choice === ADDRESS ? normalizeAddress(address) : (pickedTab?.url ?? null);
-  const values: TemplateValues | null = url ? { url, text, seconds, start, end } : null;
+  // Outrank rules that already match the page, or the new rule would never run there.
+  const matching = url ? (rules.data ?? []).filter((r) => r.enabled && !r.meta.draft && matchesAny(r.target.patterns, url) !== null) : [];
+  const stopAfterMinutes = stopAfter === undefined ? (settings?.defaultStopAfterMinutes ?? null) : stopAfter;
+  const protects = settings ? settings.defaultSafety.pauseWhileTyping : true;
+  const values: TemplateValues | null = url ? { url, text, seconds, start, end, stopAfterMinutes: t.until ? stopAfterMinutes : null, priority: priorityAbove(matching), protects } : null;
   const textOk = !t.text || text.trim().length > 0;
   const hoursOk = !t.hours || (start !== "" && end !== "" && start < end);
   const ready = !!values && textOk && hoursOk && !busy;
@@ -111,6 +121,11 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
       if (pickedTab) {
         const state = (await api("getTabState", { tabId: pickedTab.id })) as { override: { mode: string } | null };
         if (state.override?.mode === "custom") await api("clearTabOverride", { tabId: pickedTab.id });
+        const after = (await api("getTabState", { tabId: pickedTab.id })) as { resolution: { controllerId: string | null; controllerName: string | null } };
+        if (after.resolution.controllerId !== rule.id) {
+          setError(new Error(`“${rule.name}” was created, but “${after.resolution.controllerName ?? "another rule"}” still controls that tab. Raise the new rule's priority in the Rule Builder.`));
+          return;
+        }
         if (t.scope === "page") await api("runNow", { tabId: pickedTab.id }).catch(() => undefined);
       }
       onCreated(rule.name);
@@ -131,6 +146,19 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
     if (e.key === "Escape") {
       e.preventDefault();
       onClose();
+    } else if (e.key === "Tab") {
+      // Keep focus inside the form while it's open.
+      const items = [...(boxRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input, select") ?? [])];
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) return;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   };
 
@@ -181,6 +209,18 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
               ))}
             </div>
           </div>
+        )}
+
+        {t.until && (
+          <label className="field">
+            <span className="field-label">Stop watching after</span>
+            <select value={stopAfterMinutes ?? ""} onChange={(e) => setStopAfter(e.target.value === "" ? null : Number(e.target.value))}>
+              {STOP_AFTER_CHOICES.map((m) => (
+                <option key={m ?? "none"} value={m ?? ""}>{stopAfterLabel(m)}</option>
+              ))}
+            </select>
+            <span className="field-hint">If it hasn't happened by then, it stops and tells you. Your default is in Settings.</span>
+          </label>
         )}
 
         {t.hours && (

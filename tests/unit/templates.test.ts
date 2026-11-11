@@ -8,6 +8,9 @@ const values = (t: (typeof TEMPLATES)[number]): TemplateValues => ({
   seconds: t.initialSeconds,
   start: "08:00",
   end: "18:00",
+  stopAfterMinutes: null,
+  priority: 0,
+  protects: true,
 });
 
 describe("templates", () => {
@@ -24,7 +27,7 @@ describe("templates", () => {
       "Refresh shop.example.com/item/42 every 1 min until “In stock” appears, then stop and notify you with a sound. It waits while you're typing.",
     );
     expect(byId["work-hours-dashboard"]).toBe("Refresh shop.example.com/item/42 every 5 to 6 min, Monday to Friday, 08:00 to 18:00. It waits while you're typing.");
-    expect(byId["stay-signed-in"]).toBe("Refresh any open shop.example.com page every 10 min so it doesn't log you out. It waits while you're typing.");
+    expect(byId["stay-signed-in"]).toBe("Refresh any open www.shop.example.com page every 10 min so it doesn't log you out. It waits while you're typing.");
   });
 
   it("page templates match only that page; 'Stay signed in' matches the whole site", () => {

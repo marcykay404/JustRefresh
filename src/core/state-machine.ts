@@ -12,7 +12,7 @@
  */
 import type { ExecutionStatus, TabRuntime } from "./types";
 
-const PAUSED: ExecutionStatus[] = ["paused_activity", "paused_unsaved", "paused_global", "paused_user", "paused_unknown"];
+const PAUSED: ExecutionStatus[] = ["paused_activity", "paused_unsaved", "paused_resubmit", "paused_global", "paused_user", "paused_unknown"];
 /** States reachable from anywhere (external control / resolution changes). */
 const UNIVERSAL: ExecutionStatus[] = ["idle", "excluded", "stopped", "paused_global", "paused_user", "error"];
 
@@ -23,6 +23,7 @@ const TRANSITIONS: Record<ExecutionStatus, ExecutionStatus[]> = {
   refreshing: ["scheduled", "evaluating", "completed", ...PAUSED],
   paused_activity: ["scheduled", "evaluating", ...PAUSED],
   paused_unsaved: ["scheduled", "evaluating", ...PAUSED],
+  paused_resubmit: ["scheduled", "evaluating", ...PAUSED],
   paused_global: ["scheduled", "evaluating", ...PAUSED],
   paused_user: ["scheduled", "evaluating", ...PAUSED],
   paused_unknown: ["scheduled", "evaluating", ...PAUSED, "completed"],

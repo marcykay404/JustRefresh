@@ -25,7 +25,11 @@ export const DEFAULT_SETTINGS: Settings = {
   nativeBridgeEnabled: false,
   allowedExtensionIds: [],
   allowFastIntervals: false,
+  defaultStopAfterMinutes: null,
 };
+
+/** Choices for "Stop watching after" (minutes); null = no limit. */
+export const STOP_AFTER_CHOICES: (number | null)[] = [null, 10, 20, 30, 60, 120, 360, 1440];
 
 export const INTERVAL_PRESETS: { label: string; seconds: number }[] = [
   { label: "30 seconds", seconds: 30 },

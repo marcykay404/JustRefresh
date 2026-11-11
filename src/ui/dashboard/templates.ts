@@ -5,7 +5,7 @@
  * a RuleInput. Only features that exist today are used.
  */
 import type { RuleInput } from "../../core/types";
-import { intervalLabel, untilRule } from "../popup/describe";
+import { intervalLabel, pageName, stopAfterLabel, untilRule } from "../popup/describe";
 
 export interface TemplateValues {
   /** Full page address (scope "page") or any page on the site (scope "site"). */
@@ -14,6 +14,12 @@ export interface TemplateValues {
   seconds: number;
   start: string;
   end: string;
+  /** Stop watching after this many minutes (null = no limit); "until" templates only. */
+  stopAfterMinutes: number | null;
+  /** Priority for the new rule (see priorityAbove). */
+  priority: number;
+  /** Whether new rules wait while you're typing (Settings → Activity protection). */
+  protects: boolean;
 }
 
 export interface Template {
@@ -34,10 +40,13 @@ export interface Template {
   initialSeconds: number;
   /** Working-hours blank (Monday to Friday). */
   hours?: boolean;
+  /** Waits for something on the page: offers "Stop watching after". */
+  until?: boolean;
   build(v: TemplateValues): RuleInput;
   describe(v: TemplateValues): string;
 }
 
+/** The site's host as shown to people ("www." dropped). */
 export function hostOf(url: string): string {
   try {
     return new URL(url).host.replace(/^www\./, "");
@@ -53,6 +62,25 @@ export function pageLabel(url: string): string {
 
 const exactPage = (url: string) => ({ type: "url" as const, patterns: [{ type: "exact" as const, value: url }], exclusions: [] });
 const quote = (s: string) => `“${s.trim()}”`;
+const waits = (v: TemplateValues) => (v.protects ? " It waits while you're typing." : "");
+const stopClause = (v: TemplateValues, what: string) =>
+  v.stopAfterMinutes ? ` If ${what} after ${stopAfterLabel(v.stopAfterMinutes)}, it stops and tells you.` : "";
+
+/** A "refresh until the text appears/disappears" rule with the template's name, priority and time limit. */
+function until(v: TemplateValues, mode: "appears" | "disappears", name: string): RuleInput {
+  return {
+    ...untilRule({
+      url: v.url,
+      site: hostOf(v.url),
+      seconds: v.seconds,
+      text: v.text,
+      mode,
+      priority: v.priority,
+      stopAfterSeconds: v.stopAfterMinutes ? v.stopAfterMinutes * 60 : null,
+    }),
+    name: `${name}: ${pageName(v.url)}`.slice(0, 100),
+  };
+}
 
 export const TEMPLATES: Template[] = [
   {
@@ -65,9 +93,10 @@ export const TEMPLATES: Template[] = [
     text: { label: "Stop when this text appears", hint: "Anywhere on the page, ignoring upper/lower case.", initial: "In stock" },
     intervals: [30, 60, 300, 900],
     initialSeconds: 60,
-    build: (v) => ({ ...untilRule({ url: v.url, site: hostOf(v.url), seconds: v.seconds, text: v.text, mode: "appears" }), name: `Back in stock: ${pageLabel(v.url)}`.slice(0, 100) }),
+    until: true,
+    build: (v) => until(v, "appears", "Back in stock"),
     describe: (v) =>
-      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and notify you with a sound. It waits while you're typing.`,
+      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and notify you with a sound.${stopClause(v, "it hasn't appeared")}${waits(v)}`,
   },
   {
     id: "status-changes",
@@ -80,9 +109,10 @@ export const TEMPLATES: Template[] = [
     text: { label: "Keep refreshing while this text is on the page", hint: "When it's gone, refreshing stops and you're notified.", initial: "Pending" },
     intervals: [60, 300, 900, 1800],
     initialSeconds: 300,
-    build: (v) => ({ ...untilRule({ url: v.url, site: hostOf(v.url), seconds: v.seconds, text: v.text, mode: "disappears" }), name: `Status: ${pageLabel(v.url)}`.slice(0, 100) }),
+    until: true,
+    build: (v) => until(v, "disappears", "Status"),
     describe: (v) =>
-      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} while ${quote(v.text)} is on the page; when it changes, stop and notify you with a sound. It waits while you're typing.`,
+      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} while ${quote(v.text)} is on the page; when it changes, stop and notify you with a sound.${stopClause(v, "it hasn't changed")}${waits(v)}`,
   },
   {
     id: "work-hours-dashboard",
@@ -92,34 +122,44 @@ export const TEMPLATES: Template[] = [
     scope: "page",
     initialSeconds: 300,
     hours: true,
-    build: (v) => ({
-      name: `Work hours: ${pageLabel(v.url)}`.slice(0, 100),
-      enabled: true,
-      target: exactPage(v.url),
-      trigger: { type: "interval", seconds: 300, randomMaxSeconds: 360 },
-      schedule: { days: [1, 2, 3, 4, 5], startTime: v.start, endTime: v.end },
-      actions: { onMatched: [], onNotMatched: [{ type: "refresh" }] },
-    }) as RuleInput,
-    describe: (v) => `Refresh ${pageLabel(v.url)} every 5 to 6 min, Monday to Friday, ${v.start} to ${v.end}. It waits while you're typing.`,
+    build: (v) =>
+      ({
+        name: `Work hours: ${pageName(v.url)}`.slice(0, 100),
+        enabled: true,
+        priority: v.priority,
+        target: exactPage(v.url),
+        trigger: { type: "interval", seconds: 300, randomMaxSeconds: 360 },
+        schedule: { days: [1, 2, 3, 4, 5], startTime: v.start, endTime: v.end },
+        actions: { onMatched: [], onNotMatched: [{ type: "refresh" }] },
+      }) as RuleInput,
+    describe: (v) => `Refresh ${pageLabel(v.url)} every 5 to 6 min, Monday to Friday, ${v.start} to ${v.end}.${waits(v)}`,
   },
   {
     id: "build-failed",
     title: "Tell me when a build fails",
-    description: "Every time the page loads, notifies you if it shows a failure. It doesn't refresh on its own: pair it with a timer if you like.",
-    fills: "the build page, the text that means it failed",
+    description: "Refreshes a build or deploy page every few minutes until a failure message appears, then stops and alerts you once with a sound.",
+    fills: "the build page, its failure message · Every 2 min",
     scope: "page",
-    text: { label: "Notify me when this text appears", hint: "Checked each time the page loads, ignoring upper/lower case.", initial: "Failed" },
-    initialSeconds: 0,
-    build: (v) =>
-      ({
-        name: `Build failed: ${pageLabel(v.url)}`.slice(0, 100),
-        enabled: true,
-        target: exactPage(v.url),
-        trigger: { type: "navigation" },
-        stopWhen: { type: "dom.text", operator: "contains", value: v.text.trim(), caseSensitive: false },
-        actions: { onMatched: [{ type: "notify", title: "Build failed", message: pageLabel(v.url), sound: true }], onNotMatched: [] },
-      }) as RuleInput,
-    describe: (v) => `Each time ${pageLabel(v.url)} loads, notify you with a sound if ${quote(v.text)} appears. It doesn't refresh the page itself.`,
+    text: {
+      label: "Stop and alert me when this text appears",
+      hint: "Use the exact words your build page shows when it fails, so it doesn't match things like “0 failed”.",
+      initial: "Build failed",
+    },
+    intervals: [60, 120, 300],
+    initialSeconds: 120,
+    until: true,
+    build: (v) => {
+      const r = until(v, "appears", "Build failed");
+      return {
+        ...r,
+        actions: {
+          ...r.actions!,
+          onMatched: [{ type: "stopRefresh" }, { type: "notify", title: "Build failed", message: pageName(v.url), sound: true }],
+        },
+      } as RuleInput;
+    },
+    describe: (v) =>
+      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and alert you once with a sound.${stopClause(v, "it hasn't appeared")}`,
   },
   {
     id: "stay-signed-in",
@@ -131,13 +171,15 @@ export const TEMPLATES: Template[] = [
     initialSeconds: 600,
     build: (v) =>
       ({
-        name: `Stay signed in: ${hostOf(v.url)}`.slice(0, 100),
+        name: `Stay signed in: ${new URL(v.url).host}`.slice(0, 100),
         enabled: true,
+        priority: v.priority,
         target: { type: "url", patterns: [{ type: "domain", value: new URL(v.url).host }], exclusions: [] },
         trigger: { type: "interval", seconds: v.seconds },
         actions: { onMatched: [], onNotMatched: [{ type: "refresh" }] },
       }) as RuleInput,
-    describe: (v) => `Refresh any open ${hostOf(v.url)} page every ${intervalLabel(v.seconds)} so it doesn't log you out. It waits while you're typing.`,
+    // The exact host: "www.example.com" and "example.com" are different sites to the rule.
+    describe: (v) => `Refresh any open ${new URL(v.url).host} page every ${intervalLabel(v.seconds)} so it doesn't log you out.${waits(v)}`,
   },
 ];
 

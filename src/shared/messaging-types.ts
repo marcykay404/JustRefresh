@@ -28,6 +28,8 @@ export interface ActivitySnapshot {
    */
   dirty: "clean" | "dirty" | "unknown";
   readyState: DocumentReadyState;
+  /** The page is the result of submitting a form with POST: reloading it would send the form again. */
+  formResult?: boolean;
 }
 
 export type ContentRequest =

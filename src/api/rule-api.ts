@@ -33,7 +33,7 @@ import type {
 import { ALL_AGENT_SCOPES, RULE_SCHEMA_VERSION } from "../core/types";
 import { defaultConfig } from "../core/defaults";
 import { FAST_MIN_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS } from "../triggers/interval";
-import { agentFor, ApiError, assertCanModify, authorize, redactUrl } from "./permissions";
+import { agentFor, ApiError, assertCanModify, authorize, redactPattern, redactUrl } from "./permissions";
 import { buildCapabilities } from "./capabilities";
 import { exportBundle, parseImport, type ImportReport } from "../integrations/json-import";
 
@@ -140,6 +140,21 @@ export class RuleManagementService {
     if (actor.type !== "agent") return tabs;
     const redact = (await this.deps.config.get()).settings.redactUrlsForAgents;
     return tabs.map((t) => ({ ...t, url: redactUrl(t.url, redact) }));
+  }
+
+  /**
+   * Rules as an agent may see them: with "Hide URL query strings from agents"
+   * on, query strings in other people's rules' page patterns are hidden (they
+   * can hold order numbers or emails). An agent's own rules stay intact so it
+   * can edit them without corrupting their targets.
+   */
+  private async rulesFor(actor: Actor, rules: Rule[]): Promise<Rule[]> {
+    if (actor.type !== "agent" || !(await this.deps.config.get()).settings.redactUrlsForAgents) return rules;
+    return rules.map((r) =>
+      r.meta.origin.type === "agent" && r.meta.origin.agentId === actor.agentId
+        ? r
+        : { ...r, target: { ...r.target, patterns: r.target.patterns.map(redactPattern), exclusions: r.target.exclusions.map(redactPattern) } },
+    );
   }
 
   private async getRuleOrThrow(id: string): Promise<Rule> {
@@ -295,9 +310,10 @@ export class RuleManagementService {
       listRules: m({
         scope: "rules:read",
         params: none,
-        handler: async () => Object.values((await d.config.get()).rules).sort((a, b) => b.priority - a.priority || a.meta.createdAt - b.meta.createdAt),
+        handler: async (actor) =>
+          this.rulesFor(actor, Object.values((await d.config.get()).rules).sort((a, b) => b.priority - a.priority || a.meta.createdAt - b.meta.createdAt)),
       }),
-      getRule: m({ scope: "rules:read", params: ruleId, handler: async (_a, p) => this.getRuleOrThrow(p.id) }),
+      getRule: m({ scope: "rules:read", params: ruleId, handler: async (actor, p) => (await this.rulesFor(actor, [await this.getRuleOrThrow(p.id)]))[0] }),
       validateRule: m({
         scope: "rules:read",
         params: z.strictObject({ rule: z.unknown() }),
@@ -606,6 +622,11 @@ export class RuleManagementService {
         params: z.strictObject({ tabId: z.number().int().nonnegative(), force: z.boolean().optional() }),
         handler: async (actor, p) => d.engine.refreshNow(p.tabId, { force: p.force, actor }),
       }),
+      openFresh: m({
+        scope: null,
+        params: tabId,
+        handler: async (actor, p) => d.engine.openFresh(p.tabId, { actor }),
+      }),
       runNow: m({
         scope: null,
         params: tabId,
@@ -653,6 +674,7 @@ export class RuleManagementService {
           redactUrlsForAgents: z.boolean().optional(),
           nativeBridgeEnabled: z.boolean().optional(),
           allowFastIntervals: z.boolean().optional(),
+          defaultStopAfterMinutes: z.number().int().min(1).max(10_080).nullable().optional(),
           allowedExtensionIds: z
             .array(z.string().regex(/^[a-p]{32}$/, "Chrome extension IDs are 32 letters a–p"))
             .max(50)

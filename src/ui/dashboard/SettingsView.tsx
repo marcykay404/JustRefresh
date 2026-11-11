@@ -4,7 +4,8 @@ import { useApi } from "../shared/hooks";
 import { ALL_SITE_PATTERNS, describeUsage, groupOrigins, hasAllSites, inUse, siteUsage } from "../shared/site-access";
 import { downloadJson } from "../shared/format";
 import { ErrorBox, Field, Toggle } from "../shared/components";
-import { INTERVAL_PRESETS } from "../../core/defaults";
+import { INTERVAL_PRESETS, STOP_AFTER_CHOICES } from "../../core/defaults";
+import { stopAfterLabel } from "../popup/describe";
 import type { Rule, Settings } from "../../core/types";
 import type { ImportReport } from "../../integrations/json-import";
 import { useDialog } from "../shared/dialog";
@@ -45,6 +46,19 @@ export function SettingsView() {
           <Field label="Default interval" hint="Used when enabling refresh on a tab without choosing an interval.">
             <select value={s.defaultIntervalSeconds} onChange={(e) => update({ defaultIntervalSeconds: Number(e.target.value) })}>
               {INTERVAL_PRESETS.map((p) => <option key={p.seconds} value={p.seconds}>{p.label}</option>)}
+            </select>
+          </Field>
+          <Field
+            label="Stop watching after"
+            hint="For rules that wait for something on the page (popup → Refresh until, templates): if it hasn't happened by then, stop and notify you. Applies to rules you create from now on; each rule can have its own in the Rule Builder."
+          >
+            <select
+              value={s.defaultStopAfterMinutes ?? ""}
+              onChange={(e) => update({ defaultStopAfterMinutes: e.target.value === "" ? null : Number(e.target.value) })}
+            >
+              {STOP_AFTER_CHOICES.map((m) => (
+                <option key={m ?? "none"} value={m ?? ""}>{stopAfterLabel(m)}</option>
+              ))}
             </select>
           </Field>
           <Toggle checked={s.notificationsEnabled} onChange={(v) => update({ notificationsEnabled: v })} label="Desktop notifications" />

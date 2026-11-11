@@ -5,6 +5,11 @@
  */
 import type { ConditionNode, Rule, RuleInput } from "../../core/types";
 
+/** "No limit", "20 min", "1 hour", "24 hours" for a stop-after choice in minutes. */
+export function stopAfterLabel(minutes: number | null): string {
+  return minutes === null ? "No limit" : intervalLabel(minutes * 60);
+}
+
 /** 30 → "30 sec", 60 → "1 min", 90 → "1 min 30 sec", 3600 → "1 hour", 5400 → "1 hr 30 min". */
 export function intervalLabel(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
@@ -60,10 +65,15 @@ export function describeCondition(c: ConditionNode): string {
   }
 }
 
-/** "Refreshing every 10 min until “S$ 3” appears, then notify me". */
-export function describeRule(rule: Pick<Rule, "trigger" | "stopWhen" | "actions">): string {
+/**
+ * "Refreshing every 10 min until “S$ 3” appears, then notify me".
+ * `effectiveSeconds`: the interval actually in effect, when it differs from the
+ * rule's own (fast intervals run at 30 s while they're turned off).
+ */
+export function describeRule(rule: Pick<Rule, "trigger" | "stopWhen" | "actions">, effectiveSeconds?: number | null): string {
   const t = rule.trigger as { type: string; seconds?: number };
-  const every = t.type === "interval" && t.seconds ? `every ${intervalLabel(t.seconds)}` : `on its ${t.type} trigger`;
+  const seconds = effectiveSeconds ?? t.seconds;
+  const every = t.type === "interval" && seconds ? `every ${intervalLabel(seconds)}` : t.type === "navigation" ? "each time the page loads" : `on its ${t.type} trigger`;
   if (!rule.stopWhen) return `Refreshing ${every}`;
   const notifies = rule.actions.onMatched.some((a) => a.type === "notify");
   return `Refreshing ${every} until ${describeCondition(rule.stopWhen)}${notifies ? ", then notify me" : ""}`;
@@ -72,15 +82,46 @@ export function describeRule(rule: Pick<Rule, "trigger" | "stopWhen" | "actions"
 export type UntilMode = "appears" | "disappears";
 
 /**
+ * A priority that outranks every rule in `matching`. Between rules, the higher
+ * priority wins and ties go to the older rule, so a new rule needs to be above
+ * the ones already matching its page to take effect there.
+ */
+export function priorityAbove(matching: readonly { priority: number }[]): number {
+  return matching.length ? Math.min(1000, Math.max(...matching.map((r) => r.priority)) + 1) : 0;
+}
+
+/** "Back in stock: shop.example.com/item/42" without the query string (it may hold order numbers or emails). */
+export function pageName(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.host.replace(/^www\./, "")}${u.pathname === "/" ? "" : u.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
  * "Refresh until something appears": refresh this exact page every
  * `seconds` until `text` appears (or disappears) anywhere on it, then stop
  * and notify with a sound.
  */
-export function untilRule(o: { url: string; site: string; seconds: number; text: string; mode: UntilMode }): RuleInput {
+export function untilRule(o: {
+  url: string;
+  site: string;
+  seconds: number;
+  text: string;
+  mode: UntilMode;
+  /** See priorityAbove. */
+  priority?: number;
+  /** Stop watching after this long (null/undefined = no limit). */
+  stopAfterSeconds?: number | null;
+}): RuleInput {
   const text = o.text.trim();
   return {
     name: `${o.site}: until ${quote(text)} ${o.mode === "appears" ? "appears" : "disappears"}`.slice(0, 100),
     enabled: true,
+    priority: o.priority ?? 0,
+    ...(o.stopAfterSeconds ? { limits: { maxDurationSeconds: o.stopAfterSeconds } } : {}),
     target: { type: "url", patterns: [{ type: "exact", value: o.url }], exclusions: [] },
     trigger: { type: "interval", seconds: o.seconds },
     stopWhen: { type: "dom.text", operator: o.mode === "appears" ? "contains" : "not_contains", value: text, caseSensitive: false },

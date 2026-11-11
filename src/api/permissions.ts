@@ -8,7 +8,8 @@
  *    capability to that agent.
  *  - Agents may only modify rules they created.
  */
-import type { Actor, AgentRecord, AgentScope, Config, Rule } from "../core/types";
+import type { Actor, AgentRecord, AgentScope, Config, Rule, UrlPatternInput } from "../core/types";
+import { detectPattern } from "../core/url-pattern";
 
 export class ApiError extends Error {
   constructor(
@@ -49,6 +50,21 @@ export function assertCanModify(actor: Actor, rule: Rule): void {
 }
 
 /** Agents never see query strings or fragments unless the user allows it. */
+/**
+ * Hide the query string inside a URL pattern ("…/order?id=42" → "…/order?…").
+ * Regex patterns keep "?" quantifiers; only an escaped literal "\?" starts
+ * the hidden part.
+ */
+export function redactPattern(p: UrlPatternInput): UrlPatternInput {
+  const cut = (value: string, regex: boolean) => {
+    const i = regex ? value.indexOf("\\?") : value.indexOf("?");
+    return i < 0 ? value : `${value.slice(0, i)}${regex ? "\\?" : "?"}…`;
+  };
+  const { type, value } = detectPattern(p);
+  const hidden = cut(value, type === "regex");
+  return hidden === value ? p : { type, value: hidden };
+}
+
 export function redactUrl(url: string, redact: boolean): string {
   if (!redact) return url;
   try {

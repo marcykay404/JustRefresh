@@ -26,11 +26,17 @@ writeFileSync(join(extDir, "manifest.json"), JSON.stringify(manifest));
 const loads = new Map();
 let statusText = "Sold out";
 let stockText = "Sold out";
+let orderPosts = 0;
 const server = http.createServer((req, res) => {
   const path = req.url.split("?")[0];
   loads.set(path, (loads.get(path) ?? 0) + 1);
   res.setHeader("content-type", "text/html");
   if (path === "/form") return res.end(`<title>Form</title><form><input id="q" value=""><button>Save</button></form>`);
+  if (path === "/checkout") return res.end(`<title>Checkout</title><form method="post" action="/order"><input name="item" value="42"><button id="buy">Place order</button></form>`);
+  if (path === "/order") {
+    if (req.method === "POST") orderPosts += 1;
+    return res.end(`<title>Order</title><h1>Order received (${orderPosts} POSTs so far)</h1>`);
+  }
   if (path === "/stock") return res.end(`<title>Stock</title><p>Item 42</p><div>${stockText}</div>`);
   if (path === "/status") return res.end(`<title>Status</title><div id="status">${statusText}</div>`);
   // A page that keeps running JS, so a debugger pause takes effect at once.
@@ -328,6 +334,32 @@ await test("first install opens the welcome page once; a template creates a work
   for (const r of others) await call("enableRule", { id: r.id });
   await shop.close();
   await welcome.close();
+});
+
+await test("a page reached by submitting a form is never reloaded; Open this page fresh loads it with GET", async () => {
+  const page = await context.newPage();
+  await page.goto(`${base}/checkout`);
+  await Promise.all([page.waitForURL(`${base}/order`), page.click("#buy")]);
+  assert.equal(orderPosts, 1);
+  const tabId = await tabIdFor(`${base}/order`);
+  await call("startTab", { tabId, intervalSeconds: 30 });
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "paused_resubmit", "paused on the form result");
+  const refresh = await call("refreshNow", { tabId });
+  assert.equal(refresh.formResult, true);
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(orderPosts, 1, "the order was not sent again");
+
+  await call("openFresh", { tabId });
+  await page.waitForLoadState("load");
+  await waitFor(async () => (await runtime(tabId))?.status === "scheduled", "refreshing resumes after opening fresh");
+  assert.equal(orderPosts, 1, "opening fresh does not resend");
+  const before = loads.get("/order") ?? 0;
+  await fireAlarm(tabId);
+  await waitFor(async () => (loads.get("/order") ?? 0) > before, "the fresh page refreshes normally");
+  assert.equal(orderPosts, 1);
+  await call("stopTab", { tabId });
+  await page.close();
 });
 
 await test("popup and dashboard render", async () => {
