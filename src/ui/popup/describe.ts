@@ -75,10 +75,18 @@ export function describeRule(rule: Pick<Rule, "trigger" | "stopWhen" | "actions"
   const seconds = effectiveSeconds ?? t.seconds;
   const notifies = rule.actions.onMatched.some((a) => a.type === "notify");
   // Page-load rules check the page but never refresh it themselves.
-  if (t.type === "navigation") {
-    return rule.stopWhen ? `Checking each time the page loads${notifies ? `: notify me when ${describeCondition(rule.stopWhen)}` : ""}` : "Runs each time the page loads";
+  if (t.type === "navigation" || t.type === "urlChange") {
+    const when = t.type === "navigation" ? "the page loads" : "the address changes";
+    return rule.stopWhen ? `Checking each time ${when}${notifies ? `: notify me when ${describeCondition(rule.stopWhen)}` : ""}` : `Runs each time ${when}`;
   }
-  const every = t.type === "interval" && seconds ? `every ${intervalLabel(seconds)}` : `on its ${t.type} trigger`;
+  const every =
+    t.type === "interval" && seconds
+      ? `every ${intervalLabel(seconds)}`
+      : t.type === "startup"
+        ? "once when the browser starts"
+        : t.type === "manual"
+          ? "only when you run it"
+          : `on its ${t.type} trigger`;
   if (!rule.stopWhen) return `Refreshing ${every}`;
   return `Refreshing ${every} until ${describeCondition(rule.stopWhen)}${notifies ? ", then notify me" : ""}`;
 }

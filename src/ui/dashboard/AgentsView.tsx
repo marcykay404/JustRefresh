@@ -5,6 +5,8 @@ import { formatTime } from "../shared/format";
 import { Empty, ErrorBox, Toggle } from "../shared/components";
 import type { AgentRecord, AgentScope, ApprovalRequest, AuditEntry, Rule, Settings } from "../../core/types";
 import { useDialog } from "../shared/dialog";
+import { describeRule } from "../popup/describe";
+import { matchesAny, patternToString } from "../../core/url-pattern";
 
 interface AgentsData {
   agents: AgentRecord[];
@@ -92,6 +94,7 @@ export function AgentsView() {
                   <button className="small primary" onClick={() => act("resolveApproval", { id: a.id, approve: true })}>Approve</button>
                   <button className="small danger" onClick={() => act("resolveApproval", { id: a.id, approve: false })}>Reject</button>
                 </div>
+                {rule && <RuleInWords rule={rule} />}
                 {rule && (
                   <details>
                     <summary className="small">Show the rule's full definition (JSON)</summary>
@@ -276,4 +279,55 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
       </div>
     </div>
   );
+}
+
+/** What an agent's rule would do, in words, so it can be approved without reading JSON. */
+export function RuleInWords({ rule }: { rule: Rule }) {
+  const pages = rule.target.patterns.map(patternToString);
+  const except = (rule.target.exclusions ?? []).map(patternToString);
+  const limits = rule.limits ?? {};
+  const extras = [
+    rule.schedule && (rule.schedule.startTime || rule.schedule.days?.length) ? "only during its active hours" : null,
+    limits.maxRefreshes ? `at most ${limits.maxRefreshes} refreshes` : null,
+    limits.maxDurationSeconds ? `stops after ${Math.round(limits.maxDurationSeconds / 60)} min` : null,
+    limits.stopAt ? `stops at ${formatTime(Date.parse(limits.stopAt))}` : null,
+  ].filter(Boolean);
+  return (
+    <div className="col small rule-in-words" style={{ gap: 4 }}>
+      <span>{describeRule(rule)}{extras.length ? ` (${extras.join(", ")})` : ""}.</span>
+      <span>
+        On {pages.length === 1 ? "pages matching" : "pages matching any of"}{" "}
+        {pages.map((p, i) => (
+          <span key={i}>
+            {i > 0 && ", "}
+            <code>{p}</code>
+          </span>
+        ))}
+        {except.length > 0 && (
+          <>
+            {", except "}
+            {except.map((p, i) => (
+              <span key={i}>
+                {i > 0 && ", "}
+                <code>{p}</code>
+              </span>
+            ))}
+          </>
+        )}
+        .
+      </span>
+      {matchesEverySite(rule) && (
+        <span className="warn-text">This rule can run on every website.</span>
+      )}
+    </div>
+  );
+}
+
+/** Whether a rule's pages include unrelated sites (a catch-all glob, domain or regex). */
+function matchesEverySite(rule: Rule): boolean {
+  try {
+    return ["https://unrelated-a.example/x", "http://unrelated-b.test/"].every((u) => matchesAny(rule.target.patterns, u) !== null);
+  } catch {
+    return false;
+  }
 }
