@@ -3,9 +3,7 @@ import { groupOrigins, hasAllSites } from "@/ui/shared/site-access";
 describe("Settings site-access grouping", () => {
   it("shows 'grant all sites' (http + https patterns) as one row that removes both", () => {
     const groups = groupOrigins(["https://*/*", "http://*/*"]);
-    expect(groups).toEqual([
-      { key: "all", kind: "all", label: "All websites", schemes: ["http", "https"], origins: ["http://*/*", "https://*/*"] },
-    ]);
+    expect(groups).toEqual([{ key: "all", kind: "all", label: "All websites", schemes: ["http", "https"], origins: ["http://*/*", "https://*/*"] }]);
   });
 
   it("groups a site's schemes, keeps distinct sites apart and puts all-sites and files first", () => {

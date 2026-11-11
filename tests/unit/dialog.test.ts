@@ -97,15 +97,18 @@ describe("in-page dialogs", () => {
 describe("no native dialogs in the UI", () => {
   it("src/ui does not call window confirm/alert/prompt", () => {
     const files: string[] = [];
-    const walk = (d: string) => readdirSync(d).forEach((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : /\.tsx?$/.test(f) && files.push(join(d, f))));
+    const walk = (d: string) =>
+      readdirSync(d).forEach((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : /\.tsx?$/.test(f) && files.push(join(d, f))));
     walk(join(__dirname, "../../src/ui"));
     // dialog.tsx defines the replacement API (methods named confirm/alert).
-    const offenders = files.filter((f) => !f.endsWith("shared/dialog.tsx")).flatMap((f) =>
-      readFileSync(f, "utf8")
-        .split("\n")
-        .map((line, i) => ({ f, i: i + 1, line }))
-        .filter(({ line }) => /(^|[^.\w])(window\.)?(confirm|alert|prompt)\(/.test(line)),
-    );
+    const offenders = files
+      .filter((f) => !f.endsWith("shared/dialog.tsx"))
+      .flatMap((f) =>
+        readFileSync(f, "utf8")
+          .split("\n")
+          .map((line, i) => ({ f, i: i + 1, line }))
+          .filter(({ line }) => /(^|[^.\w])(window\.)?(confirm|alert|prompt)\(/.test(line)),
+      );
     expect(offenders.map((o) => `${o.f}:${o.i}`)).toEqual([]);
   });
 });

@@ -33,7 +33,12 @@ const TABS = [
               : m.method === "createRule"
                 ? ((createdId = "r9"), { id: "r9", ...m.params.rule })
                 : m.method === "getTabState"
-                  ? { override: tabOverride, resolution: otherRuleWins ? { controllerId: "old", controllerName: "Stay signed in: shop.example.com" } : { controllerId: createdId, controllerName: createdId ? "new" : null } }
+                  ? {
+                      override: tabOverride,
+                      resolution: otherRuleWins
+                        ? { controllerId: "old", controllerName: "Stay signed in: shop.example.com" }
+                        : { controllerId: createdId, controllerName: createdId ? "new" : null },
+                    }
                   : { ok: true };
       return { ok: true, result };
     },
@@ -172,7 +177,14 @@ describe("Templates page", () => {
 
   it("outranks rules already matching the page", async () => {
     existingRules = [
-      { id: "old", name: "Stay signed in", enabled: true, priority: 3, meta: { draft: false }, target: { patterns: [{ type: "domain", value: "shop.example.com" }] } },
+      {
+        id: "old",
+        name: "Stay signed in",
+        enabled: true,
+        priority: 3,
+        meta: { draft: false },
+        target: { patterns: [{ type: "domain", value: "shop.example.com" }] },
+      },
       { id: "other", name: "Elsewhere", enabled: true, priority: 9, meta: { draft: false }, target: { patterns: ["https://other.example.com/*"] } },
     ];
     await useTemplate("back in stock");
@@ -195,7 +207,16 @@ describe("Templates page", () => {
 
   it("Stay signed in doesn't outrank rules on the page you pick, and leaves that tab's timer alone", async () => {
     tabOverride = { mode: "custom" };
-    existingRules = [{ id: "watch", name: "Back in stock", enabled: true, priority: 3, meta: { draft: false }, target: { patterns: [{ type: "exact", value: "https://shop.example.com/item/42" }] } }];
+    existingRules = [
+      {
+        id: "watch",
+        name: "Back in stock",
+        enabled: true,
+        priority: 3,
+        meta: { draft: false },
+        target: { patterns: [{ type: "exact", value: "https://shop.example.com/item/42" }] },
+      },
+    ];
     await useTemplate("Stay signed in");
     await click(button("Create and start"));
     await tick();

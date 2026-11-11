@@ -32,7 +32,10 @@ const server = http.createServer((req, res) => {
   loads.set(path, (loads.get(path) ?? 0) + 1);
   res.setHeader("content-type", "text/html");
   if (path === "/form") return res.end(`<title>Form</title><form><input id="q" value=""><button>Save</button></form>`);
-  if (path === "/checkout") return res.end(`<title>Checkout</title><form method="post" action="/order"><input name="item" value="42"><button id="buy">Place order</button></form><form method="post" action="/order#done"><button id="buy-frag">Place order (#done)</button></form><form method="post" action="/order" target="_blank"><button id="buy-new-tab">Order in new tab</button></form>`);
+  if (path === "/checkout")
+    return res.end(
+      `<title>Checkout</title><form method="post" action="/order"><input name="item" value="42"><button id="buy">Place order</button></form><form method="post" action="/order#done"><button id="buy-frag">Place order (#done)</button></form><form method="post" action="/order" target="_blank"><button id="buy-new-tab">Order in new tab</button></form>`,
+    );
   if (path === "/order") {
     if (req.method === "POST") orderPosts += 1;
     return res.end(`<title>Order</title><h1>Order received (${orderPosts} POSTs so far)</h1>`);
@@ -208,7 +211,9 @@ await test("refresh until condition: stops and records completion when #status s
 });
 
 await test("exclusions override rules", async () => {
-  await call("createRule", { rule: { id: "e2e-all", name: "All local", target: { patterns: [`${base}/*`] }, trigger: { type: "interval", seconds: 30 }, priority: -1 } });
+  await call("createRule", {
+    rule: { id: "e2e-all", name: "All local", target: { patterns: [`${base}/*`] }, trigger: { type: "interval", seconds: 30 }, priority: -1 },
+  });
   await call("addExclusion", { pattern: `${base}/checkout/*` });
   const page = await context.newPage();
   await page.goto(`${base}/checkout/pay`);
@@ -230,7 +235,9 @@ await test("service worker restart: no lost or duplicate alarms", async () => {
   await cdp.send("ServiceWorker.enable").catch(() => undefined);
   await cdp.send("ServiceWorker.stopAllWorkers").catch(() => undefined);
   await page.waitForTimeout(500);
-  sw = context.serviceWorkers()[0] ?? (await Promise.race([context.waitForEvent("serviceworker"), page.reload().then(() => context.waitForEvent("serviceworker"))]));
+  sw =
+    context.serviceWorkers()[0] ??
+    (await Promise.race([context.waitForEvent("serviceworker"), page.reload().then(() => context.waitForEvent("serviceworker"))]));
   await sw.evaluate(() => globalThis.__sar.ready);
   const after = await sw.evaluate(() => chrome.alarms.getAll());
   const names = after.map((a) => a.name);
@@ -418,7 +425,9 @@ await test("a #hash or replaceState change on a paused form page keeps the run (
   await fireAlarm(tabId);
   await waitFor(async () => (await runtime(tabId))?.status === "paused_resubmit", "paused on the form result");
   const before = await runtime(tabId);
-  await page.evaluate(() => { location.hash = "receipt"; });
+  await page.evaluate(() => {
+    location.hash = "receipt";
+  });
   await page.evaluate(() => history.replaceState({}, "", "/order/42"));
   await waitFor(async () => (await sw.evaluate((id) => chrome.tabs.get(id), tabId)).url.endsWith("/order/42"), "address changed");
   await new Promise((r) => setTimeout(r, 500));

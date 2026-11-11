@@ -49,13 +49,29 @@ export function defaultsFor(type: string, schema: JsonSchema | undefined): Recor
 const asText = (v: unknown) => (typeof v === "object" && v ? `${(v as { type: string }).type}:${(v as { value: string }).value}` : String(v ?? ""));
 
 /** One field's control, chosen by its schema; `set(undefined)` clears it. */
-function FieldInput({ schema: s, value: v, label, required, set }: { schema: JsonSchema; value: unknown; label: string; required: boolean; set: (v: unknown) => void }) {
+function FieldInput({
+  schema: s,
+  value: v,
+  label,
+  required,
+  set,
+}: {
+  schema: JsonSchema;
+  value: unknown;
+  label: string;
+  required: boolean;
+  set: (v: unknown) => void;
+}) {
   const none = required ? null : <option value="">—</option>;
   if (s.enum) {
     return (
       <select value={String(v ?? "")} onChange={(e) => set(e.target.value || undefined)} aria-label={label}>
         {none}
-        {s.enum.map((o) => <option key={String(o)} value={String(o)}>{String(o).replace(/_/g, " ")}</option>)}
+        {s.enum.map((o) => (
+          <option key={String(o)} value={String(o)}>
+            {String(o).replace(/_/g, " ")}
+          </option>
+        ))}
       </select>
     );
   }

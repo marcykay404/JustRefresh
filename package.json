@@ -15,7 +15,9 @@
     "check": "npm run typecheck && npm test && npm run build && npm run bundle:report",
     "complexity": "node scripts/complexity.mjs",
     "complexity:update": "node scripts/complexity.mjs --update",
-    "bundle:report": "node scripts/bundle-report.mjs --max-kb 200"
+    "bundle:report": "node scripts/bundle-report.mjs --max-kb 200",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "react": "^19.3.1",
@@ -33,6 +35,7 @@
     "eslint-plugin-sonarjs": "^3.0.7",
     "jsdom": "^31.0.0",
     "playwright": "^1.65.0",
+    "prettier": "3.9.10",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.2",

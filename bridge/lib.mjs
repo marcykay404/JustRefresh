@@ -55,12 +55,24 @@ const tool = (name, method, description, properties = {}, required = []) => ({
 });
 
 export const TOOLS = [
-  tool("refresh_get_capabilities", "getCapabilities", "Discover supported triggers, conditions, actions, limits and the full rule JSON Schema. Call this first."),
+  tool(
+    "refresh_get_capabilities",
+    "getCapabilities",
+    "Discover supported triggers, conditions, actions, limits and the full rule JSON Schema. Call this first.",
+  ),
   tool("refresh_list_tabs", "listTabs", "List open browser tabs (id, title, URL; query strings redacted by default)."),
   tool("refresh_list_rules", "listRules", "List all rules."),
   tool("refresh_get_rule", "getRule", "Get one rule including meta.revision (needed for safe updates).", { id }, ["id"]),
-  tool("refresh_validate_rule", "validateRule", "Validate a rule without saving. Returns diagnostics with JSON paths you can fix.", { rule: ruleObject }, ["rule"]),
-  tool("refresh_test_rule", "testRule", "Dry-run a rule's conditions against a tab. No refresh, no actions, no side effects.", { rule: ruleObject, tabId: { type: "integer" } }, ["rule", "tabId"]),
+  tool("refresh_validate_rule", "validateRule", "Validate a rule without saving. Returns diagnostics with JSON paths you can fix.", { rule: ruleObject }, [
+    "rule",
+  ]),
+  tool(
+    "refresh_test_rule",
+    "testRule",
+    "Dry-run a rule's conditions against a tab. No refresh, no actions, no side effects.",
+    { rule: ruleObject, tabId: { type: "integer" } },
+    ["rule", "tabId"],
+  ),
   tool("refresh_create_rule", "createRule", "Save a rule as a disabled DRAFT. Use refresh_enable_rule to request activation.", { rule: ruleObject }, ["rule"]),
   tool(
     "refresh_update_rule",
@@ -69,7 +81,9 @@ export const TOOLS = [
     { id, patch: { type: "object" }, expectedRevision: { type: "integer" } },
     ["id", "patch"],
   ),
-  tool("refresh_delete_rule", "deleteRule", "Delete a rule you created (active rules need user approval).", { id, expectedRevision: { type: "integer" } }, ["id"]),
+  tool("refresh_delete_rule", "deleteRule", "Delete a rule you created (active rules need user approval).", { id, expectedRevision: { type: "integer" } }, [
+    "id",
+  ]),
   tool("refresh_enable_rule", "enableRule", "Request activation. Usually returns pending_approval: the user approves in the extension.", { id }, ["id"]),
   tool("refresh_disable_rule", "disableRule", "Disable a rule.", { id }, ["id"]),
   tool("refresh_get_status", "getRuleStatus", "Execution status of a rule on each tab (status, next refresh, counts, last evaluation).", { id }, ["id"]),
@@ -147,5 +161,10 @@ export function createMcpHandler({ callApi, serverName = "smart-auto-refresh", v
 const wrap = (r) => (r && typeof r === "object" && !Array.isArray(r) ? r : { result: r });
 
 export function sanitizeClientId(name) {
-  return String(name ?? "mcp-client").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 48) || "mcp-client";
+  return (
+    String(name ?? "mcp-client")
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .slice(0, 48) || "mcp-client"
+  );
 }

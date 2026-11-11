@@ -1,0 +1,2 @@
+# LF everywhere, also on Windows checkouts (Prettier checks for LF).
+* text=auto eol=lf

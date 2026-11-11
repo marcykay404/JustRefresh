@@ -142,7 +142,15 @@ export abstract class CycleEngine extends EngineBase {
    */
   private recoverUnfinished(c: Cycle) {
     if (c.rt.status !== "evaluating") return;
-    this.log({ ruleId: c.rule.id, tabId: c.tabId, url: c.tab.url, trigger: c.event, action: "recover", outcome: "ok", reason: "Previous evaluation did not finish; retrying" });
+    this.log({
+      ruleId: c.rule.id,
+      tabId: c.tabId,
+      url: c.tab.url,
+      trigger: c.event,
+      action: "recover",
+      outcome: "ok",
+      reason: "Previous evaluation did not finish; retrying",
+    });
     c.rt = transition(c.rt, "scheduled", { reason: undefined });
   }
 
@@ -164,8 +172,21 @@ export abstract class CycleEngine extends EngineBase {
     const pending = c.rt.pendingReload;
     if (!pending) return null;
     if (c.now - pending.startedAt < NAVIGATION_TIMEOUT_MS) return { ...c.rt, nextDueAt: c.now + MIN_ALARM_DELAY_MS };
-    this.log({ ruleId: c.rule.id, tabId: c.tabId, url: c.tab.url, trigger: c.event, action: "refresh", outcome: "error", reason: "Navigation did not complete" });
-    c.rt = { ...c.rt, pendingReload: null, lastError: "Previous reload did not complete in time", status: c.rt.status === "refreshing" ? "scheduled" : c.rt.status };
+    this.log({
+      ruleId: c.rule.id,
+      tabId: c.tabId,
+      url: c.tab.url,
+      trigger: c.event,
+      action: "refresh",
+      outcome: "error",
+      reason: "Navigation did not complete",
+    });
+    c.rt = {
+      ...c.rt,
+      pendingReload: null,
+      lastError: "Previous reload did not complete in time",
+      status: c.rt.status === "refreshing" ? "scheduled" : c.rt.status,
+    };
     return null;
   }
 
@@ -194,7 +215,11 @@ export abstract class CycleEngine extends EngineBase {
 
     let status: Outcome = "not_matched";
     let trace: EvaluationTrace | undefined;
-    if (rule.stopWhen) ({ result: { status }, trace } = await this.evaluate(rule, c.tab, c.rt));
+    if (rule.stopWhen)
+      ({
+        result: { status },
+        trace,
+      } = await this.evaluate(rule, c.tab, c.rt));
     const latest = await this.deps.stores.runtime.get(c.tabId);
     if (!latest || latest.generation !== generation || latest.status !== "evaluating") {
       return { status: latest?.status ?? "idle", reason: "Stale evaluation discarded" };
@@ -229,7 +254,9 @@ export abstract class CycleEngine extends EngineBase {
       return this.save(
         transition(c.rt, "paused_unknown", {
           unknownStreak: streak,
-          reason: giveUp ? `Condition unknown after ${streak} attempts: ${reason}. Resume to retry.` : `Condition unknown (retry ${streak}/${rule.safety.maxUnknownRetries}): ${reason}`,
+          reason: giveUp
+            ? `Condition unknown after ${streak} attempts: ${reason}. Resume to retry.`
+            : `Condition unknown (retry ${streak}/${rule.safety.maxUnknownRetries}): ${reason}`,
           nextDueAt: giveUp ? null : this.nextDue(rule, now),
         }),
       );
@@ -370,7 +397,13 @@ export abstract class CycleEngine extends EngineBase {
 
   /** Typing, unsaved changes, or a page that can't be checked: postpone (throws). */
   private checkSafety(rule: Rule, tab: TabInfo, rt: TabRuntime, activity: ActivitySnapshot | null, reason: string | undefined, now: number) {
-    const decision = decideSafety({ safety: rule.safety, activity, unavailableReason: reason, ignoreUnsaved: rt.ignoreUnsavedOnce === true, fallbackRetryMs: this.intervalMs(rule) });
+    const decision = decideSafety({
+      safety: rule.safety,
+      activity,
+      unavailableReason: reason,
+      ignoreUnsaved: rt.ignoreUnsavedOnce === true,
+      fallbackRetryMs: this.intervalMs(rule),
+    });
     if (decision.allowed) return;
     this.fast.leave(tab.id); // paused for you: others on the site needn't wait for it
     throw new SafetyBlock(decision.status, decision.reason, now + Math.max(decision.retryInMs, MIN_ALARM_DELAY_MS));

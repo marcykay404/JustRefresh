@@ -12,10 +12,12 @@ describe("agent activity log wording", () => {
   });
 });
 
-
 describe("approval card: the rule in words", () => {
   const words = (input: Parameters<typeof makeRule>[0]) =>
-    renderToStaticMarkup(createElement(RuleInWords, { rule: makeRule(input) })).replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+    renderToStaticMarkup(createElement(RuleInWords, { rule: makeRule(input) }))
+      .replace(/<[^>]+>/g, "")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, "&");
 
   it("says what it does and which pages it covers, with exceptions and limits", () => {
     const text = words({

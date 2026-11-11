@@ -4,7 +4,13 @@ import { alarmName } from "@/core/rule-engine";
 import type { TabOverride } from "@/core/types";
 
 const override = (tabId: number, url: string, extra: Partial<TabOverride> = {}): TabOverride => ({
-  tabId, mode: "custom", intervalSeconds: 60, revision: 1, createdAt: 0, restore: { url, windowIndex: 0, tabIndex: 0 }, ...extra,
+  tabId,
+  mode: "custom",
+  intervalSeconds: 60,
+  revision: 1,
+  createdAt: 0,
+  restore: { url, windowIndex: 0, tabIndex: 0 },
+  ...extra,
 });
 
 async function setup(rules = [makeRule({ id: "r1" })]) {
@@ -19,7 +25,9 @@ describe("Scenario A: per-tab basic refresh", () => {
   it("refreshes on schedule and tracks navigation", async () => {
     const env = createEnv();
     env.browser.addTab(1, "https://news.test/");
-    await env.config.update((c) => { c.tabOverrides["1"] = override(1, "https://news.test/"); });
+    await env.config.update((c) => {
+      c.tabOverrides["1"] = override(1, "https://news.test/");
+    });
     await env.engine.syncTab(1);
     expect(env.alarms.alarms.get(alarmName(1))).toBe(env.clock.t + 60_000);
 
@@ -60,7 +68,9 @@ describe("Scenario A: per-tab basic refresh", () => {
   it("never overlaps reloads while navigation is pending", async () => {
     const env = createEnv();
     env.browser.addTab(1, "https://a.test/");
-    await env.config.update((c) => { c.tabOverrides["1"] = override(1, "https://a.test/", { intervalSeconds: 30 }); });
+    await env.config.update((c) => {
+      c.tabOverrides["1"] = override(1, "https://a.test/", { intervalSeconds: 30 });
+    });
     await env.engine.syncTab(1);
     env.clock.advance(30_000);
     await env.fireDue();
@@ -76,7 +86,9 @@ describe("Scenario A: per-tab basic refresh", () => {
   it("manual refresh does not restart a stopped tab", async () => {
     const env = createEnv();
     env.browser.addTab(1, "https://a.test/");
-    await env.config.update((c) => { c.tabOverrides["1"] = override(1, "https://a.test/"); });
+    await env.config.update((c) => {
+      c.tabOverrides["1"] = override(1, "https://a.test/");
+    });
     await env.engine.syncTab(1);
     await env.engine.setTabStatus(1, "stopped", "Stopped by user");
     const r = await env.engine.refreshNow(1);
@@ -88,7 +100,9 @@ describe("Scenario A: per-tab basic refresh", () => {
   it("manual refresh restarts the countdown of an active schedule", async () => {
     const env = createEnv();
     env.browser.addTab(1, "https://a.test/");
-    await env.config.update((c) => { c.tabOverrides["1"] = override(1, "https://a.test/"); }); // 60 s
+    await env.config.update((c) => {
+      c.tabOverrides["1"] = override(1, "https://a.test/");
+    }); // 60 s
     await env.engine.syncTab(1);
     env.clock.advance(50_000); // 10 s left on the countdown
     expect((await env.engine.refreshNow(1)).refreshed).toBe(true);
@@ -137,7 +151,9 @@ describe("Scenario B/C: URL rules and exclusions", () => {
 
   it("exclusions override rules", async () => {
     const env = await setup();
-    await env.config.update((c) => { c.exclusions.push({ id: "e1", pattern: "https://example.com/checkout/*", createdAt: 0 }); });
+    await env.config.update((c) => {
+      c.exclusions.push({ id: "e1", pattern: "https://example.com/checkout/*", createdAt: 0 });
+    });
     env.browser.addTab(5, "https://example.com/checkout/pay");
     await env.engine.syncTab(5);
     const rt = await env.runtime.get(5);
@@ -162,7 +178,9 @@ describe("Scenario B/C: URL rules and exclusions", () => {
   it("per-tab configuration overrides URL rules", async () => {
     const env = await setup();
     env.browser.addTab(1, "https://example.com/x");
-    await env.config.update((c) => { c.tabOverrides["1"] = override(1, "https://example.com/x"); });
+    await env.config.update((c) => {
+      c.tabOverrides["1"] = override(1, "https://example.com/x");
+    });
     await env.engine.syncTab(1);
     expect((await env.runtime.get(1))?.controllerId).toBe("tab:1");
   });
@@ -170,7 +188,9 @@ describe("Scenario B/C: URL rules and exclusions", () => {
   it("restricted pages are excluded", async () => {
     const env = createEnv();
     env.browser.addTab(1, "chrome://settings");
-    await env.config.update((c) => { c.tabOverrides["1"] = override(1, "chrome://settings"); });
+    await env.config.update((c) => {
+      c.tabOverrides["1"] = override(1, "chrome://settings");
+    });
     await env.engine.syncTab(1);
     expect((await env.runtime.get(1))?.status).toBe("excluded");
   });
@@ -341,12 +361,16 @@ describe("Scenario F & recovery: restart, wake, storms", () => {
     const env = await setup();
     for (let i = 1; i <= 3; i++) env.browser.addTab(i, `https://example.com/${i}`);
     await env.engine.reconcileAll("config");
-    await env.config.update((c) => { c.settings.paused = true; });
+    await env.config.update((c) => {
+      c.settings.paused = true;
+    });
     await env.engine.reconcileAll("config");
     expect(env.alarms.alarms.size).toBe(0);
     expect((await env.runtime.get(1))?.status).toBe("paused_global");
     env.clock.advance(3600_000);
-    await env.config.update((c) => { c.settings.paused = false; });
+    await env.config.update((c) => {
+      c.settings.paused = false;
+    });
     await env.engine.reconcileAll("config");
     const times = [...env.alarms.alarms.values()];
     expect(times.every((t) => t >= env.clock.t + 30_000)).toBe(true);
@@ -361,7 +385,9 @@ describe("Scenario F & recovery: restart, wake, storms", () => {
     env.browser.tabs.get(1)!.url = "https://example.com/b";
     await env.engine.onTabUpdated(1, { url: "https://example.com/b" });
     expect((await env.runtime.get(1))!.generation).toBe(g1 + 1);
-    await env.config.update((c) => { c.rules.r1.meta.revision++; });
+    await env.config.update((c) => {
+      c.rules.r1.meta.revision++;
+    });
     await env.engine.syncTab(1);
     expect((await env.runtime.get(1))!.generation).toBe(g1 + 2);
   });

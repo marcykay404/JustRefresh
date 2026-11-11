@@ -17,8 +17,16 @@ export const MAX_INTERVAL_SECONDS = 7 * 24 * 3600;
 
 export const intervalSchema = z.strictObject({
   type: z.literal("interval"),
-  seconds: z.int().check(z.gte(FAST_MIN_INTERVAL_SECONDS), z.lte(MAX_INTERVAL_SECONDS), z.describe(`Seconds between refreshes: ≥${MIN_INTERVAL_SECONDS}, or ≥${FAST_MIN_INTERVAL_SECONDS} when fast intervals are enabled in Settings`)),
-  randomMaxSeconds: z.optional(z.int().check(z.gte(FAST_MIN_INTERVAL_SECONDS), z.lte(MAX_INTERVAL_SECONDS))).check(z.describe("If set, each interval is chosen uniformly in [seconds, randomMaxSeconds]")),
+  seconds: z
+    .int()
+    .check(
+      z.gte(FAST_MIN_INTERVAL_SECONDS),
+      z.lte(MAX_INTERVAL_SECONDS),
+      z.describe(`Seconds between refreshes: ≥${MIN_INTERVAL_SECONDS}, or ≥${FAST_MIN_INTERVAL_SECONDS} when fast intervals are enabled in Settings`),
+    ),
+  randomMaxSeconds: z
+    .optional(z.int().check(z.gte(FAST_MIN_INTERVAL_SECONDS), z.lte(MAX_INTERVAL_SECONDS)))
+    .check(z.describe("If set, each interval is chosen uniformly in [seconds, randomMaxSeconds]")),
 });
 export type IntervalTrigger = z.infer<typeof intervalSchema>;
 

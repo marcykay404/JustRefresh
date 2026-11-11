@@ -21,17 +21,31 @@ const r = await build({
   resolve: { alias: { "@": resolve(root, "src") } },
   define: { "process.env.NODE_ENV": '"production"' },
   publicDir: false,
-  build: { write: false, target: "chrome120", minify: true, lib: { entry: resolve(root, entry), formats: ["es"], fileName: () => "x.js" }, rollupOptions: { output: { inlineDynamicImports: true } } },
+  build: {
+    write: false,
+    target: "chrome120",
+    minify: true,
+    lib: { entry: resolve(root, entry), formats: ["es"], fileName: () => "x.js" },
+    rollupOptions: { output: { inlineDynamicImports: true } },
+  },
 });
 const chunk = (Array.isArray(r) ? r[0] : r).output[0];
 const by = {};
 for (const [id, m] of Object.entries(chunk.modules)) {
-  const k = id.includes("node_modules/") ? id.split("node_modules/")[1].split("/").slice(0, 3).join("/") : id.replace(`${root}`, "").split("/").slice(0, 2).join("/");
+  const k = id.includes("node_modules/")
+    ? id.split("node_modules/")[1].split("/").slice(0, 3).join("/")
+    : id.replace(`${root}`, "").split("/").slice(0, 2).join("/");
   by[k] = (by[k] || 0) + m.renderedLength;
 }
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 console.log(`${entry}: ${kb(chunk.code.length)} minified`);
-console.log(Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => `  ${kb(v).padStart(9)}  ${k}`).join("\n"));
+console.log(
+  Object.entries(by)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([k, v]) => `  ${kb(v).padStart(9)}  ${k}`)
+    .join("\n"),
+);
 if (maxKb !== null && chunk.code.length > maxKb * 1024) {
   console.error(`Over budget: ${kb(chunk.code.length)} > ${maxKb} KB`);
   process.exit(1);

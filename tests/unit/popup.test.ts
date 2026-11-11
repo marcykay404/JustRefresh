@@ -90,12 +90,17 @@ const permissionsRequest = vi.fn(async (_p: unknown) => true);
           : m.method === "getRule"
             ? RULE
             : m.method === "getOverview"
-              ? { settings: { ...DEFAULT_SETTINGS, defaultStopAfterMinutes: defaultStopAfter }, counts: { running: 2, paused: 1, stopped: 0, excluded: 0 }, pendingApprovals: 0, pendingAgents: 0 }
+              ? {
+                  settings: { ...DEFAULT_SETTINGS, defaultStopAfterMinutes: defaultStopAfter },
+                  counts: { running: 2, paused: 1, stopped: 0, excluded: 0 },
+                  pendingApprovals: 0,
+                  pendingAgents: 0,
+                }
               : m.method === "refreshNow"
                 ? refreshNowResult
                 : m.method === "createRule"
-                ? ((createdRuleId = "new"), { id: "new" })
-                : { ok: true };
+                  ? ((createdRuleId = "new"), { id: "new" })
+                  : { ok: true };
       return { ok: true, result };
     },
   },

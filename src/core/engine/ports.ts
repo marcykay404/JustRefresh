@@ -26,7 +26,8 @@ export interface AlarmPort {
   getAll(): Promise<{ name: string; scheduledTime: number }[]>;
 }
 
-export type PageAvailability = { available: true } | { available: false; reason: string; code: "missing_permission" | "content_script_unavailable" | "restricted_url" };
+export type PageAvailability =
+  { available: true } | { available: false; reason: string; code: "missing_permission" | "content_script_unavailable" | "restricted_url" };
 
 export interface PagePort {
   evaluate(tabId: number, leaves: ConditionNode[], includeText: boolean): Promise<EvaluationResult[]>;
@@ -87,8 +88,7 @@ export const ALARM_PREFIX = "sar:tab:";
 export const NAVIGATION_TIMEOUT_MS = 60_000;
 
 export const alarmName = (tabId: number) => `${ALARM_PREFIX}${tabId}`;
-export const tabIdFromAlarm = (name: string): number | null =>
-  name.startsWith(ALARM_PREFIX) ? Number(name.slice(ALARM_PREFIX.length)) : null;
+export const tabIdFromAlarm = (name: string): number | null => (name.startsWith(ALARM_PREFIX) ? Number(name.slice(ALARM_PREFIX.length)) : null);
 
 export interface CycleResult {
   status: ExecutionStatus;

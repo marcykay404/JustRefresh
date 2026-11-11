@@ -5,24 +5,24 @@ user activity and programmable conditions — with a declarative, versioned
 rule engine that the popup, a visual rule builder, JSON import and external
 AI agents all drive through **one** Rule Management API.
 
-* **Quick controls** — per-tab refresh from the popup: one-tap intervals
+- **Quick controls** — per-tab refresh from the popup: one-tap intervals
   (30 s – 1 h; down to 5 s with the opt-in fast intervals setting) or a
   custom one, countdown, stop, refresh now, never-refresh this tab, and
   **refresh until text appears/disappears** (then stop and notify with a sound).
-* **URL rules** — exact / domain / glob / regex patterns, exclusions,
+- **URL rules** — exact / domain / glob / regex patterns, exclusions,
   priorities with deterministic tie-breaking, conflict hints, pattern tester.
-* **Conditional refresh** — "refresh until `#status` contains *Available*",
+- **Conditional refresh** — "refresh until `#status` contains _Available_",
   element exists/missing, attributes, URL, time, refresh count, nested
   AND/OR/NOT with tri-state (`matched` / `not_matched` / `unknown`) logic.
-* **Smart protection** — pauses while typing (incl. IME), protects unsaved
+- **Smart protection** — pauses while typing (incl. IME), protects unsaved
   forms, optional mouse/scroll pause, configurable grace period and fail-safe.
   Never records keystrokes or form values.
-* **Reliable scheduling** — `chrome.alarms` only, persisted state, startup
+- **Reliable scheduling** — `chrome.alarms` only, persisted state, startup
   reconciliation, no duplicate/overlapping reloads, no refresh storms.
-* **Visual rule builder** — WHEN → ON → UNTIL → THEN, simple/advanced modes,
+- **Visual rule builder** — WHEN → ON → UNTIL → THEN, simple/advanced modes,
   live validation, dry-run testing with an evaluation trace, selector tester,
   JSON view, import/export.
-* **Agent-programmable** — capability discovery, validation diagnostics with
+- **Agent-programmable** — capability discovery, validation diagnostics with
   JSON paths, dry runs, draft → approval workflow, scoped & revocable agent
   access, audit log, optional local MCP bridge.
 
@@ -44,30 +44,31 @@ conditions); you can also grant all sites in Dashboard → Settings.
 
 ## Using it
 
-* **Popup** — tap an interval and Start; Stop or change it while it runs;
+- **Popup** — tap an interval and Start; Stop or change it while it runs;
   Refresh now. Under **More**: "Refresh until something appears…" (creates a
   rule for this page: exactly this address, or whatever comes after "?"), "Never auto-refresh this tab", and "Make a rule
   for this site…". A tab run by a rule shows the rule in words, with Check now.
-* **Dashboard** (popup → Dashboard, or the extension's Options page):
+- **Dashboard** (popup → Dashboard, or the extension's Options page):
   Tabs · Rules · Templates · Rule Builder · Exclusions · History · Agent Integrations · Settings.
-* **Templates** — ready-made rules you fill in (back in stock, a status page
+- **Templates** — ready-made rules you fill in (back in stock, a status page
   that changes, a dashboard during work hours, failed builds, stay signed
   in). Each shows the rule in words before it's created, or opens it in the
   Rule Builder to customise.
-* **Welcome page** — opens once after install with three short steps; open it
+- **Welcome page** — opens once after install with three short steps; open it
   again from Settings → Help.
-* Example rules as JSON: [`examples/`](examples) — import them in Settings.
+- Example rules as JSON: [`examples/`](examples) — import them in Settings.
 
 ## Development
 
 ```bash
-npm test                  # unit + integration tests (vitest), including the complexity check
+npm test                  # unit + integration tests (vitest), including the complexity and format checks
 npm run typecheck
 npm run build             # → dist/
 npm run test:e2e          # builds, loads dist/ into Chromium via Playwright
 npm run gen:schema        # regenerate schemas/*.json after changing handlers
 npm run complexity        # cyclomatic + cognitive complexity (max 15 each)
 npm run complexity:update # lower the baseline after simplifying a listed function
+npm run format            # format everything with Prettier (npm run format:check to only check)
 npm run bundle:report     # what the service worker bundle is made of (budget 200 KB)
 npm run check             # typecheck + tests + build + bundle budget
 ```
@@ -81,18 +82,26 @@ listed function may only get simpler, and `complexity:update` only lowers or
 removes entries, never adds one. A test keeps it empty, so every function is
 within the limits.
 
+**Formatting.** Prettier (pinned in `package.json`, settings in
+`.prettierrc.json`, generated files skipped in `.prettierignore`) formats
+every file it understands; `npm test` fails on an unformatted file. The
+commit that first formatted the codebase is listed in
+`.git-blame-ignore-revs`: run
+`git config blame.ignoreRevsFile .git-blame-ignore-revs` once so `git blame`
+skips it (GitHub does this on its own).
+
 **Bundle.** The service worker uses `zod/mini` (via `src/core/zod.ts`) and
 ships the generated JSON Schemas as package files read on demand, instead of
 zod's JSON Schema converter.
 
 ## Documentation
 
-* [Architecture](docs/architecture.md) — layers, lifecycle, state machine, precedence, recovery
-* [Rule schema](docs/rule-schema.md) — triggers, conditions, actions, safety, limits
-* [URL matching](docs/url-matching.md) — exact semantics of every pattern type
-* [Agent integration](docs/agent-integration.md) — JSON, extension messaging, MCP, security model
-* [MCP bridge](bridge/README.md) — optional local bridge setup
-* [Limitations](docs/limitations.md) — Chrome platform constraints
+- [Architecture](docs/architecture.md) — layers, lifecycle, state machine, precedence, recovery
+- [Rule schema](docs/rule-schema.md) — triggers, conditions, actions, safety, limits
+- [URL matching](docs/url-matching.md) — exact semantics of every pattern type
+- [Agent integration](docs/agent-integration.md) — JSON, extension messaging, MCP, security model
+- [MCP bridge](bridge/README.md) — optional local bridge setup
+- [Limitations](docs/limitations.md) — Chrome platform constraints
 
 ## Extending
 

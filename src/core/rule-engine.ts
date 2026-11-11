@@ -147,7 +147,12 @@ export class RuleEngine extends CycleEngine {
     });
     const rt = await this.deps.stores.runtime.get(removedTabId);
     await this.forgetTab(removedTabId);
-    if (rt) await this.deps.stores.runtime.put({ ...rt, tabId: addedTabId, controllerId: rt.controllerId?.startsWith("tab:") ? `tab:${addedTabId}` : rt.controllerId });
+    if (rt)
+      await this.deps.stores.runtime.put({
+        ...rt,
+        tabId: addedTabId,
+        controllerId: rt.controllerId?.startsWith("tab:") ? `tab:${addedTabId}` : rt.controllerId,
+      });
     await this.syncTab(addedTabId);
   }
 
@@ -285,7 +290,16 @@ export class RuleEngine extends CycleEngine {
       await this.reloadTab(tabId, false);
       if (res.kind === "controller") await this.restartCountdown(tabId, res.controller);
       const actor = opts.actor?.type === "agent" ? "agent" : "user";
-      this.log({ ruleId: res.kind === "controller" ? res.controller.id : null, tabId, url: tab.url, trigger: "manual", action: "refresh", outcome: "ok", actor, reason: opts.force ? "forced" : undefined });
+      this.log({
+        ruleId: res.kind === "controller" ? res.controller.id : null,
+        tabId,
+        url: tab.url,
+        trigger: "manual",
+        action: "refresh",
+        outcome: "ok",
+        actor,
+        reason: opts.force ? "forced" : undefined,
+      });
       return { refreshed: true };
     });
   }
@@ -331,7 +345,16 @@ export class RuleEngine extends CycleEngine {
         await this.setAlarm(next);
       }
       const actor = opts.actor?.type === "agent" ? "agent" : "user";
-      this.log({ ruleId: res.kind === "controller" ? res.controller.id : null, tabId, url: tab.url, trigger: "manual", action: "refresh", outcome: "ok", actor, reason: "Opened fresh (no form resent)" });
+      this.log({
+        ruleId: res.kind === "controller" ? res.controller.id : null,
+        tabId,
+        url: tab.url,
+        trigger: "manual",
+        action: "refresh",
+        outcome: "ok",
+        actor,
+        reason: "Opened fresh (no form resent)",
+      });
       return { opened: true };
     });
   }

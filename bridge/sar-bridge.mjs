@@ -63,7 +63,11 @@ function runNativeHost() {
       "data",
       createLineDecoder((msg) => {
         if (!client) {
-          const ok = msg?.type === "hello" && typeof msg.token === "string" && msg.token.length === token.length && crypto.timingSafeEqual(Buffer.from(msg.token), Buffer.from(token));
+          const ok =
+            msg?.type === "hello" &&
+            typeof msg.token === "string" &&
+            msg.token.length === token.length &&
+            crypto.timingSafeEqual(Buffer.from(msg.token), Buffer.from(token));
           if (!ok) {
             socket.end(JSON.stringify({ type: "error", error: "Invalid token" }) + "\n");
             return;

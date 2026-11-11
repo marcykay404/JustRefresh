@@ -59,7 +59,6 @@ export function protectedWhile(safety: Pick<SafetyConfig, "pauseWhileTyping" | "
   return `while ${list}`;
 }
 
-
 export function hostLabel(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -83,11 +82,20 @@ export function Header({ overview, onToggleGlobal }: { overview: Overview | null
       {overview && !overview.settings.enabled && <span className="pill pill-muted">Off</span>}
       <span className="spacer" />
       {overview && (
-        <button className="icon-btn" onClick={onToggleGlobal} aria-label={paused ? "Resume all refreshing" : "Pause all refreshing"} title={paused ? "Resume all refreshing" : "Pause all refreshing"}>
+        <button
+          className="icon-btn"
+          onClick={onToggleGlobal}
+          aria-label={paused ? "Resume all refreshing" : "Pause all refreshing"}
+          title={paused ? "Resume all refreshing" : "Pause all refreshing"}
+        >
           {paused ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z" fill="currentColor" /></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 5l12 7-12 7z" fill="currentColor" />
+            </svg>
           ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5v14M16 5v14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+            </svg>
           )}
         </button>
       )}
@@ -111,12 +119,26 @@ export function Footer({ overview }: { overview: Overview | null }) {
         {running} tab{running === 1 ? "" : "s"} refreshing{paused ? ` · ${paused} waiting` : ""}
       </span>
       {pending > 0 && (
-        <a href="#" onClick={(e) => { e.preventDefault(); openDashboard("/agents"); }}>
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            openDashboard("/agents");
+          }}
+        >
           <span className="badge">{pending}</span> agent request{pending > 1 ? "s" : ""}
         </a>
       )}
       <span className="spacer" />
-      <a href="#" onClick={(e) => { e.preventDefault(); openDashboard(); }}>Open dashboard</a>
+      <a
+        href="#"
+        onClick={(e) => {
+          e.preventDefault();
+          openDashboard();
+        }}
+      >
+        Open dashboard
+      </a>
     </footer>
   );
 }
@@ -138,7 +160,13 @@ export function IntervalPicker(p: {
     <>
       <div className="chips" role="group" aria-label="Refresh interval">
         {p.chips.map((c) => (
-          <button type="button" key={c} className={`chip${isChip && p.value === c ? " selected" : ""}`} aria-pressed={isChip && p.value === c} onClick={() => p.onPick(c)}>
+          <button
+            type="button"
+            key={c}
+            className={`chip${isChip && p.value === c ? " selected" : ""}`}
+            aria-pressed={isChip && p.value === c}
+            onClick={() => p.onPick(c)}
+          >
             {intervalLabel(c)}
           </button>
         ))}
@@ -148,7 +176,9 @@ export function IntervalPicker(p: {
       </div>
       {p.customOpen && (
         <div className="row">
-          <label htmlFor="custom-interval" className="muted">Every</label>
+          <label htmlFor="custom-interval" className="muted">
+            Every
+          </label>
           <input
             id="custom-interval"
             type="number"
@@ -159,7 +189,11 @@ export function IntervalPicker(p: {
             autoFocus
           />
           <select aria-label="Unit" value={p.customUnit} onChange={(e) => p.onCustomUnit(Number(e.target.value))}>
-            {UNITS.map((u) => <option key={u.factor} value={u.factor}>{u.label}</option>)}
+            {UNITS.map((u) => (
+              <option key={u.factor} value={u.factor}>
+                {u.label}
+              </option>
+            ))}
           </select>
         </div>
       )}
@@ -186,14 +220,28 @@ export function CountdownRow({ title, rt, countdown, subtitle }: { title: ReactN
       </div>
       <span className="spacer" />
       {ticking && (
-        <span className="countdown" title={`Next refresh at ${formatTime(rt?.nextDueAt)}`}>{formatDuration(countdown)}</span>
+        <span className="countdown" title={`Next refresh at ${formatTime(rt?.nextDueAt)}`}>
+          {formatDuration(countdown)}
+        </span>
       )}
     </div>
   );
 }
 
 /** The countdown with its progress bar, or the form-page pause in its place. */
-export function Countdown({ title, rt, countdown, progress, formPaused }: { title: ReactNode; rt: TabRuntime | null; countdown: number | null; progress: number; formPaused: string }) {
+export function Countdown({
+  title,
+  rt,
+  countdown,
+  progress,
+  formPaused,
+}: {
+  title: ReactNode;
+  rt: TabRuntime | null;
+  countdown: number | null;
+  progress: number;
+  formPaused: string;
+}) {
   if (rt?.status === "paused_resubmit") return <CountdownRow title={title} rt={rt} countdown={null} subtitle={formPaused} />;
   return (
     <>
@@ -209,9 +257,19 @@ export function Stats({ rt, rule }: { rt: TabRuntime; rule?: boolean }) {
   const last = rt.lastAttemptAt ? ` · last checked ${formatTime(rt.lastAttemptAt)}` : "";
   if (rule) {
     const found = rt.lastEvaluation?.status === "matched" ? "found" : rt.lastEvaluation?.status === "unknown" ? "couldn't check" : "not found yet";
-    return <span className="small muted">Refreshed {rt.refreshCount} time{rt.refreshCount === 1 ? "" : "s"} · {found}{last}</span>;
+    return (
+      <span className="small muted">
+        Refreshed {rt.refreshCount} time{rt.refreshCount === 1 ? "" : "s"} · {found}
+        {last}
+      </span>
+    );
   }
-  return <span className="small muted">Refreshed {rt.refreshCount} time{rt.refreshCount === 1 ? "" : "s"}{last}</span>;
+  return (
+    <span className="small muted">
+      Refreshed {rt.refreshCount} time{rt.refreshCount === 1 ? "" : "s"}
+      {last}
+    </span>
+  );
 }
 
 export function RuleCard(p: {
@@ -231,7 +289,16 @@ export function RuleCard(p: {
       <div className="row" style={{ flexWrap: "nowrap" }}>
         <span className="pill pill-done">Rule</span>
         <strong className="truncate grow">{p.name}</strong>
-        <a href="#" className="small" onClick={(e) => { e.preventDefault(); p.onEdit(); }}>Edit rule</a>
+        <a
+          href="#"
+          className="small"
+          onClick={(e) => {
+            e.preventDefault();
+            p.onEdit();
+          }}
+        >
+          Edit rule
+        </a>
       </div>
       {active ? <ActiveRule {...p} /> : <IdleRule {...p} />}
     </>
@@ -250,8 +317,12 @@ function ActiveRule(p: Parameters<typeof RuleCard>[0]) {
       />
       {p.rt && <Stats rt={p.rt} rule />}
       <div className="row">
-        <button className="big grow" onClick={p.onCheckNow}>Check now</button>
-        <button className="big grow" onClick={p.onStop}>Stop on this tab</button>
+        <button className="big grow" onClick={p.onCheckNow}>
+          Check now
+        </button>
+        <button className="big grow" onClick={p.onStop}>
+          Stop on this tab
+        </button>
       </div>
     </>
   );
@@ -269,13 +340,22 @@ function IdleRule(p: Parameters<typeof RuleCard>[0]) {
     <>
       {p.summary && <span>{p.summary}</span>}
       <span className="small muted">{idleRuleText(p.rt)}</span>
-      <button className="primary big" onClick={p.onRestart}>{ended ? "Start again" : "Start"}</button>
+      <button className="primary big" onClick={p.onRestart}>
+        {ended ? "Start again" : "Start"}
+      </button>
     </>
   );
 }
 
 /** One plain sentence when JustRefresh is holding back, with the override right there. */
-export function WaitingNotice(p: { rt: TabRuntime | null; grace: number; onRefreshAnyway: () => void; onRetry: () => void; onOpenFresh: () => void; hidden: boolean }) {
+export function WaitingNotice(p: {
+  rt: TabRuntime | null;
+  grace: number;
+  onRefreshAnyway: () => void;
+  onRetry: () => void;
+  onOpenFresh: () => void;
+  hidden: boolean;
+}) {
   const rt = p.rt;
   if (!rt || p.hidden) return null;
   if (rt.status === "paused_resubmit") {
@@ -284,7 +364,9 @@ export function WaitingNotice(p: { rt: TabRuntime | null; grace: number; onRefre
         <span>
           This page came from submitting a form, such as an order or a payment. Refreshing it could send the form again, so JustRefresh won't refresh it.
         </span>
-        <button className="small" style={{ alignSelf: "flex-start" }} onClick={p.onOpenFresh}>Open this page fresh</button>
+        <button className="small" style={{ alignSelf: "flex-start" }} onClick={p.onOpenFresh}>
+          Open this page fresh
+        </button>
         <span>Loads the address as a normal visit, so nothing is sent again. The page may look different.</span>
       </div>
     );
@@ -293,7 +375,9 @@ export function WaitingNotice(p: { rt: TabRuntime | null; grace: number; onRefre
     return (
       <div className="notice col small">
         <span>This page may have a form you've started filling in. It won't refresh until you submit it, so nothing you typed is lost.</span>
-        <button className="small" style={{ alignSelf: "flex-start" }} onClick={p.onRefreshAnyway}>Refresh anyway</button>
+        <button className="small" style={{ alignSelf: "flex-start" }} onClick={p.onRefreshAnyway}>
+          Refresh anyway
+        </button>
       </div>
     );
   }
@@ -307,8 +391,13 @@ export function WaitingNotice(p: { rt: TabRuntime | null; grace: number; onRefre
   if (rt.status === "paused_unknown" || rt.status === "error") {
     return (
       <div className="notice col small">
-        <span>{rt.status === "error" ? "Something went wrong" : "Couldn't check the page"}{rt.reason ? `: ${rt.reason}` : "."}</span>
-        <button className="small" style={{ alignSelf: "flex-start" }} onClick={p.onRetry}>Try again now</button>
+        <span>
+          {rt.status === "error" ? "Something went wrong" : "Couldn't check the page"}
+          {rt.reason ? `: ${rt.reason}` : "."}
+        </span>
+        <button className="small" style={{ alignSelf: "flex-start" }} onClick={p.onRetry}>
+          Try again now
+        </button>
       </div>
     );
   }
@@ -333,7 +422,14 @@ interface ProtectionProps {
 function protectionText(p: ProtectionProps): { text: ReactNode; ok: boolean } {
   if (p.protectionOn && p.hostAccess) return { ok: true, text: `${p.running ? "Protected: waits" : "Will wait"} ${protectedWhile(p.safety)}` };
   if (p.protectionOn && p.unprotected) {
-    return { ok: false, text: <>Refreshing without protection: JustRefresh can't see inside <strong>{p.site}</strong>, so typing isn't detected.</> };
+    return {
+      ok: false,
+      text: (
+        <>
+          Refreshing without protection: JustRefresh can't see inside <strong>{p.site}</strong>, so typing isn't detected.
+        </>
+      ),
+    };
   }
   if (p.protectionOn || p.needsAccessForRule) {
     return {
@@ -355,7 +451,18 @@ export function ProtectionLine(p: ProtectionProps) {
   return (
     <div className="protection-line small">
       {ok && (
-        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="ok-icon">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="ok-icon"
+        >
           <path d="M20 6 9 17l-5-5" />
         </svg>
       )}
@@ -366,11 +473,19 @@ export function ProtectionLine(p: ProtectionProps) {
         </span>
         {showAllow && (
           <div>
-            <button className="small" onClick={p.onAllow}>Allow access</button>
+            <button className="small" onClick={p.onAllow}>
+              Allow access
+            </button>
           </div>
         )}
       </div>
-      {!p.byRule && <Toggle checked={p.safety.pauseWhileTyping && p.safety.protectUnsavedChanges} onChange={p.onToggle} label={<span className="sr-only">Wait while I'm typing or have unsaved form changes</span>} />}
+      {!p.byRule && (
+        <Toggle
+          checked={p.safety.pauseWhileTyping && p.safety.protectUnsavedChanges}
+          onChange={p.onToggle}
+          label={<span className="sr-only">Wait while I'm typing or have unsaved form changes</span>}
+        />
+      )}
     </div>
   );
 }
@@ -402,10 +517,16 @@ export function UntilForm(p: {
     >
       <span className="card-title">Refresh until something appears</span>
       <div className="col" style={{ gap: 4 }}>
-        <span className="small muted" id="until-mode">Stop when this text</span>
+        <span className="small muted" id="until-mode">
+          Stop when this text
+        </span>
         <div className="seg" role="group" aria-labelledby="until-mode">
-          <button type="button" className={mode === "appears" ? "selected" : ""} aria-pressed={mode === "appears"} onClick={() => setMode("appears")}>appears</button>
-          <button type="button" className={mode === "disappears" ? "selected" : ""} aria-pressed={mode === "disappears"} onClick={() => setMode("disappears")}>disappears</button>
+          <button type="button" className={mode === "appears" ? "selected" : ""} aria-pressed={mode === "appears"} onClick={() => setMode("appears")}>
+            appears
+          </button>
+          <button type="button" className={mode === "disappears" ? "selected" : ""} aria-pressed={mode === "disappears"} onClick={() => setMode("disappears")}>
+            disappears
+          </button>
         </div>
       </div>
       <input aria-label="Text to look for" placeholder="e.g. In stock" value={text} maxLength={200} onChange={(e) => setText(e.target.value)} autoFocus />
@@ -420,7 +541,9 @@ export function UntilForm(p: {
       <button type="submit" className="primary big" disabled={!ready}>
         {busy ? "Setting up…" : "Start watching"}
       </button>
-      <button type="button" className="link small" style={{ alignSelf: "center" }} onClick={p.onCancel}>Cancel</button>
+      <button type="button" className="link small" style={{ alignSelf: "center" }} onClick={p.onCancel}>
+        Cancel
+      </button>
     </form>
   );
 }
@@ -433,8 +556,8 @@ export function OtherQueryNotice({ rules, onEdit }: { rules: { id: string; name:
     <div className="notice small col" style={{ gap: 4 }} role="status">
       <span>
         {rules.length === 1 ? `Rule “${first!.name}” is` : `${rules.length} rules, including “${first!.name}”, are`} set for this page with a different part
-        after “?” in the address, so {rules.length === 1 ? "it doesn't" : "they don't"} run here. If the site changes that part on each load, edit the rule
-        to cover the page whatever comes after “?”.
+        after “?” in the address, so {rules.length === 1 ? "it doesn't" : "they don't"} run here. If the site changes that part on each load, edit the rule to
+        cover the page whatever comes after “?”.
       </span>
       <button className="link small" style={{ alignSelf: "flex-start" }} onClick={() => onEdit(first!.id)}>
         Edit “{first!.name}”
@@ -445,7 +568,17 @@ export function OtherQueryNotice({ rules, onEdit }: { rules: { id: string; name:
 
 export function RefreshIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M21 12a9 9 0 1 1-3-6.7" />
       <path d="M21 4v5h-5" />
     </svg>
@@ -454,7 +587,17 @@ export function RefreshIcon() {
 
 export function Chevron({ up }: { up: boolean }) {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d={up ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6"} />
     </svg>
   );

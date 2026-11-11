@@ -5,8 +5,7 @@ import { diag } from "./helpers";
 
 const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-const atSchema = z
-  .string().check(z.minLength(1), z.maxLength(40), z.describe('ISO-8601 timestamp (e.g. "2026-12-01T09:00:00Z") or local time of day "HH:MM"'));
+const atSchema = z.string().check(z.minLength(1), z.maxLength(40), z.describe('ISO-8601 timestamp (e.g. "2026-12-01T09:00:00Z") or local time of day "HH:MM"'));
 
 export const timeAfterSchema = z.strictObject({ type: z.literal("time.after"), at: atSchema });
 export const timeBeforeSchema = z.strictObject({ type: z.literal("time.before"), at: atSchema });
@@ -26,9 +25,7 @@ export function resolveThreshold(at: string, now: number): number | null {
 }
 
 function checkAt(at: string, path: string) {
-  return resolveThreshold(at, Date.now()) === null
-    ? [diag(`${path}.at`, "time_invalid", `"${at}" is neither an ISO timestamp nor HH:MM`)]
-    : [];
+  return resolveThreshold(at, Date.now()) === null ? [diag(`${path}.at`, "time_invalid", `"${at}" is neither an ISO timestamp nor HH:MM`)] : [];
 }
 
 export const timeAfter: ConditionHandler<TimeAfter> = {

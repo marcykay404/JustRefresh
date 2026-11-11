@@ -170,12 +170,13 @@ chrome.tabs.onCreated.addListener((tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => void after(() => engine.onTabRemoved(tabId)));
 chrome.tabs.onReplaced.addListener((added, removed) => void after(() => engine.onTabReplaced(added, removed)));
 
-chrome.permissions.onAdded.addListener(() =>
-  void after(async () => {
-    await syncContentScripts();
-    await injectIntoOpenTabs();
-    await engine.reconcileAll("config");
-  }),
+chrome.permissions.onAdded.addListener(
+  () =>
+    void after(async () => {
+      await syncContentScripts();
+      await injectIntoOpenTabs();
+      await engine.reconcileAll("config");
+    }),
 );
 chrome.permissions.onRemoved.addListener(() => void after(() => syncContentScripts()));
 
@@ -183,7 +184,10 @@ chrome.notifications.onClicked.addListener((id) => {
   const parts = id.split(":");
   const tabId = Number(parts[parts.length - 2]);
   if (Number.isFinite(tabId)) {
-    void chrome.tabs.update(tabId, { active: true }).then((t) => t && chrome.windows.update(t.windowId, { focused: true })).catch(() => undefined);
+    void chrome.tabs
+      .update(tabId, { active: true })
+      .then((t) => t && chrome.windows.update(t.windowId, { focused: true }))
+      .catch(() => undefined);
   }
   void chrome.notifications.clear(id);
 });

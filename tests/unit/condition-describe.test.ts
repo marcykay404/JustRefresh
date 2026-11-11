@@ -6,7 +6,13 @@ it("describes conditions in words, nested ones included", () => {
     type: "all",
     conditions: [
       { type: "dom.exists", selector: "#buy" },
-      { type: "any", conditions: [{ type: "dom.text", operator: "not_contains", value: "Sold out" }, { type: "refreshCount", operator: ">=", value: 3 }] },
+      {
+        type: "any",
+        conditions: [
+          { type: "dom.text", operator: "not_contains", value: "Sold out" },
+          { type: "refreshCount", operator: ">=", value: 3 },
+        ],
+      },
       { type: "not", condition: { type: "tab.status", value: "loading" } },
       { type: "dom.attribute", selector: "a", attribute: "href", operator: "exists" },
       { type: "url.match", pattern: { type: "glob", value: "*/cart" } },

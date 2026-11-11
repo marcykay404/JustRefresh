@@ -45,7 +45,10 @@ export async function startUntil(r: UntilRequest, run: (method: string, params?:
   if (r.state.override?.mode === "custom") await run("clearTabOverride", { tabId: r.tabId });
   const after = (await api("getTabState", { tabId: r.tabId }).catch(() => null)) as TabState | null;
   if (after && after.resolution.controllerId !== created.id) {
-    return { done: true, warning: `The rule was saved, but “${after.resolution.controllerName ?? "another rule"}” still controls this tab. Raise the new rule's priority in the Rule Builder.` };
+    return {
+      done: true,
+      warning: `The rule was saved, but “${after.resolution.controllerName ?? "another rule"}” still controls this tab. Raise the new rule's priority in the Rule Builder.`,
+    };
   }
   await run("runNow", { tabId: r.tabId });
   return { done: true };

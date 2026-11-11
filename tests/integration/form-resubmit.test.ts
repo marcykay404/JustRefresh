@@ -12,7 +12,11 @@ async function setup(protection = true) {
   const env = createApiEnv();
   env.browser.addTab(7, "https://shop.test/order");
   env.page.activityByTab.set(7, quietActivity({ formResult: true }));
-  await env.service.call(env.user, "startTab", { tabId: 7, intervalSeconds: 30, ...(protection ? {} : { safety: { pauseWhileTyping: false, protectUnsavedChanges: false } }) });
+  await env.service.call(env.user, "startTab", {
+    tabId: 7,
+    intervalSeconds: 30,
+    ...(protection ? {} : { safety: { pauseWhileTyping: false, protectUnsavedChanges: false } }),
+  });
   return env;
 }
 

@@ -12,7 +12,10 @@ describe("per-tab toolbar badge", () => {
   });
 
   it("shows paused, completed and error states with their reason", () => {
-    expect(tabBadge(transition(base, "paused_unsaved", { reason: "Unsaved form" }), fmt)).toMatchObject({ text: "II", title: expect.stringContaining("Unsaved form") });
+    expect(tabBadge(transition(base, "paused_unsaved", { reason: "Unsaved form" }), fmt)).toMatchObject({
+      text: "II",
+      title: expect.stringContaining("Unsaved form"),
+    });
     expect(tabBadge(transition(base, "scheduled", {}), fmt)?.text).toBe("ON");
     const done = transition(transition(base, "scheduled", {}), "evaluating", {});
     expect(tabBadge(transition(done, "completed", { reason: "Matched" }), fmt)).toMatchObject({ text: "✓" });

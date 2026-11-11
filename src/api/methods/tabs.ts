@@ -79,7 +79,9 @@ export function tabsMethods(svc: ServiceInternals): Record<string, MethodDef> {
       }),
       handler: async (_a, p) => {
         await svc.updateOverride(p.tabId, (o, tab) =>
-          o?.mode === "custom" ? { ...o, safety: { ...(o.safety ?? {}), ...p.safety } } : svc.newOverride(tab, { mode: "custom", safety: p.safety, stopped: true }),
+          o?.mode === "custom"
+            ? { ...o, safety: { ...(o.safety ?? {}), ...p.safety } }
+            : svc.newOverride(tab, { mode: "custom", safety: p.safety, stopped: true }),
         );
         return svc.tabState(p.tabId);
       },

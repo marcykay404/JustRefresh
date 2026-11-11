@@ -124,8 +124,12 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
         <span className="spacer" />
         <Toggle checked={advanced} onChange={toggleAdvanced} label="Advanced mode" />
         <div className="row" role="tablist">
-          <button className={view === "visual" ? "primary" : ""} onClick={() => setView("visual")}>Visual</button>
-          <button className={view === "json" ? "primary" : ""} onClick={() => setView("json")}>JSON</button>
+          <button className={view === "visual" ? "primary" : ""} onClick={() => setView("visual")}>
+            Visual
+          </button>
+          <button className={view === "json" ? "primary" : ""} onClick={() => setView("json")}>
+            JSON
+          </button>
         </div>
       </div>
 
@@ -149,7 +153,9 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
           <SaveCard draft={cleaned} existing={existing} valid={valid} saved={saved} saveError={saveError} diagnostics={diagnostics} onSave={save} />
           <TestPanel draft={cleaned} tabs={tabs.data ?? []} tabId={testTab} setTabId={setTestTab} />
           <details className="card">
-            <summary><strong>Generated JSON</strong></summary>
+            <summary>
+              <strong>Generated JSON</strong>
+            </summary>
             <pre style={{ marginTop: 8 }}>{JSON.stringify(cleaned, null, 2)}</pre>
           </details>
         </div>
@@ -184,14 +190,24 @@ function JsonEditor({ text, onText, onApply }: { text: string; onText: (t: strin
       <textarea rows={30} value={text} onChange={(e) => onText(e.target.value)} spellCheck={false} aria-label="Rule JSON" />
       {error && <div className="error-box">{error}</div>}
       <div className="row">
-        <button className="primary" onClick={apply}>Apply JSON</button>
+        <button className="primary" onClick={apply}>
+          Apply JSON
+        </button>
       </div>
     </div>
   );
 }
 
 /** Summary, validity, and Save / Export / Duplicate. */
-function SaveCard(p: { draft: Draft; existing: Rule | null; valid: boolean; saved: string | null; saveError: unknown; diagnostics: Diagnostic[]; onSave: () => void }) {
+function SaveCard(p: {
+  draft: Draft;
+  existing: Rule | null;
+  valid: boolean;
+  saved: string | null;
+  saveError: unknown;
+  diagnostics: Diagnostic[];
+  onSave: () => void;
+}) {
   const { existing } = p;
   const conflict = p.saveError instanceof ApiClientError && p.saveError.code === "conflict";
   return (
@@ -202,11 +218,26 @@ function SaveCard(p: { draft: Draft; existing: Rule | null; valid: boolean; save
         <span className={`pill pill-${p.valid ? "ok" : "error"}`}>{p.valid ? "Valid" : "Invalid"}</span>
         <span className="spacer" />
         {existing && <button onClick={async () => downloadJson(`${existing.id}.json`, await api("exportConfig", { ruleIds: [existing.id] }))}>Export</button>}
-        {existing && <button onClick={async () => { const r = await api<Rule>("duplicateRule", { id: existing.id }); location.hash = `/builder/${r.id}`; }}>Duplicate</button>}
-        <button className="primary" disabled={!p.valid} onClick={p.onSave}>{existing ? "Save changes" : "Create rule"}</button>
+        {existing && (
+          <button
+            onClick={async () => {
+              const r = await api<Rule>("duplicateRule", { id: existing.id });
+              location.hash = `/builder/${r.id}`;
+            }}
+          >
+            Duplicate
+          </button>
+        )}
+        <button className="primary" disabled={!p.valid} onClick={p.onSave}>
+          {existing ? "Save changes" : "Create rule"}
+        </button>
       </div>
       {p.saved && <span className="pill pill-ok">{p.saved}</span>}
-      {conflict ? <div className="error-box">This rule was changed elsewhere. Reload it before saving to avoid overwriting.</div> : <ErrorBox error={p.saveError} />}
+      {conflict ? (
+        <div className="error-box">This rule was changed elsewhere. Reload it before saving to avoid overwriting.</div>
+      ) : (
+        <ErrorBox error={p.saveError} />
+      )}
       <Diagnostics items={p.diagnostics} />
     </div>
   );

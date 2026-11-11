@@ -24,7 +24,10 @@ const overview = {
 const rules = [{ name: "Watch", target: { patterns: ["https://site-11.com/*"] } }];
 (globalThis as { chrome?: unknown }).chrome = {
   runtime: {
-    sendMessage: vi.fn(async (m: { method: string }) => ({ ok: true, result: m.method === "getOverview" ? overview : m.method === "listRules" ? rules : null })),
+    sendMessage: vi.fn(async (m: { method: string }) => ({
+      ok: true,
+      result: m.method === "getOverview" ? overview : m.method === "listRules" ? rules : null,
+    })),
   },
   permissions: {
     getAll: async () => ({ origins: [...granted] }),

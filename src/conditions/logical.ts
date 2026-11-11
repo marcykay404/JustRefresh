@@ -29,7 +29,8 @@ export function triAnd(results: EvaluationResult[]): EvaluationResult {
   const no = results.find((r) => r.status === "not_matched");
   if (no) return { status: "not_matched" };
   const unknown = results.find((r) => r.status === "unknown");
-  if (unknown) return { status: "unknown", reason: unknown.status === "unknown" ? unknown.reason : "", code: unknown.status === "unknown" ? unknown.code : undefined };
+  if (unknown)
+    return { status: "unknown", reason: unknown.status === "unknown" ? unknown.reason : "", code: unknown.status === "unknown" ? unknown.code : undefined };
   return { status: "matched" };
 }
 

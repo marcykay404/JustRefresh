@@ -40,9 +40,15 @@ export function TestPanel({ draft, tabs, tabId, setTabId }: { draft: Draft; tabs
       <span className="small muted">Dry run: evaluates conditions on a tab without refreshing or running actions.</span>
       <div className="row">
         <select style={{ flex: 1, maxWidth: "100%" }} value={tabId ?? ""} onChange={(e) => setTabId(Number(e.target.value))} aria-label="Tab to test">
-          {tabs.map((t) => <option key={t.id} value={t.id} disabled={t.restricted}>{t.title.slice(0, 60) || t.url}</option>)}
+          {tabs.map((t) => (
+            <option key={t.id} value={t.id} disabled={t.restricted}>
+              {t.title.slice(0, 60) || t.url}
+            </option>
+          ))}
         </select>
-        <button className="primary" disabled={tabId === null || busy} onClick={run}>{busy ? "Testing…" : "Test"}</button>
+        <button className="primary" disabled={tabId === null || busy} onClick={run}>
+          {busy ? "Testing…" : "Test"}
+        </button>
       </div>
       {tab && !tab.restricted && <GrantHint url={tab.url} />}
       <ErrorBox error={error} />
@@ -53,7 +59,11 @@ export function TestPanel({ draft, tabs, tabId, setTabId }: { draft: Draft; tabs
             Result: <ResultPill r={result.result!} />
             {result.targetsTab === false && <span className="pill pill-warn">URL not targeted</span>}
           </div>
-          {result.explanations?.map((e, i) => <div key={i} className="notice">{e}</div>)}
+          {result.explanations?.map((e, i) => (
+            <div key={i} className="notice">
+              {e}
+            </div>
+          ))}
           {result.trace && <TraceView t={result.trace} />}
           {!result.trace && <span className="muted">No stop condition: the rule refreshes on every trigger.</span>}
         </div>
@@ -78,14 +88,20 @@ function GrantHint({ url }: { url: string }) {
   return (
     <div className="info small row">
       Page conditions need site access.
-      <button className="small" onClick={() => void chrome.permissions.request({ origins: [origin!] }).then(setHas)}>Grant</button>
+      <button className="small" onClick={() => void chrome.permissions.request({ origins: [origin!] }).then(setHas)}>
+        Grant
+      </button>
     </div>
   );
 }
 
 function ResultPill({ r }: { r: EvaluationResult }) {
   const tone = r.status === "matched" ? "ok" : r.status === "unknown" ? "warn" : "muted";
-  return <span className={`pill pill-${tone}`} title={r.status === "unknown" ? r.reason : undefined}>{r.status.replace("_", " ")}</span>;
+  return (
+    <span className={`pill pill-${tone}`} title={r.status === "unknown" ? r.reason : undefined}>
+      {r.status.replace("_", " ")}
+    </span>
+  );
 }
 
 function TraceView({ t }: { t: EvaluationTrace }) {
@@ -107,7 +123,9 @@ function TraceView({ t }: { t: EvaluationTrace }) {
           </span>
         )}
         {details?.note && <span className="muted"> — {details.note}</span>}
-        {t.children?.map((c, i) => <TraceView key={i} t={c} />)}
+        {t.children?.map((c, i) => (
+          <TraceView key={i} t={c} />
+        ))}
       </li>
     </ul>
   );
@@ -125,7 +143,13 @@ export async function testSelector(tabId: number, selector: string) {
 }
 
 export function SelectorResult() {
-  const [r, setR] = useState<{ selector: string; ok: boolean; count?: number; error?: string; samples?: { tag: string; id?: string; classes?: string[]; textPreview?: string }[] } | null>(null);
+  const [r, setR] = useState<{
+    selector: string;
+    ok: boolean;
+    count?: number;
+    error?: string;
+    samples?: { tag: string; id?: string; classes?: string[]; textPreview?: string }[];
+  } | null>(null);
   useEffect(() => {
     selectorListener = (x) => setR(x as typeof r);
     return () => {
@@ -141,14 +165,18 @@ export function SelectorResult() {
           {r.count} match(es)
           {r.samples?.map((s, i) => (
             <div key={i} className="muted">
-              &lt;{s.tag}{s.id ? `#${s.id}` : ""}{s.classes?.length ? `.${s.classes.join(".")}` : ""}&gt; {s.textPreview ? `“${s.textPreview}”` : ""}
+              &lt;{s.tag}
+              {s.id ? `#${s.id}` : ""}
+              {s.classes?.length ? `.${s.classes.join(".")}` : ""}&gt; {s.textPreview ? `“${s.textPreview}”` : ""}
             </div>
           ))}
         </>
       ) : (
         <span style={{ color: "var(--error)" }}>{r.error}</span>
       )}
-      <button className="link small" style={{ marginLeft: 8 }} onClick={() => setR(null)}>dismiss</button>
+      <button className="link small" style={{ marginLeft: 8 }} onClick={() => setR(null)}>
+        dismiss
+      </button>
     </div>
   );
 }

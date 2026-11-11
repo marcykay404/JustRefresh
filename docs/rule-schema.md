@@ -7,6 +7,7 @@ syntax, regex safety, CSS selector syntax (where a DOM is available),
 condition depth (≤ 6) and size (≤ 50 nodes), refresh loops, and
 cross-field rules. Unknown fields and unknown types are rejected.
 
+<!-- prettier-ignore -->
 ```jsonc
 {
   "schemaVersion": 1,              // optional on input
@@ -53,30 +54,30 @@ so an unattended "refresh until" never ends silently.
 
 ## Triggers
 
-| type | Fields | Fires on | Can refresh |
-|---|---|---|---|
-| `interval` | `seconds` (≥30; ≥5 with fast intervals enabled), `randomMaxSeconds?` | chrome.alarms (+ worker timer below 30 s) | yes |
-| `navigation` | — | page load completed | no (loop) |
-| `urlChange` | — | tab URL changed | no (loop) |
-| `startup` | — | extension start | yes |
-| `manual` | — | "Run now" only | yes |
+| type         | Fields                                                               | Fires on                                  | Can refresh |
+| ------------ | -------------------------------------------------------------------- | ----------------------------------------- | ----------- |
+| `interval`   | `seconds` (≥30; ≥5 with fast intervals enabled), `randomMaxSeconds?` | chrome.alarms (+ worker timer below 30 s) | yes         |
+| `navigation` | —                                                                    | page load completed                       | no (loop)   |
+| `urlChange`  | —                                                                    | tab URL changed                           | no (loop)   |
+| `startup`    | —                                                                    | extension start                           | yes         |
+| `manual`     | —                                                                    | "Run now" only                            | yes         |
 
 ## Conditions
 
 All return `matched`, `not_matched` or `unknown` (never silently false).
 
-| type | Fields | Runs in |
-|---|---|---|
-| `dom.exists` | `selector`, `minCount?` | page |
-| `dom.missing` | `selector` | page |
-| `dom.text` | `selector?` (default `body`), `operator`, `value`, `caseSensitive?` | page |
-| `dom.attribute` | `selector`, `attribute`, `operator`, `value?` | page |
-| `url.match` | `pattern` | worker |
-| `time.after` / `time.before` | `at` (ISO timestamp or local `HH:MM`) | worker |
-| `refreshCount` | `operator` (`>= > <= < == !=`), `value` | worker |
-| `tab.status` | `value` (`loading`/`complete`) | worker |
-| `all` / `any` | `conditions[]` (1–20) | logical |
-| `not` | `condition` | logical |
+| type                         | Fields                                                              | Runs in |
+| ---------------------------- | ------------------------------------------------------------------- | ------- |
+| `dom.exists`                 | `selector`, `minCount?`                                             | page    |
+| `dom.missing`                | `selector`                                                          | page    |
+| `dom.text`                   | `selector?` (default `body`), `operator`, `value`, `caseSensitive?` | page    |
+| `dom.attribute`              | `selector`, `attribute`, `operator`, `value?`                       | page    |
+| `url.match`                  | `pattern`                                                           | worker  |
+| `time.after` / `time.before` | `at` (ISO timestamp or local `HH:MM`)                               | worker  |
+| `refreshCount`               | `operator` (`>= > <= < == !=`), `value`                             | worker  |
+| `tab.status`                 | `value` (`loading`/`complete`)                                      | worker  |
+| `all` / `any`                | `conditions[]` (1–20)                                               | logical |
+| `not`                        | `condition`                                                         | logical |
 
 Text operators: `contains`, `not_contains`, `equals`, `not_equals`,
 `starts_with`, `ends_with`, `matches` (safe regex). Text is the visible text
@@ -94,11 +95,11 @@ Logic: `all` → any `not_matched` wins, else any `unknown` → `unknown`;
 
 ## Actions
 
-| type | Fields | Notes |
-|---|---|---|
-| `refresh` | `bypassCache?` | Passes the safety gate first |
-| `stopRefresh` | `as?` (`completed`/`stopped`) | Terminal; later non-disruptive actions still run |
-| `pauseRefresh` | `minutes?` | Auto-resume after `minutes` |
-| `resumeRefresh` | — | |
-| `notify` | `title?`, `message?`, `sound?` | Desktop notification (click focuses the tab); `sound: true` also plays a short chime |
-| `log` | `message?`, `level?` | Writes to history |
+| type            | Fields                         | Notes                                                                                |
+| --------------- | ------------------------------ | ------------------------------------------------------------------------------------ |
+| `refresh`       | `bypassCache?`                 | Passes the safety gate first                                                         |
+| `stopRefresh`   | `as?` (`completed`/`stopped`)  | Terminal; later non-disruptive actions still run                                     |
+| `pauseRefresh`  | `minutes?`                     | Auto-resume after `minutes`                                                          |
+| `resumeRefresh` | —                              |                                                                                      |
+| `notify`        | `title?`, `message?`, `sound?` | Desktop notification (click focuses the tab); `sound: true` also plays a short chime |
+| `log`           | `message?`, `level?`           | Writes to history                                                                    |

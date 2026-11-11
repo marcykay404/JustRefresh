@@ -71,8 +71,7 @@ export async function evaluateConditionTree(root: ConditionNode, input: Evaluati
         tab: input.tab,
         runtime: input.runtime,
         evaluateChild: evaluate,
-        pageResult: (n) =>
-          pageResults.get(n) ?? { status: "unknown", code: "evaluation_error", reason: "Page condition was not evaluated" },
+        pageResult: (n) => pageResults.get(n) ?? { status: "unknown", code: "evaluation_error", reason: "Page condition was not evaluated" },
       };
       try {
         result = await handler.evaluate(node, ctx);
@@ -80,7 +79,10 @@ export async function evaluateConditionTree(root: ConditionNode, input: Evaluati
         result = { status: "unknown", code: "evaluation_error", reason: (e as Error).message };
       }
     }
-    const children = handler?.children?.(node).map((c) => traces.get(c)).filter((t): t is EvaluationTrace => !!t);
+    const children = handler
+      ?.children?.(node)
+      .map((c) => traces.get(c))
+      .filter((t): t is EvaluationTrace => !!t);
     traces.set(node, { type: node.type, result, ...(children?.length ? { children } : {}) });
     return result;
   };

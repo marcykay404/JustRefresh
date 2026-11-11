@@ -64,12 +64,13 @@ export const ruleInputSchema = z.strictObject({
   }),
   trigger: node,
   stopWhen: z.optional(node),
-  actions: z.optional(z
-    .strictObject({
+  actions: z.optional(
+    z.strictObject({
       onMatched: z.optional(z.array(node).check(z.maxLength(MAX_ACTIONS))),
       onNotMatched: z.optional(z.array(node).check(z.maxLength(MAX_ACTIONS))),
       onUnknown: z.optional(z.array(node).check(z.maxLength(MAX_ACTIONS))),
-    })),
+    }),
+  ),
   safety: z.optional(safetyInputSchema),
   limits: z.optional(limitsSchema),
   schedule: z.optional(scheduleSchema),
@@ -105,9 +106,7 @@ export function validateCondition(input: unknown, path: string, registries: Regi
   const visit = (value: unknown, p: string, depth: number): Diagnostic[] => {
     nodes++;
     if (nodes > MAX_CONDITION_NODES) {
-      return nodes === MAX_CONDITION_NODES + 1
-        ? [diag(p, "too_many_conditions", `Condition trees are limited to ${MAX_CONDITION_NODES} nodes`)]
-        : [];
+      return nodes === MAX_CONDITION_NODES + 1 ? [diag(p, "too_many_conditions", `Condition trees are limited to ${MAX_CONDITION_NODES} nodes`)] : [];
     }
     if (depth > MAX_CONDITION_DEPTH) {
       return [diag(p, "too_deep", `Condition nesting is limited to ${MAX_CONDITION_DEPTH} levels`)];
@@ -118,9 +117,7 @@ export function validateCondition(input: unknown, path: string, registries: Regi
     const type = (value as { type: string }).type;
     const handler = registries.conditions.get(type);
     if (!handler) {
-      return [
-        diag(`${p}.type`, "unknown_condition", `Unknown condition type "${type}". Supported: ${registries.conditions.types().join(", ")}`),
-      ];
+      return [diag(`${p}.type`, "unknown_condition", `Unknown condition type "${type}". Supported: ${registries.conditions.types().join(", ")}`)];
     }
     const parsed = handler.schema.safeParse(value);
     if (!parsed.success) return zodDiagnostics(parsed.error, p);
@@ -186,7 +183,8 @@ function checkPatterns(r: ParsedRuleInput): Diagnostic[] {
 
 function checkTrigger(r: ParsedRuleInput, registries: Registries, allowFastIntervals: boolean | undefined): Diagnostic[] {
   const trigger = registries.triggers.get(r.trigger.type);
-  if (!trigger) return [diag("trigger.type", "unknown_trigger", `Unknown trigger type "${r.trigger.type}". Supported: ${registries.triggers.types().join(", ")}`)];
+  if (!trigger)
+    return [diag("trigger.type", "unknown_trigger", `Unknown trigger type "${r.trigger.type}". Supported: ${registries.triggers.types().join(", ")}`)];
   const parsed = trigger.schema.safeParse(r.trigger);
   if (!parsed.success) return zodDiagnostics(parsed.error, "trigger");
   return trigger.check ? trigger.check(parsed.data, "trigger", { allowFastIntervals }) : [];
@@ -241,9 +239,13 @@ function checkScheduleAndLimits(r: ParsedRuleInput, now: number): Diagnostic[] {
 function permissionHints(r: ParsedRuleInput, registries: Registries): Diagnostic[] {
   if (!r.stopWhen) return [];
   let needsHost = false;
-  walkConditions(r.stopWhen as ConditionNode, (n) => {
-    if (registries.conditions.get(n.type)?.permissions.includes("host")) needsHost = true;
-  }, registries);
+  walkConditions(
+    r.stopWhen as ConditionNode,
+    (n) => {
+      if (registries.conditions.get(n.type)?.permissions.includes("host")) needsHost = true;
+    },
+    registries,
+  );
   return needsHost ? [diag("stopWhen", "requires_host_permission", "DOM conditions require site access for the target pages", "warning")] : [];
 }
 

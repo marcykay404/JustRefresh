@@ -141,10 +141,7 @@ function escapeRegex(s: string): string {
 
 /** `*` → any run of characters (may be empty). Everything else is literal. */
 function globToRegex(glob: string): RegExp {
-  const body = glob
-    .split(/\*+/)
-    .map(escapeRegex)
-    .join(".*");
+  const body = glob.split(/\*+/).map(escapeRegex).join(".*");
   return new RegExp(`^${body}$`, "s");
 }
 
@@ -168,7 +165,12 @@ export function compilePattern(input: UrlPatternInput): CompiledPattern {
 function compileUncached(type: PatternType, value: string): CompiledPattern {
   if (!value) throw new PatternError("Pattern is empty", "pattern_empty");
   if (value.length > MAX_PATTERN_LENGTH) throw new PatternError("Pattern is too long", "pattern_too_long");
-  const compilers: Record<PatternType, (v: string) => (url: string) => boolean> = { regex: compileRegex, exact: compileExact, glob: compileGlob, domain: compileDomain };
+  const compilers: Record<PatternType, (v: string) => (url: string) => boolean> = {
+    regex: compileRegex,
+    exact: compileExact,
+    glob: compileGlob,
+    domain: compileDomain,
+  };
   if (!Object.hasOwn(compilers, type)) throw new PatternError(`Unknown pattern type "${type}"`, "pattern_invalid");
   return { type, source: value, test: compilers[type](value) };
 }

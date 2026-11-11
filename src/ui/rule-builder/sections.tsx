@@ -61,13 +61,30 @@ export function WhenCard(p: SectionProps) {
             const ok = t === "interval" || t === "startup" || t === "manual";
             set({
               trigger: nt as Draft["trigger"],
-              actions: { ...actions, onNotMatched: ok ? (actions.onNotMatched?.length ? actions.onNotMatched : [{ type: "refresh" }]) : (actions.onNotMatched ?? []).filter((a) => a.type !== "refresh") },
+              actions: {
+                ...actions,
+                onNotMatched: ok
+                  ? actions.onNotMatched?.length
+                    ? actions.onNotMatched
+                    : [{ type: "refresh" }]
+                  : (actions.onNotMatched ?? []).filter((a) => a.type !== "refresh"),
+              },
             });
           }}
         >
-          {c.triggers.map((t) => <option key={t.type} value={t.type}>{t.title}</option>)}
+          {c.triggers.map((t) => (
+            <option key={t.type} value={t.type}>
+              {t.title}
+            </option>
+          ))}
         </select>
-        {trigger.type === "interval" && <IntervalInput seconds={trigger.seconds ?? 60} onChange={(s) => set({ trigger: { ...trigger, seconds: s } as Draft["trigger"] })} min={c.limits.minIntervalSeconds} />}
+        {trigger.type === "interval" && (
+          <IntervalInput
+            seconds={trigger.seconds ?? 60}
+            onChange={(s) => set({ trigger: { ...trigger, seconds: s } as Draft["trigger"] })}
+            min={c.limits.minIntervalSeconds}
+          />
+        )}
       </div>
       {trigger.type === "interval" && (
         <div className="row">
@@ -82,7 +99,11 @@ export function WhenCard(p: SectionProps) {
           {trigger.randomMaxSeconds !== undefined && (
             <>
               <span className="small muted">up to</span>
-              <IntervalInput seconds={trigger.randomMaxSeconds} onChange={(s) => set({ trigger: { ...trigger, randomMaxSeconds: s } as Draft["trigger"] })} min={c.limits.minIntervalSeconds} />
+              <IntervalInput
+                seconds={trigger.randomMaxSeconds}
+                onChange={(s) => set({ trigger: { ...trigger, randomMaxSeconds: s } as Draft["trigger"] })}
+                min={c.limits.minIntervalSeconds}
+              />
             </>
           )}
         </div>
@@ -189,13 +210,21 @@ export function LimitsCard(p: SectionProps) {
       <span className="small muted">“Same as Settings” uses your defaults from Settings → Activity protection, filled in when the rule is saved.</span>
       <div className="row">
         <TriToggle label="Wait while I'm typing" value={safety.pauseWhileTyping} onChange={(v) => set({ safety: { ...safety, pauseWhileTyping: v } })} />
-        <TriToggle label="Don't refresh over unsaved form changes" value={safety.protectUnsavedChanges} onChange={(v) => set({ safety: { ...safety, protectUnsavedChanges: v } })} />
+        <TriToggle
+          label="Don't refresh over unsaved form changes"
+          value={safety.protectUnsavedChanges}
+          onChange={(v) => set({ safety: { ...safety, protectUnsavedChanges: v } })}
+        />
         <TriToggle label="Wait while I move the mouse" value={safety.pauseOnMouse} onChange={(v) => set({ safety: { ...safety, pauseOnMouse: v } })} />
         <TriToggle label="Wait while I scroll" value={safety.pauseOnScroll} onChange={(v) => set({ safety: { ...safety, pauseOnScroll: v } })} />
       </div>
       <div className="row">
         <Field label="Quiet time before a postponed refresh (seconds)">
-          <OptNumber placeholder="Same as Settings" value={safety.inactivityGraceSeconds} onChange={(v) => set({ safety: { ...safety, inactivityGraceSeconds: v } })} />
+          <OptNumber
+            placeholder="Same as Settings"
+            value={safety.inactivityGraceSeconds}
+            onChange={(v) => set({ safety: { ...safety, inactivityGraceSeconds: v } })}
+          />
         </Field>
         <Field label="When the page can't be checked">
           <OptSelect
@@ -205,7 +234,9 @@ export function LimitsCard(p: SectionProps) {
               ["skip", "Skip this time and keep trying"],
               ["refresh", "Treat it as not found and keep refreshing"],
               ["stop", "Stop and notify me"],
-            ]} onChange={(v) => set({ safety: { ...safety, onUnknown: v as never } })} />
+            ]}
+            onChange={(v) => set({ safety: { ...safety, onUnknown: v as never } })}
+          />
         </Field>
         <Field label="Retries before giving up">
           <OptNumber placeholder="Same as Settings" value={safety.maxUnknownRetries} onChange={(v) => set({ safety: { ...safety, maxUnknownRetries: v } })} />
@@ -216,7 +247,9 @@ export function LimitsCard(p: SectionProps) {
             options={[
               ["pause", "Don't refresh (safe)"],
               ["refresh", "Refresh without protection"],
-            ]} onChange={(v) => set({ safety: { ...safety, onActivityUnavailable: v as never } })} />
+            ]}
+            onChange={(v) => set({ safety: { ...safety, onActivityUnavailable: v as never } })}
+          />
         </Field>
       </div>
       <div className="row">
@@ -260,9 +293,19 @@ export function LimitsCard(p: SectionProps) {
       </div>
       <div className="row">
         <span className="field-label">Hours</span>
-        <input type="time" value={draft.schedule?.startTime ?? ""} onChange={(e) => set({ schedule: { ...draft.schedule, startTime: e.target.value || undefined } })} aria-label="Start time" />
+        <input
+          type="time"
+          value={draft.schedule?.startTime ?? ""}
+          onChange={(e) => set({ schedule: { ...draft.schedule, startTime: e.target.value || undefined } })}
+          aria-label="Start time"
+        />
         <span>to</span>
-        <input type="time" value={draft.schedule?.endTime ?? ""} onChange={(e) => set({ schedule: { ...draft.schedule, endTime: e.target.value || undefined } })} aria-label="End time" />
+        <input
+          type="time"
+          value={draft.schedule?.endTime ?? ""}
+          onChange={(e) => set({ schedule: { ...draft.schedule, endTime: e.target.value || undefined } })}
+          aria-label="End time"
+        />
       </div>
       <Diagnostics items={[...errorsFor("safety"), ...errorsFor("limits"), ...errorsFor("schedule")]} />
     </div>
@@ -286,15 +329,27 @@ const actionNames = (a?: ActionConfig[]) => (a?.length ? a.map((x) => x.type).jo
 export function Summary({ draft }: { draft: Draft }) {
   const { patterns, exclusions } = draft.target;
   const except = exclusions?.length ? ` except ${exclusions.map(patternToString).join(", ")}` : "";
-  const then = draft.stopWhen ? `${actionNames(draft.actions?.onMatched)}; otherwise ${actionNames(draft.actions?.onNotMatched)}` : actionNames(draft.actions?.onNotMatched);
+  const then = draft.stopWhen
+    ? `${actionNames(draft.actions?.onMatched)}; otherwise ${actionNames(draft.actions?.onNotMatched)}`
+    : actionNames(draft.actions?.onNotMatched);
   return (
     <div className="small col" style={{ gap: 4 }}>
-      <div><strong>WHEN</strong> {whenText(draft.trigger as { type: string; seconds?: number; randomMaxSeconds?: number })}</div>
-      <div><strong>ON</strong> {patterns.map(patternToString).join(", ") || "—"}{except}</div>
-      {draft.stopWhen && <div><strong>UNTIL</strong> {describeCondition(draft.stopWhen)}</div>}
-      <div><strong>THEN</strong> {then}</div>
+      <div>
+        <strong>WHEN</strong> {whenText(draft.trigger as { type: string; seconds?: number; randomMaxSeconds?: number })}
+      </div>
+      <div>
+        <strong>ON</strong> {patterns.map(patternToString).join(", ") || "—"}
+        {except}
+      </div>
+      {draft.stopWhen && (
+        <div>
+          <strong>UNTIL</strong> {describeCondition(draft.stopWhen)}
+        </div>
+      )}
+      <div>
+        <strong>THEN</strong> {then}
+      </div>
       {draft.limits?.maxRefreshes && <div className="muted">At most {draft.limits.maxRefreshes} refreshes</div>}
     </div>
   );
 }
-

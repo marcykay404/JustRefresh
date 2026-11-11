@@ -39,7 +39,17 @@ describe("page patterns", () => {
     const r = untilRule({ url: URL_Q, site: "shop.test", seconds: 60, text: "Delivered", mode: "appears", anyQuery: true });
     expect(validateRule(r).valid).toBe(true);
     expect(matchesAny(r.target!.patterns, "https://shop.test/track?order=42&t=2")).not.toBeNull();
-    const v: TemplateValues = { url: URL_Q, text: "x", seconds: 300, start: "08:00", end: "18:00", stopAfterMinutes: null, priority: 0, protects: false, anyQuery: true };
+    const v: TemplateValues = {
+      url: URL_Q,
+      text: "x",
+      seconds: 300,
+      start: "08:00",
+      end: "18:00",
+      stopAfterMinutes: null,
+      priority: 0,
+      protects: false,
+      anyQuery: true,
+    };
     for (const t of TEMPLATES.filter((x) => x.scope === "page")) {
       const rule = t.build({ ...v, text: t.text?.initial ?? "" });
       expect(validateRule(rule).valid, t.id).toBe(true);
@@ -74,13 +84,15 @@ describe("rules set for this page with another ?… part", () => {
 });
 
 describe("review of the ?… choice", () => {
-  it("works for file: pages (whose origin is \"null\")", () => {
+  it('works for file: pages (whose origin is "null")', () => {
     const p = pagePatterns("file:///Users/x/a.html?x=1", true);
     expect(p).toEqual([{ type: "regex", value: "^file:///Users/x/a\\.html(\\?[^#]*)?(#.*)?$" }]);
     expect(matchesAny(p, "file:///Users/x/a.html")).not.toBeNull();
     expect(matchesAny(p, "file:///Users/x/a.html#top")).not.toBeNull();
     expect(matchesAny(p, "file:///Users/x/a.htmlx")).toBeNull();
-    expect(validateRule(untilRule({ url: "file:///Users/x/a.html?x=1", site: "a.html", seconds: 60, text: "x", mode: "appears", anyQuery: true })).valid).toBe(true);
+    expect(validateRule(untilRule({ url: "file:///Users/x/a.html?x=1", site: "a.html", seconds: 60, text: "x", mode: "appears", anyQuery: true })).valid).toBe(
+      true,
+    );
     expect(matchesAny(p, "file:///Users/x/a.html?x=2")).not.toBeNull();
   });
 

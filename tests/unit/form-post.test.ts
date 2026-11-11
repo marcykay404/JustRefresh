@@ -14,7 +14,11 @@ describe("noticing POST form submissions", () => {
   beforeAll(() => {
     // One watcher for the whole file; jsdom has no real navigation, so stop
     // the default action after our listener ran.
-    watchFormPosts(window, () => store, () => n);
+    watchFormPosts(
+      window,
+      () => store,
+      () => n,
+    );
     window.addEventListener("submit", (e) => e.preventDefault());
   });
   beforeEach(() => {
@@ -29,7 +33,9 @@ describe("noticing POST form submissions", () => {
     document.getElementById("js")!.addEventListener("submit", (e) => e.preventDefault()); // handled with fetch
   });
   const submit = (formId: string, buttonId: string) =>
-    document.getElementById(formId)!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true, submitter: document.getElementById(buttonId) as HTMLElement }));
+    document
+      .getElementById(formId)!
+      .dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true, submitter: document.getElementById(buttonId) as HTMLElement }));
   const recorded = () => JSON.parse(store.getItem(SUBMIT_KEY) ?? "null");
 
   it("records POST submissions that load into this tab, with the form's address", () => {
@@ -107,7 +113,16 @@ describe("recognising a form result page", () => {
   });
 
   it("copes with storage being unavailable or holding junk", () => {
-    expect(detectFormResult("https://x.test/", nav("navigate"), () => { throw new Error("denied"); }, now)).toBe(false);
+    expect(
+      detectFormResult(
+        "https://x.test/",
+        nav("navigate"),
+        () => {
+          throw new Error("denied");
+        },
+        now,
+      ),
+    ).toBe(false);
     const store = new MemStore();
     store.setItem(SUBMIT_KEY, "{not json");
     store.setItem(RESULT_KEY, "1234");

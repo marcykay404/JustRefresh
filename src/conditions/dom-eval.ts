@@ -11,14 +11,7 @@ import { checkRegexSafety } from "../core/url-pattern";
 export const MAX_TEXT_LENGTH = 100_000;
 export const PREVIEW_LENGTH = 80;
 
-export type TextOperator =
-  | "contains"
-  | "not_contains"
-  | "equals"
-  | "not_equals"
-  | "starts_with"
-  | "ends_with"
-  | "matches";
+export type TextOperator = "contains" | "not_contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "matches";
 
 export type AttributeOperator = "exists" | "missing" | "equals" | "not_equals" | "contains" | "matches";
 
@@ -57,12 +50,7 @@ function query(doc: Document, selector: string): { ok: true; els: Element[] } | 
   }
 }
 
-export function compareText(
-  actual: string,
-  operator: TextOperator,
-  expected: string,
-  caseSensitive: boolean,
-): boolean | { error: string } {
+export function compareText(actual: string, operator: TextOperator, expected: string, caseSensitive: boolean): boolean | { error: string } {
   const a = caseSensitive ? actual : actual.toLowerCase();
   const e = caseSensitive ? expected : expected.toLowerCase();
   switch (operator) {
@@ -86,8 +74,7 @@ export function compareText(
   }
 }
 
-const bool = (b: boolean, details?: MatchDetails): EvaluationResult =>
-  b ? { status: "matched", details } : { status: "not_matched", details };
+const bool = (b: boolean, details?: MatchDetails): EvaluationResult => (b ? { status: "matched", details } : { status: "not_matched", details });
 
 export function evaluateDomCondition(node: ConditionNode, doc: Document, opts: DomEvalOptions): EvaluationResult {
   if (doc.readyState === "loading") {

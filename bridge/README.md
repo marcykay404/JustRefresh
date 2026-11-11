@@ -7,14 +7,14 @@ The Chrome extension works without this. The bridge lets local MCP clients
 MCP client ──stdio──▶ sar-bridge.mjs mcp ──local socket + token──▶ sar-bridge.mjs native-host ◀──Native Messaging── extension
 ```
 
-* No network port is opened. The socket lives in `~/.smart-auto-refresh/`
+- No network port is opened. The socket lives in `~/.smart-auto-refresh/`
   (directory `0700`, socket `0600`); a random token, rewritten every time
   Chrome starts the host, must be presented on connect.
-* Every MCP client is a separate agent in the extension and must be approved
+- Every MCP client is a separate agent in the extension and must be approved
   by the user (Dashboard → Agent Integrations), with explicit scopes.
-* Agent-created rules are drafts; activation needs user approval unless the
+- Agent-created rules are drafts; activation needs user approval unless the
   user grants that agent "trusted activation". All calls are audited.
-* Requires Node.js 18+. No npm dependencies.
+- Requires Node.js 18+. No npm dependencies.
 
 ## Setup
 
@@ -35,20 +35,20 @@ MCP client ──stdio──▶ sar-bridge.mjs mcp ──local socket + token─
 
 ## Tools
 
-| Tool | API method |
-|---|---|
-| `refresh_get_capabilities` | getCapabilities |
-| `refresh_list_tabs` | listTabs |
-| `refresh_list_rules` | listRules |
-| `refresh_get_rule` | getRule |
-| `refresh_validate_rule` | validateRule |
-| `refresh_test_rule` | testRule (dry run) |
-| `refresh_create_rule` | createRule (draft) |
-| `refresh_update_rule` | updateRule |
-| `refresh_delete_rule` | deleteRule |
-| `refresh_enable_rule` | enableRule (approval) |
-| `refresh_disable_rule` | disableRule |
-| `refresh_get_status` | getRuleStatus |
-| `refresh_get_history` | getHistory |
+| Tool                       | API method            |
+| -------------------------- | --------------------- |
+| `refresh_get_capabilities` | getCapabilities       |
+| `refresh_list_tabs`        | listTabs              |
+| `refresh_list_rules`       | listRules             |
+| `refresh_get_rule`         | getRule               |
+| `refresh_validate_rule`    | validateRule          |
+| `refresh_test_rule`        | testRule (dry run)    |
+| `refresh_create_rule`      | createRule (draft)    |
+| `refresh_update_rule`      | updateRule            |
+| `refresh_delete_rule`      | deleteRule            |
+| `refresh_enable_rule`      | enableRule (approval) |
+| `refresh_disable_rule`     | disableRule           |
+| `refresh_get_status`       | getRuleStatus         |
+| `refresh_get_history`      | getHistory            |
 
 Unknown tool arguments are rejected. Uninstall with `node bridge/install.mjs --uninstall`.

@@ -87,7 +87,9 @@ export function lowered(current, baseline) {
   const out = { cyclomatic: {}, cognitive: {} };
   for (const kind of KINDS) {
     const was = baseline[kind] ?? {};
-    const keys = Object.keys(current[kind]).filter((k) => Object.hasOwn(was, k)).sort((a, b) => a.localeCompare(b));
+    const keys = Object.keys(current[kind])
+      .filter((k) => Object.hasOwn(was, k))
+      .sort((a, b) => a.localeCompare(b));
     for (const key of keys) out[kind][key] = Math.min(current[kind][key], was[key]);
   }
   return out;
