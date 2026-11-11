@@ -12,6 +12,7 @@ import { detectPattern, validatePattern, patternToString } from "../../core/url-
 import type { ActionConfig, ConditionNode, Diagnostic, EvaluationResult, EvaluationTrace, Rule, RuleInput, TabInfo, UrlPatternInput } from "../../core/types";
 import { ConditionEditor, describeCondition, isSimpleTree, type CapabilityItem } from "./ConditionEditor";
 import { defaultsFor, SchemaForm } from "./SchemaForm";
+import { useDialog } from "../shared/dialog";
 
 interface Capabilities {
   conditions: CapabilityItem[];
@@ -64,6 +65,7 @@ function clean(d: Draft): Draft {
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function RuleBuilder({ ruleId, initialUrl }: { ruleId?: string; initialUrl?: string }) {
+  const dialog = useDialog();
   const caps = useApi<Capabilities>("getCapabilities");
   const tabs = useApi<TabInfo[]>("listTabs");
   const [existing, setExisting] = useState<Rule | null>(null);
@@ -159,7 +161,10 @@ export function RuleBuilder({ ruleId, initialUrl }: { ruleId?: string; initialUr
         {existing?.meta.draft && <span className="pill pill-warn">Draft</span>}
         {existing?.meta.origin.type === "agent" && <span className="pill pill-done">Created by {existing.meta.origin.agentId}</span>}
         <span className="spacer" />
-        <Toggle checked={advanced} onChange={(v) => (v || isSimpleTree(draft.stopWhen) ? setAdvanced(v) : alert("This rule uses nested groups; simplify it before switching to simple mode."))} label="Advanced mode" />
+        <Toggle checked={advanced} onChange={(v) => (v || isSimpleTree(draft.stopWhen) ? setAdvanced(v) : void dialog.alert({
+                    title: "Can't switch to simple mode",
+                    message: "This rule uses nested condition groups, which simple mode can't show. Remove the nesting in advanced mode first.",
+                  }))} label="Advanced mode" />
         <div className="row" role="tablist">
           <button className={view === "visual" ? "primary" : ""} onClick={() => setView("visual")}>Visual</button>
           <button className={view === "json" ? "primary" : ""} onClick={() => setView("json")}>JSON</button>

@@ -4,8 +4,10 @@ import { useApi } from "../shared/hooks";
 import { formatTime } from "../shared/format";
 import { Empty, ErrorBox } from "../shared/components";
 import type { HistoryEntry } from "../../core/types";
+import { useDialog } from "../shared/dialog";
 
 export function HistoryView() {
+  const dialog = useDialog();
   const { data, error, reload } = useApi<HistoryEntry[]>("getHistory", { limit: 500 }, { pollMs: 4000 });
   const [search, setSearch] = useState("");
   const [outcome, setOutcome] = useState("all");
@@ -25,7 +27,13 @@ export function HistoryView() {
       <div className="row">
         <h1>History</h1>
         <span className="spacer" />
-        <button onClick={async () => confirm("Clear execution history?") && (await api("clearHistory"), reload())}>Clear history</button>
+        <button onClick={async () => {
+            const ok = await dialog.confirm({ title: "Clear history?", message: "All refresh and rule history entries are deleted.", confirmLabel: "Clear history", danger: true });
+            if (ok) {
+              await api("clearHistory");
+              reload();
+            }
+          }}>Clear history</button>
       </div>
       <div className="toolbar">
         <input placeholder="Search rule, URL, action, reason" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search history" />

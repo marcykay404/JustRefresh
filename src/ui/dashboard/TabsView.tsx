@@ -5,6 +5,7 @@ import { formatDuration, formatTime, statusLabel } from "../shared/format";
 import { Empty, ErrorBox, StatusPill } from "../shared/components";
 import { INTERVAL_PRESETS } from "../../core/defaults";
 import type { Settings, TabInfo, TabRuntime } from "../../core/types";
+import { useDialog } from "../shared/dialog";
 
 interface Row {
   tab: TabInfo;
@@ -24,6 +25,7 @@ interface Overview {
 type SortKey = "title" | "status" | "next" | "count";
 
 export function TabsView() {
+  const dialog = useDialog();
   const { data, error, reload } = useApi<Overview>("getOverview", undefined, { pollMs: 2000 });
   const now = useNow(1000);
   const [search, setSearch] = useState("");
@@ -98,7 +100,26 @@ export function TabsView() {
     }
     const blocked = r.skipped.filter((s) => !/No rule|Excluded|excluded|cannot|Browser-internal|globally disabled/.test(s.reason));
     setNotice(`Refreshed ${r.refreshed.length} tab(s); ${r.skipped.length} skipped.`);
-    if (blocked.length && confirm(`${blocked.length} tab(s) were protected (e.g. unsaved changes). Force refresh them anyway?`)) {
+    const forceThem =
+      blocked.length > 0 &&
+      (await dialog.confirm({
+        title: `Refresh ${blocked.length} protected tab${blocked.length === 1 ? "" : "s"} anyway?`,
+        message: (
+          <>
+            <p>These were skipped to protect your work (for example, unsaved changes):</p>
+            <ul>
+              {blocked.slice(0, 8).map((b) => (
+                <li key={b.tabId}>{data?.tabs.find((t) => t.tab.id === b.tabId)?.tab.title || `Tab ${b.tabId}`}: {b.reason}</li>
+              ))}
+            </ul>
+            {blocked.length > 8 && <p>…and {blocked.length - 8} more.</p>}
+          </>
+        ),
+        confirmLabel: "Refresh anyway",
+        cancelLabel: "Leave them",
+        danger: true,
+      }));
+    if (forceThem) {
       for (const b of blocked) await act("refreshNow", { tabId: b.tabId, force: true });
     }
   };
