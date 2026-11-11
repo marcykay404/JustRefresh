@@ -334,10 +334,21 @@ export function Popup() {
   } else if (running && !changing) {
     card = (
       <>
-        <CountdownRow title={`Refreshing every ${intervalLabel(currentInterval)}`} rt={rt} countdown={countdown} />
-        <div className="progress" aria-hidden>
-          <div style={{ width: `${progress}%` }} />
-        </div>
+        {rt?.status === "paused_resubmit" ? (
+          <CountdownRow
+            title="Paused on a submitted form"
+            rt={rt}
+            countdown={null}
+            subtitle={`Refreshing every ${intervalLabel(currentInterval)} resumes when this tab goes to another page`}
+          />
+        ) : (
+          <>
+            <CountdownRow title={`Refreshing every ${intervalLabel(currentInterval)}`} rt={rt} countdown={countdown} />
+            <div className="progress" aria-hidden>
+              <div style={{ width: `${progress}%` }} />
+            </div>
+          </>
+        )}
         {rt?.status === "paused_user" ? (
           <button className="primary big" onClick={() => void run("resumeTab", { tabId })}>Resume</button>
         ) : (
@@ -607,7 +618,7 @@ function CountdownRow({ title, rt, countdown, subtitle }: { title: ReactNode; rt
 }
 
 function Stats({ rt, rule }: { rt: TabRuntime; rule?: boolean }) {
-  const last = rt.lastAttemptAt ? ` · last at ${formatTime(rt.lastAttemptAt)}` : "";
+  const last = rt.lastAttemptAt ? ` · last checked ${formatTime(rt.lastAttemptAt)}` : "";
   if (rule) {
     const found = rt.lastEvaluation?.status === "matched" ? "found" : rt.lastEvaluation?.status === "unknown" ? "couldn't check" : "not found yet";
     return <span className="small muted">Refreshed {rt.refreshCount} time{rt.refreshCount === 1 ? "" : "s"} · {found}{last}</span>;
@@ -637,10 +648,16 @@ function RuleCard(p: {
       </div>
       {active ? (
         <>
-          <CountdownRow title={p.summary ?? "Refreshing"} rt={rt} countdown={p.countdown} />
-          <div className="progress" aria-hidden>
-            <div style={{ width: `${p.progress}%` }} />
-          </div>
+          {rt?.status === "paused_resubmit" ? (
+            <CountdownRow title={p.summary ?? "Refreshing"} rt={rt} countdown={null} subtitle="Paused on a submitted form until this tab goes to another page" />
+          ) : (
+            <>
+              <CountdownRow title={p.summary ?? "Refreshing"} rt={rt} countdown={p.countdown} />
+              <div className="progress" aria-hidden>
+                <div style={{ width: `${p.progress}%` }} />
+              </div>
+            </>
+          )}
           {rt && <Stats rt={rt} rule />}
           <div className="row">
             <button className="big grow" onClick={p.onCheckNow}>Check now</button>

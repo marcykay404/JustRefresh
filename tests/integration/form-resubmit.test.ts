@@ -101,3 +101,40 @@ describe("form results: edge cases from review", () => {
     expect(env.browser.reloads).toEqual([]);
   });
 });
+
+describe("form results: paused without polling", () => {
+  it("sets no timer while the tab stays on the form page", async () => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
+    expect(env.alarms.alarms.has("sar:tab:7")).toBe(false);
+    env.clock.advance(60 * 60_000);
+    expect(await env.fireDue()).toBe(0); // nothing wakes up for an hour
+  });
+
+  it("resumes when the tab loads another page, and refreshes that page normally", async () => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    env.browser.tabs.get(7)!.url = "https://shop.test/account";
+    env.page.activityByTab.set(7, quietActivity());
+    await env.engine.onTabUpdated(7, { url: "https://shop.test/account" });
+    await env.engine.onTabUpdated(7, { status: "complete" });
+    expect(await env.runtime.get(7)).toMatchObject({ status: "scheduled", reason: undefined });
+    env.clock.advance(30_000);
+    await env.fireDue();
+    expect(env.browser.reloads).toEqual([7]);
+  });
+
+  it("pauses again if the next page is also a form result", async () => {
+    const env = await setup();
+    env.clock.advance(30_000);
+    await env.fireDue();
+    await env.engine.onTabUpdated(7, { status: "complete" }); // e.g. another form submitted
+    env.clock.advance(30_000);
+    await env.fireDue();
+    expect((await env.runtime.get(7))?.status).toBe("paused_resubmit");
+    expect(env.browser.reloads).toEqual([]);
+  });
+});

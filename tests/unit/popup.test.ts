@@ -297,6 +297,9 @@ describe("rules made from the popup take effect", () => {
 describe("pages reached by submitting a form", () => {
   it("paused on one: explains and offers Open this page fresh", async () => {
     await render({ source: "tab", status: "paused_resubmit" });
+    expect(text()).toContain("Paused on a submitted form");
+    expect(text()).toContain("Refreshing every 5 min resumes when this tab goes to another page");
+    expect(el.querySelector(".progress")).toBeNull(); // no countdown: nothing is due
     expect(text()).toContain("This page came from submitting a form");
     await click("Open this page fresh");
     expect(called("openFresh")).toEqual([{ tabId: 1 }]);

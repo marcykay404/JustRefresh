@@ -345,6 +345,7 @@ await test("a page reached by submitting a form is never reloaded; Open this pag
   await call("startTab", { tabId, intervalSeconds: 30 });
   await fireAlarm(tabId);
   await waitFor(async () => (await runtime(tabId))?.status === "paused_resubmit", "paused on the form result");
+  assert.equal(await sw.evaluate((id) => chrome.alarms.get(`sar:tab:${id}`), tabId), undefined, "no timer while paused on the form page");
   const refresh = await call("refreshNow", { tabId });
   assert.equal(refresh.formResult, true);
   await new Promise((r) => setTimeout(r, 500));
@@ -389,6 +390,21 @@ await test("form pages: a #fragment result can be opened fresh, and a form that 
   await waitFor(async () => (loads.get("/order") ?? 0) > before, "refreshed normally");
   assert.notEqual((await runtime(tab2))?.status, "paused_resubmit");
   await call("stopTab", { tabId: tab2 });
+  await page.close();
+});
+
+await test("a tab paused on a form page resumes by itself when you go to another page", async () => {
+  const page = await context.newPage();
+  await page.goto(`${base}/checkout`);
+  await Promise.all([page.waitForURL(`${base}/order`), page.click("#buy")]);
+  const tabId = await tabIdFor(`${base}/order`);
+  await call("startTab", { tabId, intervalSeconds: 30 });
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "paused_resubmit", "paused on the form result");
+  await page.goto(`${base}/stock`);
+  await waitFor(async () => (await runtime(tabId))?.status === "scheduled", "resumed after going to another page");
+  assert.ok(await sw.evaluate((id) => chrome.alarms.get(`sar:tab:${id}`), tabId), "timer set again");
+  await call("stopTab", { tabId });
   await page.close();
 });
 
