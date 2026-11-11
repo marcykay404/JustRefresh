@@ -17,7 +17,10 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
     getCapabilities: m({
       scope: "rules:read",
       params: none,
-      handler: async () => buildCapabilities(svc.registries, (await d.config.get()).settings, (await d.schemas?.().catch(() => null)) ?? NO_SCHEMAS),
+      handler: async () => buildCapabilities(svc.registries, (await d.config.get()).settings, (await d.schemas?.().catch((e: Error) => {
+            console.warn("JustRefresh: JSON Schemas unavailable for capabilities", e);
+            return null;
+          })) ?? NO_SCHEMAS),
     }),
     listRules: m({
       scope: "rules:read",

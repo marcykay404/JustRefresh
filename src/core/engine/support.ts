@@ -62,7 +62,7 @@ const WAITING: Record<string, string> = {
 
 /** Status line for a rule that waits for its trigger (not a timer). */
 export function waitingReason(rule: Rule): string {
-  return WAITING[rule.trigger.type] ?? `Waiting for ${rule.trigger.type} trigger`;
+  return Object.hasOwn(WAITING, rule.trigger.type) ? WAITING[rule.trigger.type]! : `Waiting for ${rule.trigger.type} trigger`;
 }
 
 export function withoutHash(url: string): string {

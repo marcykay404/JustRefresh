@@ -17,6 +17,7 @@ export interface SchemaBundle {
   rule: unknown;
   handlers: { conditions: SchemaMap; triggers: SchemaMap; actions: SchemaMap };
 }
+/** Used when the schema files can't be read: capabilities say so (`schemasUnavailable`). */
 export const NO_SCHEMAS: SchemaBundle = { rule: {}, handlers: { conditions: {}, triggers: {}, actions: {} } };
 const schemaOf = (map: SchemaMap, type: string): unknown => map[type] ?? {};
 
@@ -57,6 +58,7 @@ export function buildCapabilities(registries: Registries, settings?: Pick<Settin
       schema: schemaOf(schemas.handlers.actions, h.type),
     })),
     ruleSchema: schemas.rule,
+    ...(schemas === NO_SCHEMAS ? { schemasUnavailable: true } : {}),
     evaluationOutcomes: ["matched", "not_matched", "unknown"],
     unknownPolicies: ["pause", "skip", "refresh", "stop"],
     urlPatternTypes: {

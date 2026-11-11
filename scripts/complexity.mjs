@@ -28,6 +28,10 @@ export async function measure() {
     const file = relative(root, r.filePath);
     const lines = readFileSync(r.filePath, "utf8").split("\n");
     const seen = {};
+    // Belt and braces: anything suppressed for these rules counts as an error.
+    for (const m of r.suppressedMessages ?? []) {
+      if (RULES[m.ruleId]) errors.push(`${file}:${m.line} ${m.ruleId} is suppressed; the complexity limits can't be switched off inline`);
+    }
     for (const m of r.messages) {
       const kind = RULES[m.ruleId];
       if (!kind) {
@@ -35,6 +39,10 @@ export async function measure() {
         continue;
       }
       const score = Number((m.message.match(/complexity of (\d+)/) ?? m.message.match(/from (\d+) to/) ?? [])[1]);
+      if (!Number.isFinite(score)) {
+        errors.push(`${file}:${m.line} ${m.ruleId}: could not read the score from "${m.message}"`);
+        continue;
+      }
       // Key: the function's first line (stable while its signature is), plus
       // an ordinal for identical lines in one file.
       const head = (lines[m.line - 1] ?? "").trim().replace(/\s+/g, " ").slice(0, 100);

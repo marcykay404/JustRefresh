@@ -277,7 +277,7 @@ const WHEN: Record<string, string> = {
 };
 
 function whenText(t: { type: string; seconds?: number; randomMaxSeconds?: number }): string {
-  if (t.type !== "interval") return WHEN[t.type] ?? t.type;
+  if (t.type !== "interval") return Object.hasOwn(WHEN, t.type) ? WHEN[t.type]! : "Only when run manually";
   return `Every ${t.seconds}s${t.randomMaxSeconds ? `–${t.randomMaxSeconds}s (random)` : ""}`;
 }
 

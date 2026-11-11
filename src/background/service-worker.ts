@@ -23,7 +23,11 @@ import { tabBadge } from "../core/badge";
 /** The generated JSON Schemas ship as package files; read them once, when an agent first asks. */
 let schemaBundle: Promise<SchemaBundle> | null = null;
 function loadSchemas(): Promise<SchemaBundle> {
-  const read = (path: string) => fetch(chrome.runtime.getURL(path)).then((r) => r.json());
+  const read = (path: string) =>
+    fetch(chrome.runtime.getURL(path)).then((r) => {
+      if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+      return r.json();
+    });
   schemaBundle ??= Promise.all([read("schemas/rule.schema.json"), read("schemas/handler-schemas.json")]).then(([rule, handlers]) => ({ rule, handlers }));
   schemaBundle.catch(() => (schemaBundle = null));
   return schemaBundle;

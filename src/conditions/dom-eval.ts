@@ -93,7 +93,7 @@ export function evaluateDomCondition(node: ConditionNode, doc: Document, opts: D
   if (doc.readyState === "loading") {
     return { status: "unknown", code: "page_not_ready", reason: "Document is still loading" };
   }
-  const evaluate = EVALUATORS[node.type];
+  const evaluate = Object.hasOwn(EVALUATORS, node.type) ? EVALUATORS[node.type] : undefined;
   if (!evaluate) return { status: "unknown", code: "evaluation_error", reason: `Unsupported page condition "${node.type}"` };
   try {
     return evaluate(node, doc, opts);

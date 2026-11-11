@@ -87,3 +87,11 @@ describe("describing a rule from its actions (approval card, popup)", () => {
   });
 });
 
+
+describe("unknown trigger or condition names (review)", () => {
+  it("names like __proto__ or constructor are treated as unknown, never looked up on Object.prototype", () => {
+    const actions = { onMatched: [], onNotMatched: [{ type: "refresh" }] } as never;
+    expect(describeRule({ trigger: { type: "constructor" } as never, actions })).toBe("Refreshing on its constructor trigger");
+    expect(describeRule({ trigger: { type: "__proto__" } as never, actions })).toBe("Refreshing on its __proto__ trigger");
+  });
+});

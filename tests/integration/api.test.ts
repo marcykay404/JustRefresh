@@ -200,3 +200,15 @@ describe("temporary tab exclusion (FR-01)", () => {
     expect((await env.config.get()).tabOverrides["8"]).toBeUndefined();
   });
 });
+
+it("capabilities say so when the JSON Schema files can't be read", async () => {
+  const { RuleManagementService } = await import("@/api/rule-api");
+  const env = createApiEnv();
+  const svc = new RuleManagementService({ ...(env.service as unknown as { deps: ConstructorParameters<typeof RuleManagementService>[0] }).deps, schemas: async () => { throw new Error("missing"); } });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const caps = (await svc.call(env.user, "getCapabilities", undefined)) as { schemasUnavailable?: boolean; ruleSchema: object };
+  expect(caps).toMatchObject({ schemasUnavailable: true, ruleSchema: {} });
+  expect(warn).toHaveBeenCalled();
+  warn.mockRestore();
+  expect(((await env.service.call(env.user, "getCapabilities", undefined)) as { schemasUnavailable?: boolean }).schemasUnavailable).toBeUndefined();
+});

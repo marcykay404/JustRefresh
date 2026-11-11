@@ -89,7 +89,7 @@ const TRIGGER_PHRASES: Record<string, string> = {
 function triggerPhrase(t: { type: string; seconds?: number }, effectiveSeconds?: number | null): string {
   const seconds = effectiveSeconds ?? t.seconds;
   if (t.type === "interval" && seconds) return `every ${intervalLabel(seconds)}`;
-  return TRIGGER_PHRASES[t.type] ?? `on its ${t.type} trigger`;
+  return Object.hasOwn(TRIGGER_PHRASES, t.type) ? TRIGGER_PHRASES[t.type]! : `on its ${t.type} trigger`;
 }
 
 const has = (list: readonly ActionConfig[], type: string) => list.some((a) => a.type === type);
