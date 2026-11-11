@@ -290,6 +290,46 @@ await test("popup: start a timer with one tap, then 'Refresh until' hands the ta
   await page.close();
 });
 
+await test("first install opens the welcome page once; a template creates a working rule", async () => {
+  const welcome = await waitFor(() => context.pages().find((p) => p.url().endsWith("dashboard.html#/welcome")), "welcome tab after install");
+  await welcome.setViewportSize({ width: 1280, height: 900 });
+  await welcome.getByRole("heading", { name: "Welcome to JustRefresh" }).waitFor();
+  await welcome.screenshot({ path: join(root, "test-results", "welcome.png") });
+  await welcome.getByRole("link", { name: "Browse templates" }).click();
+  await welcome.getByRole("heading", { name: "Templates", exact: true }).waitFor();
+  await welcome.screenshot({ path: join(root, "test-results", "templates.png") });
+
+  const others = (await call("listRules")).filter((r) => r.enabled);
+  for (const r of others) await call("disableRule", { id: r.id });
+  stockText = "Sold out";
+  const shop = await context.newPage();
+  await shop.goto(`${base}/stock`);
+  const tabId = await tabIdFor(`${base}/stock`);
+
+  await welcome.reload();
+  await welcome.locator("article", { hasText: "back in stock" }).getByRole("button", { name: "Use template" }).click();
+  const form = welcome.getByRole("dialog");
+  const option = await form.locator("option", { hasText: "/stock" }).getAttribute("value");
+  await form.getByLabel("Which page?").selectOption(option);
+  await form.getByText(`Refresh 127.0.0.1:${new URL(base).port}/stock every 1 min until “In stock” appears`).waitFor();
+  await welcome.screenshot({ path: join(root, "test-results", "template-form.png") });
+  await form.getByRole("button", { name: "Create and start" }).click();
+  await welcome.getByText(/Created “Back in stock/).waitFor();
+
+  const rule = (await call("listRules")).find((r) => r.name.startsWith("Back in stock"));
+  assert.ok(rule, "rule created");
+  await waitFor(async () => (await runtime(tabId))?.controllerId === rule.id, "template rule runs on the tab");
+  await waitFor(async () => (await runtime(tabId))?.lastEvaluation?.status === "not_matched", "checked at once");
+  stockText = "In stock now";
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "completed", "completes when the text appears");
+
+  await call("deleteRule", { id: rule.id, expectedRevision: rule.meta.revision });
+  for (const r of others) await call("enableRule", { id: r.id });
+  await shop.close();
+  await welcome.close();
+});
+
 await test("popup and dashboard render", async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 900 });

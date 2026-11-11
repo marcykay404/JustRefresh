@@ -13,6 +13,7 @@ import type { ActionConfig, ConditionNode, Diagnostic, EvaluationResult, Evaluat
 import { ConditionEditor, describeCondition, isSimpleTree, type CapabilityItem } from "./ConditionEditor";
 import { defaultsFor, SchemaForm } from "./SchemaForm";
 import { useDialog } from "../shared/dialog";
+import { takeBuilderDraft } from "../dashboard/templates";
 
 interface Capabilities {
   conditions: CapabilityItem[];
@@ -64,12 +65,16 @@ function clean(d: Draft): Draft {
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function RuleBuilder({ ruleId, initialUrl }: { ruleId?: string; initialUrl?: string }) {
+/** `fromTemplate`: start from the rule a template filled in (Templates → Customise in the Rule Builder). */
+export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: string; initialUrl?: string; fromTemplate?: boolean }) {
   const dialog = useDialog();
   const caps = useApi<Capabilities>("getCapabilities");
   const tabs = useApi<TabInfo[]>("listTabs");
   const [existing, setExisting] = useState<Rule | null>(null);
-  const [draft, setDraft] = useState<Draft>(() => initialDraft(initialUrl));
+  const [draft, setDraft] = useState<Draft>(() => {
+    const fromTpl = fromTemplate ? takeBuilderDraft() : null;
+    return fromTpl ? { ...initialDraft(), ...fromTpl, safety: fromTpl.safety ?? {}, limits: fromTpl.limits ?? {} } : initialDraft(initialUrl);
+  });
   const [advanced, setAdvanced] = useState(false);
   const [view, setView] = useState<"visual" | "json">("visual");
   const [jsonText, setJsonText] = useState("");
