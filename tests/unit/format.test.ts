@@ -1,26 +1,17 @@
 /**
  * Every file Prettier can format is formatted (config: .prettierrc.json,
- * skipped files: .prettierignore). Fix with `npm run format`.
+ * skipped files: .prettierignore). Runs Prettier's own CLI, so it checks
+ * exactly what `npm run format:check` does. Fix with `npm run format`.
  */
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import * as prettier from "prettier";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-it("all files are formatted with Prettier (run npm run format)", async () => {
-  // Tracked files plus new ones not yet added, as git sees them.
-  const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
-  const unformatted: string[] = [];
-  for (const file of files) {
-    const info = await prettier.getFileInfo(file, { ignorePath: ".prettierignore" });
-    if (info.ignored || !info.inferredParser) continue;
-    const options = { ...(await prettier.resolveConfig(file)), filepath: file };
-    let source: string;
-    try {
-      source = readFileSync(file, "utf8");
-    } catch {
-      continue; // deleted in the working tree but not yet staged
-    }
-    if (!(await prettier.check(source, options))) unformatted.push(file);
-  }
-  expect(unformatted).toEqual([]);
+const root = fileURLToPath(new URL("../..", import.meta.url));
+
+it("all files are formatted with Prettier (run npm run format)", () => {
+  const cli = fileURLToPath(new URL("node_modules/prettier/bin/prettier.cjs", `file://${root}`));
+  const r = spawnSync(process.execPath, [cli, "--list-different", "."], { cwd: root, encoding: "utf8" });
+  // Exit 1 lists the unformatted files; anything else (2) is an error in Prettier itself.
+  expect(r.status === 0 || r.status === 1, r.stderr).toBe(true);
+  expect(r.stdout.split("\n").filter(Boolean)).toEqual([]);
 }, 60_000);

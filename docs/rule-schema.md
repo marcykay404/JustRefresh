@@ -7,25 +7,26 @@ syntax, regex safety, CSS selector syntax (where a DOM is available),
 condition depth (≤ 6) and size (≤ 50 nodes), refresh loops, and
 cross-field rules. Unknown fields and unknown types are rejected.
 
+<!-- prettier-ignore -->
 ```jsonc
 {
-  "schemaVersion": 1, // optional on input
-  "id": "rule-001", // optional; generated if absent. [A-Za-z0-9._-]{1,64}
-  "name": "Monitor availability", // required
-  "description": "…", // optional
-  "enabled": true, // default true (forced false for agent/imported drafts)
-  "priority": 100, // -1000…1000, default 0; higher wins
+  "schemaVersion": 1,              // optional on input
+  "id": "rule-001",                // optional; generated if absent. [A-Za-z0-9._-]{1,64}
+  "name": "Monitor availability",  // required
+  "description": "…",              // optional
+  "enabled": true,                 // default true (forced false for agent/imported drafts)
+  "priority": 100,                 // -1000…1000, default 0; higher wins
   "target": {
     "type": "url",
-    "patterns": ["https://example.com/products/*"], // ≥1, see url-matching.md
-    "exclusions": [], // rule-local exclusions
+    "patterns":   ["https://example.com/products/*"],  // ≥1, see url-matching.md
+    "exclusions": []                                    // rule-local exclusions
   },
   "trigger": { "type": "interval", "seconds": 30, "randomMaxSeconds": 90 },
-  "stopWhen": {/* condition tree, optional */},
+  "stopWhen": { /* condition tree, optional */ },
   "actions": {
-    "onMatched": [{ "type": "stopRefresh" }, { "type": "notify" }], // default when stopWhen set
-    "onNotMatched": [{ "type": "refresh" }], // default for refreshing triggers
-    "onUnknown": [], // optional
+    "onMatched":    [{ "type": "stopRefresh" }, { "type": "notify" }],   // default when stopWhen set
+    "onNotMatched": [{ "type": "refresh" }],                            // default for refreshing triggers
+    "onUnknown":    []                                                   // optional
   },
   "safety": {
     "pauseWhileTyping": true,
@@ -33,12 +34,12 @@ cross-field rules. Unknown fields and unknown types are rejected.
     "inactivityGraceSeconds": 60,
     "pauseOnMouse": false,
     "pauseOnScroll": false,
-    "onUnknown": "pause", // pause | skip | refresh | stop
+    "onUnknown": "pause",              // pause | skip | refresh | stop
     "maxUnknownRetries": 3,
-    "onActivityUnavailable": "pause", // pause | refresh
+    "onActivityUnavailable": "pause"   // pause | refresh
   },
   "limits": { "maxRefreshes": 100, "maxDurationSeconds": 3600, "stopAt": "2026-12-01T09:00:00Z" },
-  "schedule": { "days": [1, 2, 3, 4, 5], "startTime": "09:00", "endTime": "17:00" },
+  "schedule": { "days": [1,2,3,4,5], "startTime": "09:00", "endTime": "17:00" }
 }
 ```
 
