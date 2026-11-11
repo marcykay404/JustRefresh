@@ -38,6 +38,19 @@ const UNITS = [
   { label: "hr", factor: 3600 },
 ];
 
+/** "while you're typing or have unsaved form changes", from whichever protections are on. */
+export function protectedWhile(safety: Pick<SafetyConfig, "pauseWhileTyping" | "protectUnsavedChanges" | "pauseOnMouse" | "pauseOnScroll">): string {
+  const parts = [
+    safety.pauseWhileTyping && "you're typing",
+    safety.protectUnsavedChanges && "you have unsaved form changes",
+    safety.pauseOnMouse && "you're using the mouse",
+    safety.pauseOnScroll && "you're scrolling",
+  ].filter((p): p is string => !!p);
+  if (parts.length === 0) return "";
+  const list = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(", ")} or ${parts[parts.length - 1]}`;
+  return `while ${list}`;
+}
+
 function openDashboard(hash = "/tabs") {
   void chrome.tabs.create({ url: chrome.runtime.getURL(`dashboard.html#${hash}`) });
   window.close();
@@ -318,6 +331,11 @@ export function Popup() {
                 </span>
                 <button className="small" onClick={() => void requestOrigins([origin]).then(() => state.reload())}>Allow access</button>
               </div>
+            )}
+            {/* Confirms protection actually works here, once the access prompt is gone.
+                Paused-for-unsaved-changes has its own notice above. */}
+            {s.hostAccess && protectionOn && active && rt?.status !== "paused_unsaved" && (
+              <div className="small ok-line">✓ Protected on {siteName}: refresh waits {protectedWhile(s.safety)}</div>
             )}
 
             {rt && (
