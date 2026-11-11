@@ -17,7 +17,7 @@ import { CONFIG_SCHEMA_VERSION } from "../core/types";
 export const BUNDLE_FORMAT = "justrefresh";
 /** Exports made before the rename to JustRefresh carry this tag; they still import. */
 const LEGACY_BUNDLE_FORMAT = "smart-auto-refresh";
-const BUNDLE_FORMATS: readonly unknown[] = [BUNDLE_FORMAT, LEGACY_BUNDLE_FORMAT];
+const BUNDLE_FORMATS = [BUNDLE_FORMAT, LEGACY_BUNDLE_FORMAT] as const;
 
 export interface ExportBundle {
   format: typeof BUNDLE_FORMAT;
@@ -52,7 +52,7 @@ export function exportBundle(config: Config, opts: { includeSettings: boolean; r
 }
 
 const bundleSchema = z.looseObject({
-  format: z.literal([BUNDLE_FORMAT, LEGACY_BUNDLE_FORMAT]),
+  format: z.literal(BUNDLE_FORMATS),
   version: z.int(),
   rules: z.array(z.unknown()).check(z.maxLength(1000)),
   exclusions: z.optional(
@@ -123,7 +123,7 @@ function readBundle(data: unknown, warnings: string[]): ImportSource | Diagnosti
 function readSource(data: unknown, warnings: string[]): ImportSource | Diagnostic[] {
   if (Array.isArray(data)) return { rawRules: data, exclusions: [] };
   if (!data || typeof data !== "object") return [importError("$", "shape_invalid", "Expected a rule, an array of rules, or an export bundle")];
-  if (BUNDLE_FORMATS.includes((data as { format?: unknown }).format)) return readBundle(data, warnings);
+  if ((BUNDLE_FORMATS as readonly unknown[]).includes((data as { format?: unknown }).format)) return readBundle(data, warnings);
   return { rawRules: [data], exclusions: [] };
 }
 

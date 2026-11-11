@@ -348,6 +348,16 @@ describe("Scenario F & recovery: restart, wake, storms", () => {
     expect([...env.alarms.alarms.keys()]).toEqual([alarmName(1)]);
   });
 
+  it("also on a worker wake: a foreign alarm goes, the tab keeps its own", async () => {
+    const env = await setup();
+    env.browser.addTab(1, "https://example.com/1");
+    await env.engine.syncTab(1);
+    const own = env.alarms.alarms.get(alarmName(1));
+    env.alarms.alarms.set("old:tab:1", env.clock.t + 5_000);
+    await env.engine.reconcileAll("wake");
+    expect([...env.alarms.alarms.entries()]).toEqual([[alarmName(1), own]]);
+  });
+
   it("recreates missing alarms after service-worker restart without duplicates", async () => {
     const env = await setup();
     env.browser.addTab(1, "https://example.com/1");

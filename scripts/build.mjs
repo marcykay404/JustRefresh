@@ -55,7 +55,7 @@ for (const [entry, file, format] of [
       emptyOutDir: false,
       target: "chrome120",
       minify: true,
-      lib: { entry: resolve(root, entry), formats: [format], name: "sar", fileName: () => file },
+      lib: { entry: resolve(root, entry), formats: [format], name: "justrefresh", fileName: () => file },
       rollupOptions: { onwarn, output: { inlineDynamicImports: true } },
     },
   });

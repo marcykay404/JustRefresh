@@ -30,8 +30,8 @@ describe("parseImport", () => {
 
   it("exports are tagged justrefresh; exports made before the rename still import", () => {
     expect(BUNDLE_FORMAT).toBe("justrefresh");
-    const old = parseImport(bundle({ format: "smart-auto-refresh" }), opts);
-    expect(old).toMatchObject({ fatal: false, rules: [{ name: "r" }], errors: [] });
+    const old = parseImport(bundle({ format: "smart-auto-refresh", exclusions: [{ pattern: "ok.com" }], settings: { paused: true } }), opts);
+    expect(old).toMatchObject({ fatal: false, rules: [{ name: "r" }], exclusions: [{ pattern: "ok.com" }], settings: { paused: true }, errors: [] });
     // Any other format is read as a single rule (and fails validation as one).
     expect(parseImport(bundle({ format: "something-else" }), opts).rules).toEqual([]);
   });

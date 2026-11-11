@@ -70,3 +70,9 @@ describe("MCP handler → extension API (end to end, in memory)", () => {
     expect(unknown.error.code).toBe(-32602);
   });
 });
+
+it("the installer registers the native host under the name the extension connects to", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { NATIVE_HOST } = await import("@/integrations/native-bridge");
+  expect(readFileSync("bridge/install.mjs", "utf8")).toContain(`const HOST = "${NATIVE_HOST}";`);
+});
