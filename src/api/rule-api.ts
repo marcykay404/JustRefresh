@@ -122,7 +122,8 @@ export class RuleManagementService {
         }
       }
       const result = await def.handler(actor, parsed.data);
-      if (def.mutates) await this.deps.engine.reconcileAll("config");
+      // Re-check only the tabs this change affects (compared with the config before it).
+      if (def.mutates) await this.deps.engine.reconcileAll("config", { before: config });
       const pending = result && typeof result === "object" && (result as { status?: string }).status === "pending_approval";
       audit(pending ? "pending_approval" : "ok", undefined, (parsed.data as { id?: string })?.id);
       return result;
