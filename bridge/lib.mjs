@@ -1,4 +1,4 @@
-// Shared, dependency-free building blocks for the Smart Auto Refresh bridge.
+// Shared, dependency-free building blocks for the JustRefresh bridge.
 // Kept pure so they can be unit tested (see tests/unit/bridge.test.ts).
 
 /* ---------------- Chrome Native Messaging framing ---------------- */
@@ -108,7 +108,7 @@ export function createMcpHandler({ callApi, serverName = "smart-auto-refresh", v
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: serverName, version },
           instructions:
-            "Controls the Smart Auto Refresh Chrome extension. Workflow: get capabilities → list tabs → validate → test (dry run) → create (draft) → enable (user approves in the extension) → get status.",
+            "Controls the JustRefresh Chrome extension. Workflow: get capabilities → list tabs → validate → test (dry run) → create (draft) → enable (user approves in the extension) → get status.",
         });
       case "notifications/initialized":
       case "notifications/cancelled":

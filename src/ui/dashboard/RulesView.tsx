@@ -40,7 +40,7 @@ export function RulesView() {
       <div className="row">
         <h1>Rules</h1>
         <span className="spacer" />
-        <button onClick={async () => downloadJson("smart-auto-refresh-rules.json", await api("exportConfig", { includeSettings: false, ruleIds: rules.map((r) => r.id) }))}>Export shown</button>
+        <button onClick={async () => downloadJson("justrefresh-rules.json", await api("exportConfig", { includeSettings: false, ruleIds: rules.map((r) => r.id) }))}>Export shown</button>
         <a className="btn primary" href="#/builder" style={{ textDecoration: "none" }}>New rule</a>
       </div>
       <div className="toolbar">

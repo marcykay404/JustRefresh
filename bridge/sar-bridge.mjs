@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Smart Auto Refresh local bridge.
+// JustRefresh local bridge.
 //
 //   sar-bridge.mjs native-host   (started by Chrome via Native Messaging)
 //   sar-bridge.mjs mcp           (started by an MCP client, stdio transport)

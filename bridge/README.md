@@ -1,4 +1,4 @@
-# Smart Auto Refresh — local MCP bridge (optional)
+# JustRefresh — local MCP bridge (optional)
 
 The Chrome extension works without this. The bridge lets local MCP clients
 (desktop AI agents) call the extension's Rule Management API.

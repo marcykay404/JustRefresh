@@ -131,7 +131,7 @@ function ImportExport({ onDone }: { onDone: () => void }) {
     <div className="card col">
       <h2>Import / export</h2>
       <div className="row">
-        <button onClick={async () => downloadJson(`smart-auto-refresh-${new Date().toISOString().slice(0, 10)}.json`, await api("exportConfig", { includeSettings: true }))}>
+        <button onClick={async () => downloadJson(`justrefresh-${new Date().toISOString().slice(0, 10)}.json`, await api("exportConfig", { includeSettings: true }))}>
           Export everything
         </button>
         <button onClick={() => file.current?.click()}>Load file…</button>

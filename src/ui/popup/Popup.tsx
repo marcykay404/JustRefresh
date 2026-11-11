@@ -264,7 +264,7 @@ function Header({ overview, onToggleGlobal }: { overview: Overview | null; onTog
     <div className="col" style={{ gap: 6 }}>
       <div className="popup-header">
         <img src="icons/icon32.png" alt="" />
-        <strong>Smart Auto Refresh</strong>
+        <strong>JustRefresh</strong>
         <span className="spacer" />
         {overview && (
           <button className="small" onClick={onToggleGlobal} title="Pause or resume all refreshing">

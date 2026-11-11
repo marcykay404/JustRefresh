@@ -1,5 +1,5 @@
 /**
- * Core domain types for Smart Auto Refresh.
+ * Core domain types for JustRefresh.
  *
  * Three kinds of data are kept strictly separate:
  *  - Rule definitions & configuration (persisted in chrome.storage.local)

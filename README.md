@@ -1,4 +1,4 @@
-# Smart Auto Refresh
+# JustRefresh
 
 A Chrome (Manifest V3) extension that refreshes tabs on schedules, URL rules,
 user activity and programmable conditions — with a declarative, versioned

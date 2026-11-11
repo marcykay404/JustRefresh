@@ -37,7 +37,7 @@ export function buildRuleJsonSchema(registries: Registries = defaultRegistries()
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://smart-auto-refresh.local/schemas/rule.schema.json",
-    title: "Smart Auto Refresh rule",
+    title: "JustRefresh rule",
     description:
       "Declarative auto-refresh rule. Runtime validation additionally checks URL pattern syntax, regex safety, condition depth (max 6) and node count (max 50).",
     ...rule,

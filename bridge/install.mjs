@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Registers the Smart Auto Refresh native-messaging host for Chrome/Chromium.
+// Registers the JustRefresh native-messaging host for Chrome/Chromium.
 //
 //   node bridge/install.mjs --extension-id <id> [--browser chrome|chromium|edge|brave] [--uninstall]
 //
@@ -65,7 +65,7 @@ fs.writeFileSync(
   JSON.stringify(
     {
       name: HOST,
-      description: "Smart Auto Refresh local agent bridge",
+      description: "JustRefresh local agent bridge",
       path: launcher,
       type: "stdio",
       allowed_origins: [`chrome-extension://${extensionId}/`],
