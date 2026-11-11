@@ -313,7 +313,7 @@ export function RuleBuilder({ ruleId, initialUrl }: { ruleId?: string; initialUr
                 />
                 {advanced && draft.stopWhen && (
                   <ActionList
-                    label="When the condition is unknown (before the unknown policy)"
+                    label="When the page can't be checked (runs before the setting below)"
                     items={actions.onUnknown ?? []}
                     caps={c.actions}
                     allowRefresh={false}
@@ -324,39 +324,52 @@ export function RuleBuilder({ ruleId, initialUrl }: { ruleId?: string; initialUr
               </div>
 
               <div className="card col">
-                <div className="section-title">SAFETY & LIMITS</div>
-                <span className="small muted">"Default" values are filled from Settings when the rule is saved.</span>
+                <div className="section-title">PROTECTION & LIMITS</div>
+                <span className="small muted">“Same as Settings” uses your defaults from Settings → Activity protection, filled in when the rule is saved.</span>
                 <div className="row">
-                  <TriToggle label="Pause while typing" value={safety.pauseWhileTyping} onChange={(v) => set({ safety: { ...safety, pauseWhileTyping: v } })} />
-                  <TriToggle label="Protect unsaved changes" value={safety.protectUnsavedChanges} onChange={(v) => set({ safety: { ...safety, protectUnsavedChanges: v } })} />
-                  <TriToggle label="Pause on mouse" value={safety.pauseOnMouse} onChange={(v) => set({ safety: { ...safety, pauseOnMouse: v } })} />
-                  <TriToggle label="Pause on scroll" value={safety.pauseOnScroll} onChange={(v) => set({ safety: { ...safety, pauseOnScroll: v } })} />
+                  <TriToggle label="Wait while I'm typing" value={safety.pauseWhileTyping} onChange={(v) => set({ safety: { ...safety, pauseWhileTyping: v } })} />
+                  <TriToggle label="Don't refresh over unsaved form changes" value={safety.protectUnsavedChanges} onChange={(v) => set({ safety: { ...safety, protectUnsavedChanges: v } })} />
+                  <TriToggle label="Wait while I move the mouse" value={safety.pauseOnMouse} onChange={(v) => set({ safety: { ...safety, pauseOnMouse: v } })} />
+                  <TriToggle label="Wait while I scroll" value={safety.pauseOnScroll} onChange={(v) => set({ safety: { ...safety, pauseOnScroll: v } })} />
                 </div>
                 <div className="row">
-                  <Field label="Inactivity grace (s)">
-                    <OptNumber value={safety.inactivityGraceSeconds} onChange={(v) => set({ safety: { ...safety, inactivityGraceSeconds: v } })} />
+                  <Field label="Quiet time before a postponed refresh (seconds)">
+                    <OptNumber placeholder="Same as Settings" value={safety.inactivityGraceSeconds} onChange={(v) => set({ safety: { ...safety, inactivityGraceSeconds: v } })} />
                   </Field>
-                  <Field label="If condition unknown">
-                    <OptSelect value={safety.onUnknown} options={["pause", "skip", "refresh", "stop"]} onChange={(v) => set({ safety: { ...safety, onUnknown: v as never } })} />
+                  <Field label="When the page can't be checked">
+                    <OptSelect
+                      value={safety.onUnknown}
+                      options={[
+                        ["pause", "Pause, retry, then notify me"],
+                        ["skip", "Skip this time and keep trying"],
+                        ["refresh", "Treat it as not found and keep refreshing"],
+                        ["stop", "Stop and notify me"],
+                      ]} onChange={(v) => set({ safety: { ...safety, onUnknown: v as never } })} />
                   </Field>
-                  <Field label="Unknown retries">
-                    <OptNumber value={safety.maxUnknownRetries} onChange={(v) => set({ safety: { ...safety, maxUnknownRetries: v } })} />
+                  <Field label="Retries before giving up">
+                    <OptNumber placeholder="Same as Settings" value={safety.maxUnknownRetries} onChange={(v) => set({ safety: { ...safety, maxUnknownRetries: v } })} />
                   </Field>
-                  <Field label="If activity detection unavailable">
-                    <OptSelect value={safety.onActivityUnavailable} options={["pause", "refresh"]} onChange={(v) => set({ safety: { ...safety, onActivityUnavailable: v as never } })} />
+                  <Field label="When JustRefresh can't see inside the page">
+                    <OptSelect
+                      value={safety.onActivityUnavailable}
+                      options={[
+                        ["pause", "Don't refresh (safe)"],
+                        ["refresh", "Refresh without protection"],
+                      ]} onChange={(v) => set({ safety: { ...safety, onActivityUnavailable: v as never } })} />
                   </Field>
                 </div>
                 <div className="row">
-                  <Field label="Max refreshes">
-                    <OptNumber value={limits.maxRefreshes} onChange={(v) => set({ limits: { ...limits, maxRefreshes: v } })} />
+                  <Field label="Stop after this many refreshes">
+                    <OptNumber placeholder="No limit" value={limits.maxRefreshes} onChange={(v) => set({ limits: { ...limits, maxRefreshes: v } })} />
                   </Field>
-                  <Field label="Max duration (min)">
+                  <Field label="Stop after (minutes)">
                     <OptNumber
+                      placeholder="No limit"
                       value={limits.maxDurationSeconds !== undefined ? limits.maxDurationSeconds / 60 : undefined}
                       onChange={(v) => set({ limits: { ...limits, maxDurationSeconds: v === undefined ? undefined : Math.round(v * 60) } })}
                     />
                   </Field>
-                  <Field label="Stop at">
+                  <Field label="Stop at this time">
                     <input
                       type="datetime-local"
                       value={limits.stopAt ? toLocalInput(limits.stopAt) : ""}
@@ -506,7 +519,7 @@ function TriToggle({ label, value, onChange }: { label: string; value: boolean |
     <label className="field">
       <span className="field-label">{label}</span>
       <select value={value === undefined ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value === "true")}>
-        <option value="">Default</option>
+        <option value="">Same as Settings</option>
         <option value="true">On</option>
         <option value="false">Off</option>
       </select>
@@ -514,15 +527,16 @@ function TriToggle({ label, value, onChange }: { label: string; value: boolean |
   );
 }
 
-function OptNumber({ value, onChange }: { value: number | undefined; onChange: (v: number | undefined) => void }) {
-  return <input type="number" min={0} style={{ width: 100 }} value={value ?? ""} placeholder="—" onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))} />;
+function OptNumber({ value, onChange, placeholder = "—" }: { value: number | undefined; onChange: (v: number | undefined) => void; placeholder?: string }) {
+  return <input type="number" min={0} style={{ width: 140 }} value={value ?? ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))} />;
 }
 
-function OptSelect({ value, options, onChange }: { value: string | undefined; options: string[]; onChange: (v: string | undefined) => void }) {
+/** A select whose empty choice means "use the Settings default"; options are [value, label]. */
+function OptSelect({ value, options, onChange }: { value: string | undefined; options: [string, string][]; onChange: (v: string | undefined) => void }) {
   return (
     <select value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
-      <option value="">Default</option>
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      <option value="">Same as Settings</option>
+      {options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
     </select>
   );
 }
