@@ -6,10 +6,13 @@ import { HistoryView } from "./HistoryView";
 import { AgentsView } from "./AgentsView";
 import { SettingsView } from "./SettingsView";
 import { RuleBuilder } from "../rule-builder/RuleBuilder";
+import { TemplatesView } from "./TemplatesView";
+import { WelcomeView } from "./WelcomeView";
 
 const NAV = [
   { path: "/tabs", label: "Tabs" },
   { path: "/rules", label: "Rules" },
+  { path: "/templates", label: "Templates" },
   { path: "/builder", label: "Rule Builder" },
   { path: "/exclusions", label: "Exclusions" },
   { path: "/history", label: "History" },
@@ -31,7 +34,17 @@ export function Dashboard() {
       view = <RulesView />;
       break;
     case "builder":
-      view = <RuleBuilder key={arg ?? params.get("url") ?? "new"} ruleId={arg} initialUrl={params.get("url") ?? undefined} />;
+      view = (
+        <RuleBuilder
+          key={arg ?? params.get("url") ?? params.get("draft") ?? "new"}
+          ruleId={arg}
+          initialUrl={params.get("url") ?? undefined}
+          fromTemplate={params.get("draft") === "template"}
+        />
+      );
+      break;
+    case "templates":
+      view = <TemplatesView />;
       break;
     case "exclusions":
       view = <ExclusionsView />;
@@ -48,6 +61,9 @@ export function Dashboard() {
     default:
       view = <TabsView />;
   }
+
+  // The first-run page stands alone, without the dashboard's navigation.
+  if (section === "welcome") return <WelcomeView />;
 
   return (
     <div className="layout">

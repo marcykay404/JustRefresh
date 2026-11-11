@@ -1,0 +1,16 @@
+{
+  "name": "Tell me when my delivery status changes",
+  "description": "For read-only status pages (delivery tracking, applications, tickets). Never use on payment or checkout pages: refreshing those can send an order twice.",
+  "target": { "patterns": ["^https://track\\.example\\.com/parcels/[A-Z0-9]+$"] },
+  "trigger": { "type": "interval", "seconds": 300 },
+  "stopWhen": {
+    "type": "any",
+    "conditions": [
+      { "type": "not", "condition": { "type": "dom.text", "selector": ".delivery-status", "operator": "contains", "value": "In transit" } },
+      { "type": "refreshCount", "operator": ">=", "value": 120 },
+      { "type": "time.after", "at": "23:00" }
+    ]
+  },
+  "actions": { "onMatched": [{ "type": "stopRefresh" }, { "type": "notify", "sound": true }, { "type": "log", "message": "Delivery status changed" }] },
+  "safety": { "onUnknown": "skip" }
+}

@@ -49,8 +49,14 @@ conditions); you can also grant all sites in Dashboard → Settings.
   rule for this exact page), "Never auto-refresh this tab", and "Make a rule
   for this site…". A tab run by a rule shows the rule in words, with Check now.
 * **Dashboard** (popup → Dashboard, or the extension's Options page):
-  Tabs · Rules · Rule Builder · Exclusions · History · Agent Integrations · Settings.
-* Example rules: [`examples/`](examples) — import them in Settings.
+  Tabs · Rules · Templates · Rule Builder · Exclusions · History · Agent Integrations · Settings.
+* **Templates** — ready-made rules you fill in (back in stock, a status page
+  that changes, a dashboard during work hours, failed builds, stay signed
+  in). Each shows the rule in words before it's created, or opens it in the
+  Rule Builder to customise.
+* **Welcome page** — opens once after install with three short steps; open it
+  again from Settings → Help.
+* Example rules as JSON: [`examples/`](examples) — import them in Settings.
 
 ## Development
 

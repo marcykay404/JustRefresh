@@ -135,7 +135,11 @@ async function after<T>(fn: () => Promise<T>): Promise<T> {
 /* Event listeners (registered synchronously at top level)            */
 /* ------------------------------------------------------------------ */
 
-chrome.runtime.onInstalled.addListener(() => void after(() => syncContentScripts()));
+chrome.runtime.onInstalled.addListener((details) => {
+  void after(() => syncContentScripts());
+  // First install only (not updates or reloads): a short welcome page.
+  if (details.reason === "install") void chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html#/welcome") });
+});
 chrome.runtime.onStartup.addListener(() => void ready);
 
 chrome.alarms.onAlarm.addListener((alarm) => void after(() => engine.handleAlarm(alarm.name)));

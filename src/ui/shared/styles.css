@@ -181,3 +181,24 @@ button.big { min-height: 40px; font-weight: 600; border-radius: 10px; }
 .menu button:hover { background: var(--surface-2); }
 .menu button span { color: var(--muted); font-size: 12px; }
 .popup-footer { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+
+/* Templates and the welcome page */
+a.btn { display: inline-flex; align-items: center; text-decoration: none; color: var(--text); }
+a.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.eyebrow { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.template-card { gap: 8px; padding: 16px; border-radius: 10px; }
+.template-card h2 { font-size: 15px; }
+.template-form { width: min(560px, 100%); gap: 14px; }
+.welcome { min-height: 100vh; padding: 48px 20px; box-sizing: border-box; }
+.welcome-inner { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; font-size: 15px; line-height: 1.55; }
+.welcome-lead { margin: 0; font-size: 17px; }
+.welcome-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.welcome-steps li { padding: 20px; border-radius: 12px; gap: 10px; }
+.welcome-steps h2 { margin: 0; font-size: 17px; }
+.welcome-steps p { margin: 0; }
+.step-number { width: 30px; height: 30px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--accent); font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.welcome-example { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+a.big-link { min-height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 600; }
+.toolbar-picture { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.toolbar-address { flex: 1; height: 26px; border-radius: 99px; background: var(--surface-2); }

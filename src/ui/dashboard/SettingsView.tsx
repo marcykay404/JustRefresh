@@ -106,6 +106,15 @@ export function SettingsView() {
         </div>
 
         <div className="card col">
+          <h2>Help</h2>
+          <p className="small muted" style={{ margin: 0 }}>A short introduction, and ready-made rules to start from.</p>
+          <div className="row">
+            <a className="btn" href="#/welcome">Show the welcome page</a>
+            <a className="btn" href="#/templates">Browse templates</a>
+          </div>
+        </div>
+
+        <div className="card col">
           <h2>History & privacy</h2>
           <Field label="Maximum history entries">
             <input type="number" min={10} max={5000} defaultValue={s.historyLimit} onBlur={(e) => update({ historyLimit: Number(e.target.value) })} />
