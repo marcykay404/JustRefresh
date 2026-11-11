@@ -24,6 +24,9 @@ const LABELS: Record<string, string> = {
   caseSensitive: "Case sensitive",
   bypassCache: "Bypass cache",
   randomMaxSeconds: "Random max (s)",
+  keepScroll: "Keep scroll position",
+  includePageUrl: "Send the page address",
+  url: "Address",
 };
 
 export const humanize = (k: string) => LABELS[k] ?? k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());

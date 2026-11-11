@@ -18,6 +18,8 @@ export interface BrowserPort {
   /** Load `url` in the tab as a normal visit (GET): never resends a form. */
   navigate(tabId: number, url: string): Promise<void>;
   notify(id: string, title: string, message: string, opts?: NotifyOptions): Promise<void>;
+  /** POST `body` to a local webhook (localhost only); throws when it can't be reached. */
+  post(url: string, body: string): Promise<void>;
 }
 
 export interface AlarmPort {
@@ -29,10 +31,16 @@ export interface AlarmPort {
 export type PageAvailability =
   { available: true } | { available: false; reason: string; code: "missing_permission" | "content_script_unavailable" | "restricted_url" };
 
+export type ClickOutcome = { ok: true } | { ok: false; error: string };
+
 export interface PagePort {
   evaluate(tabId: number, leaves: ConditionNode[], includeText: boolean): Promise<EvaluationResult[]>;
   /** null = unavailable (reason in second tuple element). */
   activity(tabId: number): Promise<{ activity: ActivitySnapshot | null; reason?: string }>;
+  /** Click the first element matching `selector`; never one that submits a form. */
+  click(tabId: number, selector: string): Promise<ClickOutcome>;
+  /** Best effort: remember the scroll position, so the refresh that follows can restore it. */
+  saveScroll(tabId: number): Promise<void>;
 }
 
 export interface ClockPort {

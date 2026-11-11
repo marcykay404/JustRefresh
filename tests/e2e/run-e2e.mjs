@@ -27,10 +27,31 @@ const loads = new Map();
 let statusText = "Sold out";
 let stockText = "Sold out";
 let orderPosts = 0;
+const hooks = [];
 const server = http.createServer((req, res) => {
   const path = req.url.split("?")[0];
   loads.set(path, (loads.get(path) ?? 0) + 1);
+  if (path === "/hook" && req.method === "POST") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      hooks.push({ body, type: req.headers["content-type"], cookie: req.headers.cookie });
+      res.end("ok");
+    });
+    return;
+  }
   res.setHeader("content-type", "text/html");
+  if (path === "/shop")
+    return res.end(
+      `<title>Shop</title><p id="stock">In stock</p><span id="count">0</span>
+      <button id="add" type="button" onclick="count.textContent = Number(count.textContent) + 1">Add to cart</button>
+      <form method="post" action="/order"><button id="buy">Buy now</button></form>`,
+    );
+  // A page that builds its content late and opts out of the browser's own scroll restoration.
+  if (path === "/long")
+    return res.end(
+      `<title>Long</title><script>history.scrollRestoration = "manual"; setTimeout(() => { const d = document.createElement("div"); d.style.height = "5000px"; document.body.append(d); }, 300);</script><h1>Feed</h1>`,
+    );
   if (path === "/form") return res.end(`<title>Form</title><form><input id="q" value=""><button>Save</button></form>`);
   if (path === "/checkout")
     return res.end(
@@ -511,6 +532,167 @@ await test("capabilities carry the JSON Schemas, read from the extension package
   assert.equal(text?.schema?.properties?.type?.const, "dom.text");
   const interval = caps.triggers.find((t) => t.type === "interval");
   assert.match(interval?.schema?.properties?.seconds?.description ?? "", /Seconds between refreshes/);
+});
+
+const historyOf = (ruleId) => call("getHistory", { ruleId });
+const softly = (fn) => () => fn().catch(() => false); // a page mid-navigation can't be evaluated
+
+await test("click action: clicks the button when the condition matches, never a form's submit button", async () => {
+  await call("createRule", {
+    rule: {
+      id: "e2e-click",
+      name: "Add when in stock",
+      target: { patterns: [`${base}/shop`] },
+      trigger: { type: "interval", seconds: 30 },
+      stopWhen: { type: "dom.exists", selector: "#stock" },
+      actions: { onMatched: [{ type: "click", selector: "#buy" }, { type: "click", selector: "#add" }, { type: "stopRefresh" }] },
+    },
+  });
+  const page = await context.newPage();
+  await page.goto(`${base}/shop`);
+  const tabId = await tabIdFor(`${base}/shop`);
+  await waitFor(async () => (await runtime(tabId))?.controllerId === "e2e-click", "rule applied");
+  const posts = orderPosts;
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "completed", "completed");
+  assert.equal(await page.locator("#count").textContent(), "1", "Add to cart was clicked once");
+  assert.equal(orderPosts, posts, "the order form was not submitted");
+  const refused = (await historyOf("e2e-click")).find((h) => h.action === "click" && h.outcome === "error");
+  assert.match(refused?.reason ?? "", /submit a form/);
+  await call("deleteRule", { id: "e2e-click" });
+  await page.close();
+});
+
+await test("refresh with 'keep scroll position' brings the page back to where it was", async () => {
+  await call("createRule", {
+    rule: {
+      id: "e2e-scroll",
+      name: "Feed",
+      target: { patterns: [`${base}/long`] },
+      trigger: { type: "interval", seconds: 30 },
+      actions: { onNotMatched: [{ type: "refresh", keepScroll: true }] },
+    },
+  });
+  const page = await context.newPage();
+  await page.goto(`${base}/long`);
+  const tabId = await tabIdFor(`${base}/long`);
+  await waitFor(async () => (await runtime(tabId))?.controllerId === "e2e-scroll", "rule applied");
+  await page.waitForFunction(() => document.body.scrollHeight > 3000);
+  await page.evaluate(() => window.scrollTo(0, 1500));
+  const before = loads.get("/long");
+  await fireAlarm(tabId);
+  await waitFor(() => loads.get("/long") === before + 1, "reloaded");
+  await waitFor(
+    softly(async () => Math.abs((await page.evaluate(() => window.scrollY)) - 1500) < 2),
+    "scrolled back to 1500",
+  );
+  await call("deleteRule", { id: "e2e-scroll" });
+  await page.close();
+});
+
+await test("local webhook: off until allowed in Settings, then posts to localhost without site access", async () => {
+  hooks.length = 0;
+  const port = server.address().port;
+  await call("createRule", {
+    rule: {
+      id: "e2e-hook",
+      name: "Tell my script",
+      target: { patterns: [`${base}/hooked`] },
+      trigger: { type: "interval", seconds: 30 },
+      actions: { onNotMatched: [{ type: "webhook", url: `http://localhost:${port}/hook`, message: "tick" }] },
+    },
+  });
+  const page = await context.newPage();
+  await page.goto(`${base}/hooked`);
+  const tabId = await tabIdFor(`${base}/hooked`);
+  await waitFor(async () => (await runtime(tabId))?.controllerId === "e2e-hook", "rule applied");
+  await fireAlarm(tabId);
+  await waitFor(async () => (await historyOf("e2e-hook")).some((h) => h.action === "webhook" && /switched off/.test(h.reason ?? "")), "refused while off");
+  assert.equal(hooks.length, 0);
+  await call("updateSettings", { allowWebhooks: true });
+  await fireAlarm(tabId);
+  await waitFor(() => hooks.length === 1, "webhook received");
+  const { at, ...body } = JSON.parse(hooks[0].body);
+  assert.deepEqual(body, {
+    source: "justrefresh",
+    event: "not_matched",
+    rule: { id: "e2e-hook", name: "Tell my script" },
+    tab: { id: tabId },
+    message: "tick",
+  });
+  assert.ok(!Number.isNaN(Date.parse(at)));
+  assert.match(hooks[0].type, /^text\/plain/);
+  assert.equal(hooks[0].cookie, undefined, "no credentials sent");
+  await call("updateSettings", { allowWebhooks: false });
+  await call("deleteRule", { id: "e2e-hook" });
+  await page.close();
+});
+
+await test("element picker: a click picks the element's selector without pressing it; Esc cancels", async () => {
+  const page = await context.newPage();
+  await page.goto(`${base}/shop`);
+  const tabId = await tabIdFor(`${base}/shop`);
+  const dash = await context.newPage();
+  await dash.goto(`chrome-extension://${extId}/dashboard.html#/tabs`);
+  await dash.evaluate(() => {
+    window.picked = [];
+    chrome.runtime.onMessage.addListener((m, sender) => void (m?.channel === "justrefresh-pick" && window.picked.push({ ...m, tab: sender.tab?.id })));
+  });
+  const startPicker = () =>
+    dash.evaluate((id) => chrome.runtime.sendMessage({ channel: "justrefresh-api", method: "startPicker", params: { tabId: id } }), tabId);
+  assert.equal((await startPicker()).ok, true);
+  await page.hover("#add");
+  await page.click("#add");
+  await waitFor(() => dash.evaluate(() => window.picked.length === 1), "picked");
+  assert.deepEqual(await dash.evaluate(() => window.picked[0]), { channel: "justrefresh-pick", selector: "#add", count: 1, tab: tabId });
+  assert.equal(await page.locator("#count").textContent(), "0", "picking didn't press the button");
+  await startPicker();
+  await page.hover("#buy");
+  await page.keyboard.press("Escape");
+  await waitFor(() => dash.evaluate(() => window.picked.length === 2), "cancelled");
+  assert.equal(await dash.evaluate(() => window.picked[1].selector), null);
+  await page.click("#add");
+  assert.equal(await page.locator("#count").textContent(), "1", "the page works normally again");
+  await dash.close();
+  await page.close();
+});
+
+await test("Rule Builder: Pick fills the selector with the element clicked in the test tab", async () => {
+  await call("createRule", {
+    rule: {
+      id: "e2e-pick",
+      name: "Pick target",
+      enabled: false,
+      target: { patterns: [`${base}/shop`] },
+      trigger: { type: "interval", seconds: 60 },
+      stopWhen: { type: "dom.exists", selector: "#nothing" },
+      actions: { onMatched: [{ type: "stopRefresh" }] },
+    },
+  });
+  const page = await context.newPage();
+  await page.goto(`${base}/shop`);
+  const tabId = await tabIdFor(`${base}/shop`);
+  const builder = await context.newPage();
+  await builder.setViewportSize({ width: 1280, height: 900 });
+  await builder.goto(`chrome-extension://${extId}/dashboard.html#/builder/e2e-pick`);
+  await builder.getByText("Edit rule: Pick target").waitFor();
+  await builder.getByLabel("Tab to test").selectOption(String(tabId));
+  await builder.getByRole("button", { name: "Pick", exact: true }).click();
+  await builder.getByRole("button", { name: "Picking… Cancel" }).waitFor();
+  await page.hover("#add");
+  await page.click("#add");
+  await waitFor(async () => (await builder.getByLabel("CSS selector").first().inputValue()) === "#add", "selector filled in");
+  assert.equal(await page.locator("#count").textContent(), "0");
+  await builder.close();
+  await page.close();
+  await call("deleteRule", { id: "e2e-pick" });
+});
+
+await test("the desktop bridge is packaged as one runnable file", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync(process.execPath, [join(root, "dist", "bridge", "justrefresh-bridge.mjs")], { encoding: "utf8" });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /Usage: justrefresh-bridge\.mjs install/);
 });
 
 await test("popup and dashboard render", async () => {

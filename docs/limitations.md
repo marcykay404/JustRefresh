@@ -71,6 +71,20 @@
 - **Discarded tabs** (Memory Saver) are skipped by default rather than woken.
 - **Regex.** JavaScript has no regex timeout; potentially catastrophic
   patterns are rejected instead, and inputs are length-bounded.
+- **Click action.** A click is never sent to anything that would submit a
+  form (a submit button, an image input, text inside one, or its label). A
+  button that sends an order with script (fetch/XHR) instead of a form looks
+  like any other button and can't be recognised: choose what a rule clicks
+  with care. Clicks run in the top frame only.
+- **Webhooks** are sent as simple `text/plain` requests without credentials,
+  so the reply can't be read: History shows whether the program was reached,
+  not what it answered. Only `localhost`, `127.0.0.1` and `[::1]` are allowed.
+- **Keep scroll position** restores the position for up to 10 seconds while
+  the page fills in, and stops as soon as you scroll, click or type. Pages
+  that rebuild themselves later than that, or keep the scroll inside an inner
+  panel rather than the page, may not end up in the same place.
+- **Element picker** works in the top frame of the tab chosen under Test,
+  and needs site access for it.
 - **Native bridge.** Requires Node.js and a one-time host registration;
   Chrome must be running with the bridge enabled. Chrome exposes
   `connectNative` only to a service worker that _started_ with the

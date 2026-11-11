@@ -4,6 +4,7 @@ import type { ActionHandler } from "../registries/contracts";
 export const refreshSchema = z.strictObject({
   type: z.literal("refresh"),
   bypassCache: z.optional(z.boolean()),
+  keepScroll: z.optional(z.boolean()).check(z.describe("Scroll back to where the page was after it reloads")),
 });
 export const stopSchema = z.strictObject({
   type: z.literal("stopRefresh"),
@@ -34,7 +35,7 @@ export const refreshAction: ActionHandler<z.infer<typeof refreshSchema>> = {
   permissions: [],
   disruptive: true,
   execute: async (c, ctx) => {
-    await ctx.reload({ bypassCache: c.bypassCache === true });
+    await ctx.reload({ bypassCache: c.bypassCache === true, keepScroll: c.keepScroll === true });
     return { ok: true, reloaded: true };
   },
 };

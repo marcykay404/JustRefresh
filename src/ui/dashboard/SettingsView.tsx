@@ -138,6 +138,20 @@ export function SettingsView() {
             keep the extension's background worker awake while such a tab is scheduled. Turning this off keeps existing fast rules but runs them every 30
             seconds.
           </p>
+          <Toggle
+            checked={s.allowWebhooks}
+            onChange={(v) => update({ allowWebhooks: v })}
+            label={
+              <span>
+                Allow rules to call local webhooks <span className="muted small">(this computer only)</span>
+              </span>
+            }
+          />
+          <p className="small muted" style={{ margin: 0 }}>
+            For connecting your own tools. A rule's “Call a local webhook” action sends a short message (the rule, the tab, and what was found; the page address
+            only if the rule asks for it) to a program on this computer: localhost, 127.0.0.1 or [::1]. Nothing is sent anywhere else. Off by default, and never
+            included in exports.
+          </p>
         </div>
 
         <div className="card col">

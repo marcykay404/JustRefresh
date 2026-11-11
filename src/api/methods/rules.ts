@@ -220,5 +220,24 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
         return d.testSelector(p.tabId, p.selector, true);
       },
     }),
+    // The user picks an element in a tab; the selector goes straight back to the builder page.
+    startPicker: m({
+      scope: null,
+      params: z.strictObject({ tabId: z.int().check(z.nonnegative()) }),
+      handler: async (_a, p) => {
+        if (!d.picker) throw new ApiError("unsupported_method", "The element picker is unavailable");
+        const r = await d.picker.start(p.tabId);
+        if (!r.ok) throw new ApiError("conflict", `Can't pick on that tab: ${r.error}`);
+        return { started: true };
+      },
+    }),
+    cancelPicker: m({
+      scope: null,
+      params: z.strictObject({ tabId: z.int().check(z.nonnegative()) }),
+      handler: async (_a, p) => {
+        await d.picker?.cancel(p.tabId);
+        return { cancelled: true };
+      },
+    }),
   };
 }

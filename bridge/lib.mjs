@@ -1,5 +1,20 @@
 // Shared, dependency-free building blocks for the JustRefresh bridge.
 // Kept pure so they can be unit tested (see tests/unit/bridge.test.ts).
+import crypto from "node:crypto";
+
+/* ---------------- Socket handshake ---------------- */
+// Both sides prove they know the token without sending it: each signs the
+// other's random challenge (HMAC-SHA256), labelled with its role so a proof
+// can't be reflected back. A program that only pretends to be the bridge (for
+// example one that took its Windows pipe name first) learns nothing it can use,
+// and the MCP side sends nothing else (no agent key) until the bridge has proved itself.
+export const newNonce = () => crypto.randomBytes(16).toString("hex");
+export const proofOf = (token, role, nonce) => crypto.createHmac("sha256", token).update(`${role}:${nonce}`).digest("hex");
+export function sameSecret(a, b) {
+  return typeof a === "string" && typeof b === "string" && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+/** A challenge nonce as sent by the other side: hex, of a sensible length. */
+export const isNonce = (n) => typeof n === "string" && /^[0-9a-f]{16,128}$/.test(n);
 
 /* ---------------- Chrome Native Messaging framing ---------------- */
 // Each message: 4-byte little-endian length + UTF-8 JSON. Max 1 MB host→Chrome.

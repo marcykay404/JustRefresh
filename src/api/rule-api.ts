@@ -43,6 +43,11 @@ export interface ApiDeps {
   clock: ClockPort;
   hostAccess: (url: string) => Promise<boolean>;
   testSelector?: (tabId: number, selector: string, includeText: boolean) => Promise<unknown>;
+  /** The in-page element picker (Rule Builder → Pick). */
+  picker?: {
+    start(tabId: number): Promise<{ ok: true } | { ok: false; error: string }>;
+    cancel(tabId: number): Promise<void>;
+  };
   registries?: Registries;
   /** Generate ids (injectable for tests). */
   newId?: (prefix: string) => string;
@@ -52,6 +57,17 @@ export interface ApiDeps {
 
 /** "Last seen" is informational: record it at most this often (each write rewrites the config). */
 export const AGENT_LAST_SEEN_RESOLUTION_MS = 60_000;
+
+function randomKey(): string {
+  const bytes = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Hex(s: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 export function randomId(prefix: string): string {
   const bytes = new Uint8Array(6);
@@ -282,6 +298,34 @@ export class RuleManagementService {
   /* ------------------------------------------------------------------ */
   /* Pairing (external transports)                                        */
   /* ------------------------------------------------------------------ */
+
+  /**
+   * Desktop agents identify themselves by name, so an approved one is bound to
+   * a key: issued (returned) the first time it calls while approved, required
+   * on every call after that. Returns a newly issued key, or undefined.
+   */
+  async checkAgentKey(agentId: string, key: string | undefined): Promise<string | undefined> {
+    const agent = (await this.deps.config.get()).agents[agentId];
+    if (!agent || agent.transport !== "native") return undefined;
+    if (agent.keyHash) {
+      if (!key || (await sha256Hex(key)) !== agent.keyHash) {
+        throw new ApiError(
+          "forbidden",
+          `This program's key for "${agent.name}" doesn't match. If you reinstalled it, remove the agent in JustRefresh → Agent Integrations and approve it again.`,
+        );
+      }
+      return undefined;
+    }
+    if (agent.status !== "approved") return undefined;
+    const issued = randomKey();
+    const hash = await sha256Hex(issued);
+    await this.deps.config.update((c) => {
+      const a = c.agents[agentId];
+      if (a && !a.keyHash) a.keyHash = hash;
+    });
+    // Another call may have issued one first: only hand out the key that was stored.
+    return (await this.deps.config.get()).agents[agentId]?.keyHash === hash ? issued : undefined;
+  }
 
   /** Register (or look up) an agent identity. New agents start pending with no scopes. */
   async ensureAgent(identity: { id: string; name: string; transport: AgentRecord["transport"]; extensionId?: string }): Promise<AgentRecord> {

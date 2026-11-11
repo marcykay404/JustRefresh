@@ -221,6 +221,9 @@ function checkAction(a: ActionConfig, p: string, registries: Registries, trigger
   if (a.type === "refresh" && trigger && !trigger.allowsRefresh) {
     out.push(diag(p, "refresh_loop", `The "${trigger.type}" trigger cannot use the refresh action (it would reload in a loop)`));
   }
+  if (a.type === "click" && trigger && !trigger.allowsRefresh) {
+    out.push(diag(p, "click_loop", `The "${trigger.type}" trigger cannot use the click action (a click that loads a page would run it again, in a loop)`));
+  }
   return out;
 }
 

@@ -244,6 +244,11 @@ export interface Settings {
    * limit. Each rule can have its own (Rule Builder → Stop after).
    */
   defaultStopAfterMinutes: number | null;
+  /**
+   * Allow the "Call a local webhook" action (POSTs to localhost only). Off by
+   * default; like the bridge, never exported or imported.
+   */
+  allowWebhooks: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -266,6 +271,12 @@ export interface AgentRecord {
   status: "pending" | "approved" | "revoked";
   createdAt: number;
   lastSeenAt?: number;
+  /**
+   * Desktop (bridge) agents: SHA-256 of the key issued when the agent was first
+   * seen approved. Afterwards every call must carry that key, so another program
+   * can't take over an approved agent by using its name.
+   */
+  keyHash?: string;
 }
 
 export interface ApprovalRequest {

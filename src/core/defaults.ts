@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   allowedExtensionIds: [],
   allowFastIntervals: false,
   defaultStopAfterMinutes: null,
+  allowWebhooks: false,
 };
 
 /** Choices for "Stop watching after" (minutes); null = no limit. */

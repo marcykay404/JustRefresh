@@ -464,6 +464,10 @@
         },
         "bypassCache": {
           "type": "boolean"
+        },
+        "keepScroll": {
+          "description": "Scroll back to where the page was after it reloads",
+          "type": "boolean"
         }
       },
       "required": [
@@ -575,6 +579,56 @@
       },
       "required": [
         "type"
+      ],
+      "additionalProperties": false
+    },
+    "click": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "click"
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "CSS selector of the element to click (the first match)"
+        }
+      },
+      "required": [
+        "type",
+        "selector"
+      ],
+      "additionalProperties": false
+    },
+    "webhook": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "webhook"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^https?:\\/\\/(localhost|127\\.0\\.0\\.1|\\[::1\\])(:\\d{1,5})?(\\/[^\\s]*)?$",
+          "description": "Local address to POST to, e.g. http://localhost:8080/hook"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "includePageUrl": {
+          "description": "Send the page's address too (left out by default)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "url"
       ],
       "additionalProperties": false
     }

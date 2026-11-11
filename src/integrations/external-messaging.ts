@@ -46,7 +46,8 @@ export class RateLimiter {
 export async function handleAgentMessage(
   service: RuleManagementService,
   limiter: RateLimiter,
-  identity: { id: string; name: string; transport: "extension" | "native"; extensionId?: string },
+  /** `key`: a desktop agent's own key (see checkAgentKey); extensions are identified by Chrome instead. */
+  identity: { id: string; name: string; transport: "extension" | "native"; extensionId?: string; key?: string },
   msg: unknown,
 ) {
   try {
@@ -55,11 +56,14 @@ export async function handleAgentMessage(
     }
     const m = msg as AgentMessage;
     if (!limiter.allow(identity.id)) throw new ApiError("forbidden", "Rate limit exceeded");
+    const { key, ...who } = identity;
+    const issued = await service.checkAgentKey(who.id, key);
+    const withKey = <T extends object>(r: T) => (issued ? { ...r, agentKey: issued } : r);
     if (m.method === "pair") {
-      const agent = await service.ensureAgent({ ...identity, name: typeof m.name === "string" ? m.name : identity.name });
-      return { ok: true, result: { agentId: agent.id, status: agent.status, scopes: agent.scopes } };
+      const agent = await service.ensureAgent({ ...who, name: typeof m.name === "string" ? m.name : who.name });
+      return withKey({ ok: true, result: { agentId: agent.id, status: agent.status, scopes: agent.scopes } });
     }
-    return { ok: true, result: await service.call({ type: "agent", agentId: identity.id }, m.method, m.params) };
+    return withKey({ ok: true, result: await service.call({ type: "agent", agentId: who.id }, m.method, m.params) });
   } catch (e) {
     return toErrorResponse(e);
   }

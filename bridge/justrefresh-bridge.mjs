@@ -1,40 +1,65 @@
 #!/usr/bin/env node
 // JustRefresh local bridge.
 //
+//   justrefresh-bridge.mjs install --extension-id <id>   set it up (see install-lib.mjs)
+//   justrefresh-bridge.mjs uninstall
 //   justrefresh-bridge.mjs native-host   (started by Chrome via Native Messaging)
 //   justrefresh-bridge.mjs mcp           (started by an MCP client, stdio transport)
 //
-// Chrome ⇄ native-host ⇄ local socket (owner-only permissions + token) ⇄ mcp ⇄ agent.
-// Nothing listens on a network port.
+// Chrome ⇄ native-host ⇄ local socket ⇄ mcp ⇄ agent. Nothing listens on a
+// network port. The socket is owner-only (a per-user pipe on Windows); both
+// ends prove they know a fresh token without sending it (lib.mjs), and each
+// approved agent then identifies itself with its own key, issued by the
+// extension on approval and kept in ~/.justrefresh/agents.
 import net from "node:net";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { createLineDecoder, createMcpHandler, createNativeDecoder, encodeNative, sanitizeClientId } from "./lib.mjs";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { createLineDecoder, createMcpHandler, createNativeDecoder, encodeNative, isNonce, newNonce, proofOf, sameSecret, sanitizeClientId } from "./lib.mjs";
+import { install, parseInstallArgs, uninstall } from "./install-lib.mjs";
 
 const DIR = process.env.JUSTREFRESH_BRIDGE_DIR ?? path.join(os.homedir(), ".justrefresh");
-const SOCKET = process.platform === "win32" ? `\\\\.\\pipe\\justrefresh-${os.userInfo().username}` : path.join(DIR, "bridge.sock");
+const isWin = process.platform === "win32";
+const SOCKET = isWin ? `\\\\.\\pipe\\justrefresh-${os.userInfo().username}` : path.join(DIR, "bridge.sock");
 const TOKEN_FILE = path.join(DIR, "token");
 const log = (...a) => process.stderr.write(`[justrefresh-bridge] ${a.join(" ")}\n`);
+const line = (msg) => JSON.stringify(msg) + "\n";
 
+/**
+ * The folder holds the token and agent keys: only this user may read it.
+ * Unix: mode 0700. Windows: file modes don't apply, so drop inherited access
+ * and grant this account alone (icacls).
+ */
 function ensureDir() {
   fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
+  if (!isWin) return fs.chmodSync(DIR, 0o700);
+  const account = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${os.userInfo().username}` : os.userInfo().username;
   try {
-    fs.chmodSync(DIR, 0o700);
-  } catch {
-    /* windows */
+    execFileSync("icacls", [DIR, "/inheritance:r", "/grant:r", `${account}:(OI)(CI)F`], { stdio: "ignore" });
+  } catch (e) {
+    log(`Could not limit ${DIR} to your Windows account (${e.message}); other accounts on this PC may be able to read it.`);
   }
 }
 
 /* ------------------------------------------------------------------ */
 /* Native host: started by Chrome, relays socket clients ⇄ extension   */
 /* ------------------------------------------------------------------ */
+
+/** A client's hello, checked against the challenge we sent: its id and name, or null. */
+function admit(msg, token, challenge) {
+  const ok = msg?.type === "hello" && sameSecret(msg.proof, proofOf(token, "client", challenge)) && isNonce(msg.nonce);
+  if (!ok) return null;
+  return { id: sanitizeClientId(msg.client?.id ?? msg.client?.name), name: String(msg.client?.name ?? "MCP client").slice(0, 80) };
+}
+
 function runNativeHost() {
   ensureDir();
   const token = crypto.randomBytes(32).toString("hex");
   fs.writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
-  if (process.platform !== "win32" && fs.existsSync(SOCKET)) fs.unlinkSync(SOCKET);
+  if (!isWin && fs.existsSync(SOCKET)) fs.unlinkSync(SOCKET);
 
   const pending = new Map(); // relay id → { socket, id }
   let seq = 0;
@@ -47,38 +72,34 @@ function runNativeHost() {
       if (!p) return;
       pending.delete(msg.id);
       const { id: _id, ...rest } = msg;
-      p.socket.write(JSON.stringify({ id: p.id, ...rest }) + "\n");
+      p.socket.write(line({ id: p.id, ...rest }));
     }),
   );
   process.stdin.on("end", () => {
     server.close();
-    if (process.platform !== "win32") fs.rmSync(SOCKET, { force: true });
+    if (!isWin) fs.rmSync(SOCKET, { force: true });
     fs.rmSync(TOKEN_FILE, { force: true });
     process.exit(0);
   });
 
+  const relay = (socket, client, msg) => {
+    const relayId = `r${++seq}`;
+    pending.set(relayId, { socket, id: msg.id });
+    const key = typeof msg.key === "string" ? msg.key.slice(0, 128) : undefined;
+    toChrome({ id: relayId, client: key ? { ...client, key } : client, method: String(msg.method), params: msg.params });
+  };
+
   const server = net.createServer((socket) => {
+    const challenge = newNonce();
     let client = null;
+    socket.write(line({ type: "challenge", nonce: challenge }));
     socket.on(
       "data",
       createLineDecoder((msg) => {
-        if (!client) {
-          const ok =
-            msg?.type === "hello" &&
-            typeof msg.token === "string" &&
-            msg.token.length === token.length &&
-            crypto.timingSafeEqual(Buffer.from(msg.token), Buffer.from(token));
-          if (!ok) {
-            socket.end(JSON.stringify({ type: "error", error: "Invalid token" }) + "\n");
-            return;
-          }
-          client = { id: sanitizeClientId(msg.client?.id ?? msg.client?.name), name: String(msg.client?.name ?? "MCP client").slice(0, 80) };
-          socket.write(JSON.stringify({ type: "ready" }) + "\n");
-          return;
-        }
-        const relayId = `r${++seq}`;
-        pending.set(relayId, { socket, id: msg.id });
-        toChrome({ id: relayId, client, method: String(msg.method), params: msg.params });
+        if (client) return relay(socket, client, msg);
+        client = admit(msg, token, challenge);
+        if (!client) return void socket.end(line({ type: "error", error: "Invalid token" }));
+        socket.write(line({ type: "ready", proof: proofOf(token, "server", msg.nonce) }));
       }),
     );
     socket.on("error", () => undefined);
@@ -86,8 +107,12 @@ function runNativeHost() {
       for (const [k, v] of pending) if (v.socket === socket) pending.delete(k);
     });
   });
-  server.listen(SOCKET, () => {
-    if (process.platform !== "win32") fs.chmodSync(SOCKET, 0o600);
+  server.on("error", (e) => {
+    log(e.code === "EADDRINUSE" ? "Another program is using the bridge's socket name; not starting." : `Socket error: ${e.message}`);
+    process.exit(1);
+  });
+  server.listen({ path: SOCKET, readableAll: false, writableAll: false }, () => {
+    if (!isWin) fs.chmodSync(SOCKET, 0o600);
     log("native host listening (local socket)");
   });
 }
@@ -95,12 +120,45 @@ function runNativeHost() {
 /* ------------------------------------------------------------------ */
 /* MCP server: stdio JSON-RPC ⇄ local socket                           */
 /* ------------------------------------------------------------------ */
+
+/** This agent's key from the extension (null until it has been approved and issued one). */
+function agentKeys(agentId) {
+  const file = () => path.join(DIR, "agents", `${sanitizeClientId(agentId())}.key`);
+  return {
+    read() {
+      try {
+        return fs.readFileSync(file(), "utf8").trim() || undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    save(key) {
+      ensureDir();
+      fs.mkdirSync(path.dirname(file()), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(file(), key, { mode: 0o600 });
+    },
+  };
+}
+
 function runMcp() {
   let socket = null;
   let ready = null;
   let seq = 0;
   const waiting = new Map();
   let clientInfo = { name: process.env.JUSTREFRESH_AGENT_NAME ?? "MCP client" };
+  const agentId = () => process.env.JUSTREFRESH_AGENT_ID ?? clientInfo.name;
+  const keys = agentKeys(agentId);
+
+  function onMessage(msg, handshake) {
+    if (msg.type) return handshake(msg);
+    const w = waiting.get(msg.id);
+    if (!w) return;
+    waiting.delete(msg.id);
+    // Approved for the first time: keep the key the extension issued.
+    if (typeof msg.agentKey === "string") keys.save(msg.agentKey);
+    const { agentKey: _k, ...reply } = msg;
+    w(reply);
+  }
 
   function connect() {
     if (ready) return ready;
@@ -109,9 +167,20 @@ function runMcp() {
       try {
         token = fs.readFileSync(TOKEN_FILE, "utf8").trim();
       } catch {
-        reject(new Error("The extension bridge is not running. In the extension: Dashboard → Agent Integrations → enable the native bridge."));
+        reject(new Error("The extension bridge is not running. In the extension: Dashboard → Agent Integrations → allow desktop AI apps to connect."));
         return;
       }
+      const ours = newNonce();
+      const handshake = (msg) => {
+        if (msg.type === "challenge" && isNonce(msg.nonce)) {
+          return socket.write(
+            line({ type: "hello", proof: proofOf(token, "client", msg.nonce), nonce: ours, client: { id: agentId(), name: clientInfo.name } }),
+          );
+        }
+        if (msg.type === "ready" && sameSecret(msg.proof, proofOf(token, "server", ours))) return resolve();
+        socket.destroy();
+        reject(new Error(msg.type === "error" ? msg.error : "The bridge couldn't prove it is JustRefresh's; not connecting."));
+      };
       socket = net.createConnection(SOCKET);
       socket.on("error", (e) => {
         ready = null;
@@ -124,20 +193,8 @@ function runMcp() {
       });
       socket.on(
         "data",
-        createLineDecoder((msg) => {
-          if (msg.type === "ready") return resolve();
-          if (msg.type === "error") return reject(new Error(msg.error));
-          const w = waiting.get(msg.id);
-          if (w) {
-            waiting.delete(msg.id);
-            w(msg);
-          }
-        }),
+        createLineDecoder((msg) => onMessage(msg, handshake)),
       );
-      socket.on("connect", () => {
-        const id = process.env.JUSTREFRESH_AGENT_ID ?? clientInfo.name;
-        socket.write(JSON.stringify({ type: "hello", token, client: { id, name: clientInfo.name } }) + "\n");
-      });
     });
     return ready;
   }
@@ -154,7 +211,7 @@ function runMcp() {
         clearTimeout(timer);
         resolve(m);
       });
-      socket.write(JSON.stringify({ id, method, params }) + "\n");
+      socket.write(line({ id, method, params, key: keys.read() }));
     });
   }
 
@@ -175,17 +232,28 @@ function runMcp() {
     "data",
     createLineDecoder(async (msg) => {
       const res = await handle(msg);
-      if (res) process.stdout.write(JSON.stringify(res) + "\n");
+      if (res) process.stdout.write(line(res));
     }),
   );
   process.stdin.on("end", () => process.exit(0));
+}
+
+function runInstall(argv) {
+  try {
+    if (argv[0] === "uninstall") uninstall();
+    else install({ ...parseInstallArgs(argv), sourceDir: path.dirname(fileURLToPath(import.meta.url)) });
+  } catch (e) {
+    console.error(e.message);
+    process.exit(2);
+  }
 }
 
 const mode = process.argv[2];
 // Chrome launches native hosts with the caller origin as an argument.
 if (mode === "native-host" || (mode ?? "").startsWith("chrome-extension://")) runNativeHost();
 else if (mode === "mcp") runMcp();
+else if (mode === "install" || mode === "uninstall") runInstall(process.argv.slice(2));
 else {
-  console.error("Usage: justrefresh-bridge.mjs native-host | mcp");
+  console.error("Usage: justrefresh-bridge.mjs install --extension-id <id> | uninstall | native-host | mcp");
   process.exit(2);
 }

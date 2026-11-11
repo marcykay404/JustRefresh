@@ -159,6 +159,76 @@ function ApprovalRow({ approval: a, rule, agentName, act }: { approval: Approval
   );
 }
 
+/** A command or snippet with a Copy button. */
+function CopyLine({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  return (
+    <div className="row" style={{ flexWrap: "nowrap", alignItems: "flex-start" }}>
+      <pre className="copy-line" aria-label={label} style={{ flex: 1, margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+        {text}
+      </pre>
+      <button className="small" onClick={copy}>
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+const onWindows = () => navigator.userAgent.includes("Windows");
+
+/** Paths as typed in the default terminal: PowerShell on Windows ($HOME), a Unix shell elsewhere (~). */
+function bridgePaths() {
+  if (onWindows()) {
+    return { download: "$HOME\\Downloads\\", bin: "$HOME\\.justrefresh\\bin\\", fullBin: "C:\\Users\\<you>\\.justrefresh\\bin\\" };
+  }
+  const home = navigator.userAgent.includes("Mac") ? "/Users/<you>" : "/home/<you>";
+  return { download: "~/Downloads/", bin: "~/.justrefresh/bin/", fullBin: `${home}/.justrefresh/bin/` };
+}
+
+/** Step by step: allow, download, install with one command, restart if asked, add to the AI app, approve. */
+function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: boolean }) {
+  const { download, bin, fullBin } = bridgePaths();
+  const command = `node ${download}justrefresh-bridge.mjs install --extension-id ${chrome.runtime.id}`;
+  // MCP apps don't expand ~ or $HOME: the installer prints this with the real path.
+  const mcp = JSON.stringify({ mcpServers: { justrefresh: { command: "node", args: [`${fullBin}justrefresh-bridge.mjs`, "mcp"] } } });
+  return (
+    <details open={enabled && !connected}>
+      <summary className="small">Set up (about two minutes; needs Node.js 18 or later)</summary>
+      <ol className="small col setup-steps" style={{ gap: 8, margin: "8px 0 0", paddingLeft: 20 }}>
+        <li>Switch on “Allow desktop AI apps to connect” above.</li>
+        <li>
+          <a className="btn small" href={chrome.runtime.getURL("bridge/justrefresh-bridge.mjs")} download="justrefresh-bridge.mjs">
+            Download the bridge
+          </a>{" "}
+          (one file, <code>justrefresh-bridge.mjs</code>).
+        </li>
+        <li>
+          Install it: run this in a terminal (change the folder if you saved it elsewhere). It copies itself to <code>{bin}</code> and registers with your
+          browsers; you can delete the download afterwards.
+          <CopyLine label="Install command" text={command} />
+        </li>
+        <li>If this card asks you to restart JustRefresh, do that; then it shows Connected.</li>
+        <li>
+          Add JustRefresh to your AI app's MCP settings: copy them from what the install command printed, which has your real path in place of{" "}
+          <code>&lt;you&gt;</code>. They look like this:
+          <pre className="copy-line" style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {mcp}
+          </pre>
+        </li>
+        <li>Start the app. It appears above under Agents: choose what it may do and approve it.</li>
+      </ol>
+      <p className="small muted" style={{ margin: "8px 0 0" }}>
+        To remove it: <code>node {bin}justrefresh-bridge.mjs uninstall</code>.
+      </p>
+    </details>
+  );
+}
+
 function BridgeCard({ enabled, status, act }: { enabled: boolean; status: BridgeStatus | null; act: Act }) {
   const connected = !!status?.connected;
   const toggle = (on: boolean) => {
@@ -171,16 +241,13 @@ function BridgeCard({ enabled, status, act }: { enabled: boolean; status: Bridge
     <div className="card col">
       <h2>Desktop AI apps (MCP bridge)</h2>
       <p className="small muted" style={{ margin: 0 }}>
-        Optional. Lets AI apps on this computer that support MCP (Model Context Protocol) connect to JustRefresh. It needs a small helper program installed from
-        the <code>bridge/</code> folder; see <code>docs/agent-integration.md</code>. Everything stays on this computer, and each app has to be approved above
-        before it can do anything.
+        Optional. Lets AI apps on this computer that support MCP (Model Context Protocol) connect to JustRefresh, through a small helper program. Everything
+        stays on this computer, and each app has to be approved above before it can do anything. Once approved, an app gets its own key, so another program
+        can't use its name.
       </p>
       <div className="row">
         <Toggle checked={enabled} label="Allow desktop AI apps to connect" onChange={toggle} />
         <span className={`pill pill-${connected ? "ok" : "muted"}`}>{connected ? "Connected" : "Not connected"}</span>
-        <span className="small muted">
-          Extension ID (used when installing the helper): <code>{chrome.runtime.id}</code>
-        </span>
       </div>
       {status?.restartRequired && (
         <div className="row">
@@ -193,6 +260,7 @@ function BridgeCard({ enabled, status, act }: { enabled: boolean; status: Bridge
           </button>
         </div>
       )}
+      <BridgeSetup enabled={enabled} connected={connected} />
     </div>
   );
 }
@@ -325,6 +393,7 @@ function AgentCard({ agent, allScopes, act }: { agent: AgentRecord; allScopes: A
         <span className={`pill pill-${agent.status === "approved" ? "ok" : agent.status === "pending" ? "warn" : "muted"}`}>{STATUS_LABEL[agent.status]}</span>
         <span className="small muted">
           {TRANSPORT_LABEL[agent.transport]} · last seen {formatTime(agent.lastSeenAt)}
+          {agent.keyHash ? " · uses its own key" : ""}
         </span>
         <span className="spacer" />
         {/* Kept together so the buttons wrap as a pair, never one per line. */}
