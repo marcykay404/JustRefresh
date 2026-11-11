@@ -11,7 +11,7 @@ import { hostOf, normalizeAddress, pageLabel, stashBuilderDraft, TEMPLATES, type
 /** Dashboard → Templates: ready-made rules you fill in. */
 export function TemplatesView() {
   const [open, setOpen] = useState<Template | null>(null);
-  const [created, setCreated] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ name: string; note?: string } | null>(null);
   return (
     <>
       <div className="col" style={{ gap: 4, maxWidth: 760 }}>
@@ -21,9 +21,9 @@ export function TemplatesView() {
         </p>
       </div>
       {created && (
-        <div className="info row" role="status">
+        <div className={`${created.note ? "notice" : "info"} row`} role="status">
           <span>
-            Created “{created}”. It runs on matching tabs from now on.
+            Created “{created.name}”. {created.note ?? "It runs on matching tabs from now on."}
           </span>
           <a href="#/rules">See it in Rules</a>
         </div>
@@ -52,9 +52,9 @@ export function TemplatesView() {
         <TemplateForm
           template={open}
           onClose={() => setOpen(null)}
-          onCreated={(name) => {
+          onCreated={(name, note) => {
             setOpen(null);
-            setCreated(name);
+            setCreated({ name, note });
           }}
         />
       )}
@@ -64,7 +64,7 @@ export function TemplatesView() {
 
 const ADDRESS = "__address__";
 
-function TemplateForm({ template: t, onClose, onCreated }: { template: Template; onClose: () => void; onCreated: (name: string) => void }) {
+function TemplateForm({ template: t, onClose, onCreated }: { template: Template; onClose: () => void; onCreated: (name: string, note?: string) => void }) {
   const tabs = useApi<TabInfo[]>("listTabs");
   const rules = useApi<Rule[]>("listRules");
   const overview = useApi<{ settings: Settings }>("getOverview");
@@ -95,14 +95,17 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
 
   const pickedTab = webTabs.find((x) => String(x.id) === choice) ?? null;
   const url = choice === ADDRESS ? normalizeAddress(address) : (pickedTab?.url ?? null);
-  // Outrank rules that already match the page, or the new rule would never run there.
-  const matching = url ? (rules.data ?? []).filter((r) => r.enabled && !r.meta.draft && matchesAny(r.target.patterns, url) !== null) : [];
+  // A page template outranks rules already matching its page, or it would never
+  // run there. A site-wide template doesn't: more specific rules keep their pages.
+  const matching = url && t.scope === "page" ? (rules.data ?? []).filter((r) => r.enabled && !r.meta.draft && matchesAny(r.target.patterns, url) !== null) : [];
   const stopAfterMinutes = stopAfter === undefined ? (settings?.defaultStopAfterMinutes ?? null) : stopAfter;
   const protects = settings ? settings.defaultSafety.pauseWhileTyping : true;
   const values: TemplateValues | null = url ? { url, text, seconds, start, end, stopAfterMinutes: t.until ? stopAfterMinutes : null, priority: priorityAbove(matching), protects } : null;
   const textOk = !t.text || text.trim().length > 0;
   const hoursOk = !t.hours || (start !== "" && end !== "" && start < end);
-  const ready = !!values && textOk && hoursOk && !busy;
+  // Wait for rules and settings: priority, protection wording and the default time limit come from them.
+  const loaded = rules.data !== null && overview.data !== null;
+  const ready = !!values && textOk && hoursOk && loaded && !busy;
   const host = url ? hostOf(url) : "";
 
   const create = async () => {
@@ -117,18 +120,17 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
         return;
       }
       const rule = (await api("createRule", { rule: t.build(values) })) as Rule;
-      // A tab-specific timer on the chosen tab would outrank the new rule: hand the tab over.
-      if (pickedTab) {
+      // The rule now exists: whatever happens next, close the form (no duplicate on a second click).
+      let note: string | undefined;
+      // A page template takes over the chosen tab from a tab-specific timer, which would outrank it.
+      if (pickedTab && t.scope === "page") {
         const state = (await api("getTabState", { tabId: pickedTab.id })) as { override: { mode: string } | null };
         if (state.override?.mode === "custom") await api("clearTabOverride", { tabId: pickedTab.id });
-        const after = (await api("getTabState", { tabId: pickedTab.id })) as { resolution: { controllerId: string | null; controllerName: string | null } };
-        if (after.resolution.controllerId !== rule.id) {
-          setError(new Error(`“${rule.name}” was created, but “${after.resolution.controllerName ?? "another rule"}” still controls that tab. Raise the new rule's priority in the Rule Builder.`));
-          return;
-        }
-        if (t.scope === "page") await api("runNow", { tabId: pickedTab.id }).catch(() => undefined);
+        const after = (await api("getTabState", { tabId: pickedTab.id })) as { resolution: { kind: string; reason?: string; controllerId: string | null; controllerName: string | null } };
+        if (after.resolution.controllerId === rule.id) await api("runNow", { tabId: pickedTab.id }).catch(() => undefined);
+        else note = takeoverNote(after.resolution);
       }
-      onCreated(rule.name);
+      onCreated(rule.name, note);
     } catch (e) {
       setError(e);
     } finally {
@@ -256,4 +258,13 @@ function TemplateForm({ template: t, onClose, onCreated }: { template: Template;
       </div>
     </div>
   );
+}
+
+/** Why a new page rule isn't running on the chosen tab. */
+function takeoverNote(r: { kind: string; reason?: string; controllerName: string | null }): string {
+  if (r.kind === "paused") return "All refreshing is paused; it starts when you resume.";
+  if (r.kind === "disabled") return "Auto refresh is switched off in Settings, so it won't run until you turn it on.";
+  if (r.kind === "tab_excluded" || r.kind === "url_excluded") return `It won't run on that tab: ${r.reason ?? "the tab is excluded"}.`;
+  if (r.controllerName) return `On that tab, “${r.controllerName}” still has priority. Raise the new rule's priority in the Rule Builder to change that.`;
+  return "It isn't running on that tab yet.";
 }

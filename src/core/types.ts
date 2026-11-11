@@ -336,7 +336,7 @@ export const STATUS_LABELS: Record<ExecutionStatus, string> = {
   refreshing: "Refreshing",
   paused_activity: "Paused: User Activity",
   paused_unsaved: "Paused: Unsaved Changes",
-  paused_resubmit: "Paused: Form Page",
+  paused_resubmit: "Paused: Submitted form",
   paused_global: "Paused: Global",
   paused_user: "Paused",
   paused_unknown: "Paused: Unknown Condition",

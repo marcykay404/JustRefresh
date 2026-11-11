@@ -182,13 +182,42 @@ describe("Templates page", () => {
     expect(created!.rule.priority).toBe(4); // above the matching rule, not the unrelated one
   });
 
-  it("says so when another rule still controls the tab", async () => {
+  it("says so when another rule still controls the tab, and closes the form so a second click can't duplicate the rule", async () => {
     otherRuleWins = true;
     await useTemplate("back in stock");
     await click(button("Create and start"));
     await tick();
-    expect(text()).toContain("still controls that tab");
+    expect(text()).toContain("On that tab, “Stay signed in: shop.example.com” still has priority");
+    expect(el.querySelector(".dialog")).toBeNull();
+    expect(called("createRule")).toHaveLength(1);
     expect(called("runNow")).toEqual([]);
+  });
+
+  it("Stay signed in doesn't outrank rules on the page you pick, and leaves that tab's timer alone", async () => {
+    tabOverride = { mode: "custom" };
+    existingRules = [{ id: "watch", name: "Back in stock", enabled: true, priority: 3, meta: { draft: false }, target: { patterns: [{ type: "exact", value: "https://shop.example.com/item/42" }] } }];
+    await useTemplate("Stay signed in");
+    await click(button("Create and start"));
+    await tick();
+    const [created] = called("createRule") as { rule: { priority: number } }[];
+    expect(created!.rule.priority).toBe(0);
+    expect(called("clearTabOverride")).toEqual([]);
+  });
+
+  it("Create waits until rules and settings have loaded", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const original = (globalThis as { chrome: { runtime: { sendMessage: (m: { method: string }) => Promise<unknown> } } }).chrome.runtime.sendMessage;
+    (globalThis as { chrome: { runtime: { sendMessage: unknown } } }).chrome.runtime.sendMessage = async (m: { method: string }) => {
+      if (m.method === "listRules") await gate;
+      return original(m);
+    };
+    await useTemplate("back in stock");
+    expect(button("Create and start")!.disabled).toBe(true);
+    await act(async () => release());
+    await tick();
+    expect(button("Create and start")!.disabled).toBe(false);
+    (globalThis as { chrome: { runtime: { sendMessage: unknown } } }).chrome.runtime.sendMessage = original;
   });
 
   it("each Use template button names its template for screen readers", () => {

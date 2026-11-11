@@ -159,12 +159,12 @@ export const TEMPLATES: Template[] = [
       } as RuleInput;
     },
     describe: (v) =>
-      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and alert you once with a sound.${stopClause(v, "it hasn't appeared")}`,
+      `Refresh ${pageLabel(v.url)} every ${intervalLabel(v.seconds)} until ${quote(v.text)} appears, then stop and alert you once with a sound.${stopClause(v, "it hasn't appeared")}${waits(v)}`,
   },
   {
     id: "stay-signed-in",
     title: "Stay signed in",
-    description: "Refreshes a site every 10 minutes so it doesn't log you out for being idle. Still waits while you're typing.",
+    description: "Refreshes a site every 10 minutes so it doesn't log you out for being idle.",
     fills: "the site · Every 10 min",
     scope: "site",
     intervals: [300, 600, 900, 1800],

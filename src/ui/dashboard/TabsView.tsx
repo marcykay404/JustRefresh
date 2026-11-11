@@ -4,6 +4,7 @@ import { useApi, useNow } from "../shared/hooks";
 import { formatDuration, formatTime, statusLabel } from "../shared/format";
 import { Empty, ErrorBox, StatusPill } from "../shared/components";
 import { INTERVAL_PRESETS } from "../../core/defaults";
+import { FORM_RESULT_REASON } from "../../core/safety";
 import type { Settings, TabInfo, TabRuntime } from "../../core/types";
 import { useDialog } from "../shared/dialog";
 
@@ -98,7 +99,8 @@ export function TabsView() {
       setNotice(null);
       return;
     }
-    const blocked = r.skipped.filter((s) => !/No rule|Excluded|excluded|cannot|Browser-internal|globally disabled/.test(s.reason));
+    // Form pages are left out: forcing them would only bring up Chrome's resubmission prompt.
+    const blocked = r.skipped.filter((s) => !/No rule|Excluded|excluded|cannot|Browser-internal|globally disabled/.test(s.reason) && s.reason !== FORM_RESULT_REASON);
     setNotice(`Refreshed ${r.refreshed.length} tab(s); ${r.skipped.length} skipped.`);
     const forceThem =
       blocked.length > 0 &&

@@ -32,7 +32,7 @@ const server = http.createServer((req, res) => {
   loads.set(path, (loads.get(path) ?? 0) + 1);
   res.setHeader("content-type", "text/html");
   if (path === "/form") return res.end(`<title>Form</title><form><input id="q" value=""><button>Save</button></form>`);
-  if (path === "/checkout") return res.end(`<title>Checkout</title><form method="post" action="/order"><input name="item" value="42"><button id="buy">Place order</button></form>`);
+  if (path === "/checkout") return res.end(`<title>Checkout</title><form method="post" action="/order"><input name="item" value="42"><button id="buy">Place order</button></form><form method="post" action="/order#done"><button id="buy-frag">Place order (#done)</button></form><form method="post" action="/order" target="_blank"><button id="buy-new-tab">Order in new tab</button></form>`);
   if (path === "/order") {
     if (req.method === "POST") orderPosts += 1;
     return res.end(`<title>Order</title><h1>Order received (${orderPosts} POSTs so far)</h1>`);
@@ -359,6 +359,36 @@ await test("a page reached by submitting a form is never reloaded; Open this pag
   await waitFor(async () => (loads.get("/order") ?? 0) > before, "the fresh page refreshes normally");
   assert.equal(orderPosts, 1);
   await call("stopTab", { tabId });
+  await page.close();
+});
+
+await test("form pages: a #fragment result can be opened fresh, and a form that opened elsewhere doesn't block the next page", async () => {
+  const page = await context.newPage();
+  await page.goto(`${base}/checkout`);
+  const posts = orderPosts;
+  await Promise.all([page.waitForURL(`${base}/order#done`), page.click("#buy-frag")]);
+  const tabId = await tabIdFor(`${base}/order#done`);
+  await call("startTab", { tabId, intervalSeconds: 30 });
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "paused_resubmit", "paused on the #fragment form result");
+  const gets = loads.get("/order") ?? 0;
+  await call("openFresh", { tabId });
+  await waitFor(async () => (loads.get("/order") ?? 0) > gets, "opening fresh fetched the page again (not an in-page jump)");
+  assert.equal(orderPosts, posts + 1, "only the original order was sent");
+  await call("stopTab", { tabId });
+
+  // A form whose result opens in another tab: this tab's next page is ordinary.
+  await page.goto(`${base}/checkout`);
+  const [popupTab] = await Promise.all([context.waitForEvent("page"), page.click("#buy-new-tab")]);
+  await popupTab.close();
+  await page.goto(`${base}/order`); // a plain GET visit to the same address
+  const tab2 = await tabIdFor(`${base}/order`);
+  await call("startTab", { tabId: tab2, intervalSeconds: 30 });
+  const before = loads.get("/order") ?? 0;
+  await fireAlarm(tab2);
+  await waitFor(async () => (loads.get("/order") ?? 0) > before, "refreshed normally");
+  assert.notEqual((await runtime(tab2))?.status, "paused_resubmit");
+  await call("stopTab", { tabId: tab2 });
   await page.close();
 });
 

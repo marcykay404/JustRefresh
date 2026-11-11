@@ -61,3 +61,43 @@ describe("form results (pages reached by submitting a form)", () => {
     expect(env.browser.reloads).toEqual([7]);
   });
 });
+
+describe("form results: edge cases from review", () => {
+  it("not even a forced refresh resends the form", async () => {
+    const env = await setup();
+    const r = await env.service.call(env.user, "refreshNow", { tabId: 7, force: true });
+    expect(r).toMatchObject({ refreshed: false, formResult: true });
+    expect(env.browser.reloads).toEqual([]);
+  });
+
+  it("Open this page fresh drops a #fragment (otherwise Chrome would just jump within the page)", async () => {
+    const env = await setup();
+    env.browser.tabs.get(7)!.url = "https://shop.test/order#done";
+    await env.service.call(env.user, "openFresh", { tabId: 7 });
+    expect(env.browser.navigations).toEqual([{ tabId: 7, url: "https://shop.test/order" }]);
+  });
+
+  it("a watch paused on a form page that reaches its time limit completes instead of getting stuck", async () => {
+    const env = createApiEnv();
+    env.browser.addTab(7, "https://shop.test/order");
+    env.page.activityByTab.set(7, quietActivity({ formResult: true }));
+    env.page.setHtml(7, "<p>Sold out</p>");
+    await env.service.call(env.user, "createRule", {
+      rule: {
+        name: "Watch",
+        target: { patterns: ["https://shop.test/order"] },
+        trigger: { type: "interval", seconds: 60 },
+        stopWhen: { type: "dom.text", operator: "contains", value: "In stock" },
+        actions: { onMatched: [{ type: "stopRefresh" }], onNotMatched: [{ type: "refresh" }] },
+        limits: { maxDurationSeconds: 600 },
+      },
+    });
+    await env.engine.reconcileAll("config");
+    for (let i = 0; i < 12; i++) {
+      env.clock.advance(60_000);
+      await env.fireDue();
+    }
+    expect(await env.runtime.get(7)).toMatchObject({ status: "completed", reason: "Reached its time limit (10 min); the condition wasn't met" });
+    expect(env.browser.reloads).toEqual([]);
+  });
+});

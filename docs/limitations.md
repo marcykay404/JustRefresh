@@ -60,7 +60,10 @@
   the page didn't handle with script, followed by a page that wasn't
   redirected (a redirected page was fetched with GET and is safe). It uses the
   site's sessionStorage, so a form that posts to a *different* site isn't
-  detected, and it needs site access like activity protection does.
+  detected, and it needs site access like activity protection does. Also not
+  detected: forms sent from script with `form.submit()` (no submit event, e.g.
+  ASP.NET postbacks) and 307/308 redirects (which keep the POST but count as
+  a redirect). For those, Chrome still shows its resubmission prompt.
 * **Discarded tabs** (Memory Saver) are skipped by default rather than woken.
 * **Regex.** JavaScript has no regex timeout; potentially catastrophic
   patterns are rejected instead, and inputs are length-bounded.

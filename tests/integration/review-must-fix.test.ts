@@ -93,3 +93,56 @@ describe("Stop watching after (Settings)", () => {
     await expect(env.service.call(env.user, "updateSettings", { defaultStopAfterMinutes: 0 })).rejects.toMatchObject({ code: "invalid_params" });
   });
 });
+
+describe("timer reasons and rule precedence", () => {
+  it("a plain timer that reaches a limit doesn't mention a condition", async () => {
+    const env = createApiEnv();
+    env.browser.addTab(7, "https://shop.test/item");
+    await env.service.call(env.user, "createRule", {
+      rule: { name: "Timer", target: { patterns: ["https://shop.test/item"] }, trigger: { type: "interval", seconds: 60 }, limits: { maxRefreshes: 1 } },
+    });
+    await env.engine.reconcileAll("config");
+    for (let i = 0; i < 3; i++) {
+      env.clock.advance(60_000);
+      await env.fireDue();
+      await env.completeNavigation(7);
+    }
+    expect((await env.runtime.get(7))?.reason).toBe("Reached maximum of 1 refreshes");
+  });
+
+  it("a rule created with priorityAbove the matching rules is the one that runs", async () => {
+    const env = createApiEnv();
+    env.browser.addTab(7, "https://shop.test/item");
+    const base = { target: { patterns: ["https://shop.test/*"] }, trigger: { type: "interval", seconds: 60 } };
+    await env.service.call(env.user, "createRule", { rule: { id: "old", name: "Older", priority: 2, ...base } });
+    env.clock.advance(1000);
+    const tie = (await env.service.call(env.user, "createRule", { rule: { id: "tie", name: "Same priority", priority: 2, ...base } })) as { id: string };
+    const state1 = (await env.service.call(env.user, "getTabState", { tabId: 7 })) as { resolution: { controllerId: string; candidates: { priority: number }[] } };
+    expect(state1.resolution.controllerId).toBe("old"); // a tie goes to the older rule: the original bug
+    expect(tie.id).toBe("tie");
+    const { priorityAbove } = await import("@/ui/popup/describe");
+    await env.service.call(env.user, "createRule", { rule: { id: "new", name: "New", priority: priorityAbove(state1.resolution.candidates), ...base } });
+    const state2 = (await env.service.call(env.user, "getTabState", { tabId: 7 })) as { resolution: { controllerId: string } };
+    expect(state2.resolution.controllerId).toBe("new");
+  });
+});
+
+describe("agent redaction: fragments and URL conditions", () => {
+  it("hides #fragments and url.match patterns inside conditions too", async () => {
+    const env = createApiEnv();
+    await env.pairAgent("native:a");
+    await env.service.call(env.user, "createRule", {
+      rule: {
+        id: "r",
+        name: "R",
+        target: { patterns: [{ type: "exact", value: "https://app.test/inbox#token=abc" }] },
+        trigger: { type: "interval", seconds: 60 },
+        stopWhen: { type: "all", conditions: [{ type: "url.match", pattern: { type: "exact", value: "https://app.test/done?order=9" } }] },
+      },
+    });
+    const r = (await env.service.call(env.agent("native:a"), "getRule", { id: "r" })) as { target: { patterns: unknown[] }; stopWhen: unknown };
+    expect(r.target.patterns).toEqual([{ type: "exact", value: "https://app.test/inbox#…" }]);
+    expect(JSON.stringify(r.stopWhen)).not.toContain("order=9");
+    expect(JSON.stringify(r.stopWhen)).toContain("https://app.test/done?…");
+  });
+});

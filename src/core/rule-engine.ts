@@ -12,7 +12,7 @@ import type { ActionContext, NotifyOptions, TriggerEvent } from "../registries/c
 import type { ActivitySnapshot } from "../shared/messaging-types";
 import { evaluateConditionTree, explainTrace } from "./evaluator";
 import { resolveTab, type Resolution } from "./rule-resolver";
-import { decideSafety } from "./safety";
+import { decideSafety, FORM_RESULT_REASON } from "./safety";
 import { checkLimits, inActiveWindow, MIN_ALARM_DELAY_MS, nextWindowStart, restoredDueAt } from "./schedule";
 import { isPaused, isTerminal, newRuntime, transition } from "./state-machine";
 import { TimeoutError, withTimeout } from "./timeout";
@@ -114,9 +114,7 @@ export const alarmName = (tabId: number) => `${ALARM_PREFIX}${tabId}`;
 export const tabIdFromAlarm = (name: string): number | null =>
   name.startsWith(ALARM_PREFIX) ? Number(name.slice(ALARM_PREFIX.length)) : null;
 
-/** Shown when a page came from submitting a form (see src/content/form-post.ts). */
-export const FORM_RESULT_REASON =
-  "This page came from submitting a form, so refreshing it could send the form again (for example a second order). Open the page fresh to keep refreshing";
+export { FORM_RESULT_REASON } from "./safety";
 
 class SafetyBlock extends Error {
   constructor(
@@ -518,7 +516,7 @@ export class RuleEngine {
         // A rule waiting for something on the page must not end silently: say
         // it stopped without finding it. Plain timers end quietly.
         if (rule.stopWhen) await this.notifyStopped(config, rule, tab, `${limit.reason} before the condition was met. Open the popup to start again.`);
-        return save(transition(rt, "completed", { reason: `${limit.reason}; the condition wasn't met`, nextDueAt: null }));
+        return save(transition(rt, "completed", { reason: rule.stopWhen ? `${limit.reason}; the condition wasn't met` : limit.reason, nextDueAt: null }));
       }
       if (!inActiveWindow(rule.schedule, now)) {
         const opens = nextWindowStart(rule.schedule, now);
@@ -805,11 +803,12 @@ export class RuleEngine {
       const config = await this.deps.stores.config.get();
       const res = resolveTab(tab, config);
       if (res.kind === "restricted") return { refreshed: false, reason: res.reason };
+      if (!opts.force && (res.kind === "tab_excluded" || res.kind === "url_excluded")) return { refreshed: false, reason: res.reason };
+      const { activity, reason } = await this.page.activity(tabId);
+      // Not even a forced refresh may resend a form: "Open this page fresh" is the way out.
+      if (activity?.formResult) return { refreshed: false, reason: FORM_RESULT_REASON, formResult: true };
       if (!opts.force) {
-        if (res.kind === "tab_excluded" || res.kind === "url_excluded") return { refreshed: false, reason: res.reason };
         const safety = res.kind === "controller" ? res.controller.safety : config.settings.defaultSafety;
-        const { activity, reason } = await this.page.activity(tabId);
-        if (activity?.formResult) return { refreshed: false, reason: FORM_RESULT_REASON, formResult: true };
         // Manual refresh is an explicit gesture: only unsaved-change protection applies.
         const decision = decideSafety({
           safety: { ...safety, pauseWhileTyping: false, pauseOnMouse: false, pauseOnScroll: false, onActivityUnavailable: "refresh" },
@@ -839,7 +838,9 @@ export class RuleEngine {
       const config = await this.deps.stores.config.get();
       const res = resolveTab(tab, config);
       if (res.kind === "restricted") return { opened: false, reason: res.reason };
-      await this.deps.browser.navigate(tabId, tab.url);
+      // Without the #fragment: navigating to the same URL with a fragment is an
+      // in-page jump that loads nothing.
+      await this.deps.browser.navigate(tabId, tab.url.split("#")[0]!);
       const rt = await this.deps.stores.runtime.get(tabId);
       if (rt?.status === "paused_resubmit" && res.kind === "controller") {
         const next = transition(rt, "scheduled", { reason: undefined, nextDueAt: this.nextDue(res.controller, this.now()) });

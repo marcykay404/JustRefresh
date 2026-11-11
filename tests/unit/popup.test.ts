@@ -43,6 +43,7 @@ let current: Case;
 /** Set once createRule ran: the new rule then controls the tab. */
 let createdRuleId: string | null = null;
 let defaultStopAfter: number | null = null;
+let refreshNowResult: unknown = { refreshed: true };
 const calls: { method: string; params: unknown }[] = [];
 const URL_ = "https://www.youtube.com/watch?v=x";
 
@@ -87,7 +88,9 @@ const permissionsRequest = vi.fn(async (_p: unknown) => true);
             ? RULE
             : m.method === "getOverview"
               ? { settings: { ...DEFAULT_SETTINGS, defaultStopAfterMinutes: defaultStopAfter }, counts: { running: 2, paused: 1, stopped: 0, excluded: 0 }, pendingApprovals: 0, pendingAgents: 0 }
-              : m.method === "createRule"
+              : m.method === "refreshNow"
+                ? refreshNowResult
+                : m.method === "createRule"
                 ? ((createdRuleId = "new"), { id: "new" })
                 : { ok: true };
       return { ok: true, result };
@@ -288,6 +291,43 @@ describe("rules made from the popup take effect", () => {
     const [created] = called("createRule") as { rule: { limits?: { maxDurationSeconds: number } } }[];
     expect(created!.rule.limits).toEqual({ maxDurationSeconds: 1200 });
     defaultStopAfter = null;
+  });
+});
+
+describe("pages reached by submitting a form", () => {
+  it("paused on one: explains and offers Open this page fresh", async () => {
+    await render({ source: "tab", status: "paused_resubmit" });
+    expect(text()).toContain("This page came from submitting a form");
+    await click("Open this page fresh");
+    expect(called("openFresh")).toEqual([{ tabId: 1 }]);
+  });
+
+  it("Refresh now on one asks to open it fresh instead, never offers to resend", async () => {
+    refreshNowResult = { refreshed: false, reason: "form", formResult: true };
+    await render({ source: "tab", status: "scheduled" });
+    await click("Refresh now");
+    expect(document.body.textContent).toContain("Open this page fresh instead?");
+    expect(button("Refresh anyway")).toBeUndefined();
+    const dialogButton = [...document.querySelectorAll(".dialog button")].find((b) => b.textContent === "Open this page fresh") as HTMLButtonElement;
+    await act(async () => dialogButton.click());
+    await tick();
+    expect(called("openFresh")).toEqual([{ tabId: 1 }]);
+    expect(called("refreshNow")).toEqual([{ tabId: 1 }]); // no forced retry
+    refreshNowResult = { refreshed: true };
+  });
+});
+
+describe("declining site access, then allowing it", () => {
+  it("asks Chrome once per click and starts after Allow access", async () => {
+    permissionsRequest.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    await render({ hostAccess: false });
+    await click("Start refreshing every 5 min");
+    expect(called("startTab")).toEqual([]);
+    expect(text()).toContain("won't refresh this page until you allow access");
+    await click("Allow access");
+    await tick();
+    expect(permissionsRequest).toHaveBeenCalledTimes(2); // Start, then Allow access: no third request outside a click
+    expect(called("startTab")).toEqual([{ tabId: 1, intervalSeconds: 300 }]);
   });
 });
 

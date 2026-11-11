@@ -15,7 +15,7 @@ if (!g[FLAG]) {
   const monitor = new ActivityMonitor(document);
   monitor.start();
   // Whether this page came from submitting a form (reloading it would send the form again).
-  const formResult = detectFormResult(location.href, currentNavigation(window), () => sessionStorage);
+  const formResult = detectFormResult(location.href, currentNavigation(window), () => sessionStorage, Date.now(), performance.timeOrigin);
   watchFormPosts(window);
 
   chrome.runtime.onMessage.addListener((msg: ContentRequest, sender, sendResponse: (r: ContentResponse) => void) => {

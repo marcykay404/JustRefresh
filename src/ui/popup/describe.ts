@@ -73,9 +73,13 @@ export function describeCondition(c: ConditionNode): string {
 export function describeRule(rule: Pick<Rule, "trigger" | "stopWhen" | "actions">, effectiveSeconds?: number | null): string {
   const t = rule.trigger as { type: string; seconds?: number };
   const seconds = effectiveSeconds ?? t.seconds;
-  const every = t.type === "interval" && seconds ? `every ${intervalLabel(seconds)}` : t.type === "navigation" ? "each time the page loads" : `on its ${t.type} trigger`;
-  if (!rule.stopWhen) return `Refreshing ${every}`;
   const notifies = rule.actions.onMatched.some((a) => a.type === "notify");
+  // Page-load rules check the page but never refresh it themselves.
+  if (t.type === "navigation") {
+    return rule.stopWhen ? `Checking each time the page loads${notifies ? `: notify me when ${describeCondition(rule.stopWhen)}` : ""}` : "Runs each time the page loads";
+  }
+  const every = t.type === "interval" && seconds ? `every ${intervalLabel(seconds)}` : `on its ${t.type} trigger`;
+  if (!rule.stopWhen) return `Refreshing ${every}`;
   return `Refreshing ${every} until ${describeCondition(rule.stopWhen)}${notifies ? ", then notify me" : ""}`;
 }
 

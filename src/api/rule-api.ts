@@ -33,7 +33,7 @@ import type {
 import { ALL_AGENT_SCOPES, RULE_SCHEMA_VERSION } from "../core/types";
 import { defaultConfig } from "../core/defaults";
 import { FAST_MIN_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS } from "../triggers/interval";
-import { agentFor, ApiError, assertCanModify, authorize, redactPattern, redactUrl } from "./permissions";
+import { agentFor, ApiError, assertCanModify, authorize, redactConditionUrls, redactPattern, redactUrl } from "./permissions";
 import { buildCapabilities } from "./capabilities";
 import { exportBundle, parseImport, type ImportReport } from "../integrations/json-import";
 
@@ -153,7 +153,11 @@ export class RuleManagementService {
     return rules.map((r) =>
       r.meta.origin.type === "agent" && r.meta.origin.agentId === actor.agentId
         ? r
-        : { ...r, target: { ...r.target, patterns: r.target.patterns.map(redactPattern), exclusions: r.target.exclusions.map(redactPattern) } },
+        : {
+            ...r,
+            target: { ...r.target, patterns: r.target.patterns.map(redactPattern), exclusions: r.target.exclusions.map(redactPattern) },
+            ...(r.stopWhen ? { stopWhen: redactConditionUrls(r.stopWhen) } : {}),
+          },
     );
   }
 
