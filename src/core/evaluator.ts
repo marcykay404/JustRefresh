@@ -11,6 +11,7 @@ import type { Registries } from "../registries";
 import { defaultRegistries } from "../registries";
 import type { RuleContext } from "../registries/contracts";
 import type { ConditionNode, EvaluationResult, EvaluationTrace } from "./types";
+import { TimeoutError } from "./timeout";
 
 export type PageEvaluator = (leaves: ConditionNode[]) => Promise<EvaluationResult[]>;
 
@@ -49,7 +50,8 @@ export async function evaluateConditionTree(root: ConditionNode, input: Evaluati
       results = await input.pageEvaluator(leaves);
     } catch (e) {
       const reason = (e as Error).message || "Page evaluation failed";
-      results = leaves.map(() => ({ status: "unknown", code: "content_script_unavailable", reason }));
+      const code = e instanceof TimeoutError ? "timeout" : "content_script_unavailable";
+      results = leaves.map(() => ({ status: "unknown", code, reason }));
     }
     leaves.forEach((leaf, i) => {
       pageResults.set(leaf, results[i] ?? { status: "unknown", code: "evaluation_error", reason: "Missing page result" });

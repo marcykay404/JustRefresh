@@ -4,3 +4,5 @@ coverage/
 *.log
 .DS_Store
 test-results/
+bridge/sar-native-host.sh
+bridge/sar-native-host.bat

@@ -31,6 +31,8 @@ const server = http.createServer((req, res) => {
   res.setHeader("content-type", "text/html");
   if (path === "/form") return res.end(`<title>Form</title><form><input id="q" value=""><button>Save</button></form>`);
   if (path === "/status") return res.end(`<title>Status</title><div id="status">${statusText}</div>`);
+  // A page that keeps running JS, so a debugger pause takes effect at once.
+  if (path === "/stall") return res.end(`<title>Stall</title><script>setInterval(() => { window.tick = (window.tick || 0) + 1; }, 20);</script><h1>Stall</h1>`);
   res.end(`<title>Page ${path}</title><h1>Loaded ${loads.get(path)} times</h1>`);
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -108,6 +110,40 @@ await test("typing protection postpones refresh; unsaved form blocks manual refr
   // Typed text never leaves the page:
   const history = JSON.stringify(await sw.evaluate(() => chrome.storage.local.get(null)));
   assert.ok(!history.includes("draft text"));
+  await page.close();
+});
+
+await test("a page paused in the debugger does not wedge its tab or the API", async () => {
+  const page = await context.newPage();
+  await page.goto(`${base}/stall`);
+  const tabId = await tabIdFor(`${base}/stall`);
+  await call("startTab", { tabId, intervalSeconds: 30 });
+  await page.waitForTimeout(300);
+
+  // Pause the page's main thread like a DevTools breakpoint would.
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Debugger.enable");
+  const paused = new Promise((r) => cdp.once("Debugger.paused", r));
+  await cdp.send("Debugger.pause");
+  await paused;
+
+  // The cycle must finish (bounded waits) instead of hanging in "evaluating".
+  const cycle = fireAlarm(tabId);
+  const deadline = new Promise((_, reject) => setTimeout(() => reject(new Error("cycle still running after 40s")), 40_000));
+  // Meanwhile an API call touching the tab must not be blocked indefinitely.
+  const status = await Promise.race([call("listTabs"), deadline]);
+  assert.ok(Array.isArray(status));
+  await Promise.race([cycle, deadline]);
+  let rt = await runtime(tabId);
+  assert.equal(rt.status, "paused_activity", `status ${rt.status}: ${rt.reason}`);
+  assert.equal(loads.get("/stall"), 1, "not reloaded while unresponsive");
+
+  // Resumed page: the next cycle refreshes normally.
+  await cdp.send("Debugger.resume");
+  await cdp.detach();
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.navigationCount === 1, "navigation after resume");
+  assert.equal(loads.get("/stall"), 2);
   await page.close();
 });
 

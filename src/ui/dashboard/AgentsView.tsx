@@ -28,7 +28,7 @@ export function AgentsView() {
   const audit = useApi<AuditEntry[]>("getAudit", undefined, { pollMs: 5000 });
   const rules = useApi<Rule[]>("listRules", undefined, { pollMs: 5000 });
   const overview = useApi<{ settings: Settings }>("getOverview");
-  const bridge = useApi<{ connected: boolean; wanted: boolean }>("bridgeStatus", undefined, { pollMs: 3000 });
+  const bridge = useApi<{ connected: boolean; wanted: boolean; restartRequired: boolean }>("bridgeStatus", undefined, { pollMs: 3000 });
   const [actionError, setActionError] = useState<unknown>(null);
 
   const act = async (method: string, params: unknown) => {
@@ -109,6 +109,17 @@ export function AgentsView() {
           <span className={`pill pill-${bridge.data?.connected ? "ok" : "muted"}`}>{bridge.data?.connected ? "Connected" : "Not connected"}</span>
           <span className="small muted">Extension ID: <code>{chrome.runtime.id}</code></span>
         </div>
+        {bridge.data?.restartRequired && (
+          <div className="row">
+            <span className="small">
+              Chrome makes native messaging available only after the extension restarts. Restarting keeps your rules and schedules; open extension
+              pages (like this one) will close.
+            </span>
+            <button className="small primary" onClick={() => chrome.runtime.reload()}>
+              Restart extension to finish
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="card col">

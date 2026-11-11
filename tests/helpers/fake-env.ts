@@ -1,4 +1,4 @@
-import { RuleEngine, type AlarmPort, type BrowserPort, type PagePort } from "@/core/rule-engine";
+import { RuleEngine, type AlarmPort, type BrowserPort, type EngineTimeouts, type PagePort } from "@/core/rule-engine";
 import type { ConditionNode, EvaluationResult, TabInfo } from "@/core/types";
 import type { ActivitySnapshot } from "@/shared/messaging-types";
 import { MemoryKV } from "@/storage/kv";
@@ -20,6 +20,8 @@ export class FakeBrowser implements BrowserPort {
   reloads: number[] = [];
   notifications: { title: string; message: string }[] = [];
   onReload?: (tabId: number) => void;
+  /** Tabs whose reload call never returns (the reload is still recorded). */
+  stallReload = new Set<number>();
 
   addTab(id: number, url: string, extra: Partial<TabInfo> = {}) {
     this.tabs.set(id, { id, url, title: `Tab ${id}`, windowId: 1, index: id, active: false, discarded: false, status: "complete", restricted: false, ...extra });
@@ -33,6 +35,7 @@ export class FakeBrowser implements BrowserPort {
   async reload(id: number) {
     this.reloads.push(id);
     this.onReload?.(id);
+    if (this.stallReload.has(id)) await never();
   }
   async notify(_id: string, title: string, message: string) {
     this.notifications.push({ title, message });
@@ -70,6 +73,8 @@ export class FakePage implements PagePort {
   docs = new Map<number, Document>();
   activityByTab = new Map<number, ActivitySnapshot | null>();
   unavailable = new Set<number>();
+  /** Tabs whose content-script calls never answer (e.g. page paused in a debugger). */
+  stalled = new Set<number>();
   evaluateCalls = 0;
 
   setHtml(tabId: number, html: string) {
@@ -77,18 +82,22 @@ export class FakePage implements PagePort {
   }
   async evaluate(tabId: number, leaves: ConditionNode[], includeText: boolean): Promise<EvaluationResult[]> {
     this.evaluateCalls++;
+    if (this.stalled.has(tabId)) await never();
     if (this.unavailable.has(tabId)) throw new Error("Content script unavailable");
     const doc = this.docs.get(tabId);
     if (!doc) throw new Error("No document");
     return leaves.map((l) => evaluateDomCondition(l, doc, { includeText }));
   }
   async activity(tabId: number) {
+    if (this.stalled.has(tabId)) await never();
     if (this.unavailable.has(tabId)) return { activity: null, reason: "Content script unavailable" };
     return { activity: this.activityByTab.has(tabId) ? this.activityByTab.get(tabId)! : quietActivity() };
   }
 }
 
-export function createEnv() {
+const never = () => new Promise<never>(() => undefined);
+
+export function createEnv(opts: { timeouts?: Partial<EngineTimeouts> } = {}) {
   const clock = new FakeClock();
   const browser = new FakeBrowser();
   const alarms = new FakeAlarms();
@@ -99,7 +108,7 @@ export function createEnv() {
   const runtime = new RuntimeRepository(session);
   const history = new HistoryRepository(local, config, clock.now);
   const audit = new AuditRepository(local, clock.now);
-  const engine = new RuleEngine({ browser, alarms, page, clock, stores: { config, runtime, history } });
+  const engine = new RuleEngine({ browser, alarms, page, clock, stores: { config, runtime, history }, timeouts: opts.timeouts });
   return {
     clock, browser, alarms, page, local, session, config, runtime, history, audit, engine,
     /** Fire every alarm that is due, like Chrome would. */
