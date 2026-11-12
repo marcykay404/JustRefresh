@@ -92,6 +92,18 @@ describe("MCP handler → extension API (end to end, in memory)", () => {
     const unknown = await handle({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "chrome_eval", arguments: {} } });
     expect(unknown.error.code).toBe(-32602);
   });
+  it("get_capabilities over MCP, instructions included, stays small", async () => {
+    const { env, handle } = await setup();
+    await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await env.service.call(env.user, "updateAgent", { id: "native:claude", status: "approved", scopes: ["rules:read"] });
+    const r = (await handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "refresh_get_capabilities", arguments: {} } })).result;
+    expect(Buffer.byteLength(r.content[0].text, "utf8")).toBeLessThanOrEqual(10 * 1024);
+    expect(JSON.parse(r.content[0].text).instructions).toBe(INSTRUCTIONS);
+    const s = (
+      await handle({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "refresh_get_schema", arguments: { kind: "trigger", type: "interval" } } })
+    ).result;
+    expect(s.structuredContent.schema.properties.type.const).toBe("interval");
+  });
 });
 
 describe("MCP self-description", () => {
@@ -293,6 +305,45 @@ describe("MCP self-description", () => {
     expect(await env.service.call(env.user, "enableRule", { id: created.id })).toEqual({ status: "enabled" });
     expect(await waiting()).toEqual([]);
     expect(await revision()).toBe(running);
+  });
+
+  it("capabilities carry the instructions, for clients that don't show them to the model", async () => {
+    const handle = createMcpHandler({ callApi: async (method: string, params: unknown) => ({ ok: true, result: { method, params, notes: ["n"] } }) });
+    const call = async (name: string, args?: object) =>
+      JSON.parse((await handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name, arguments: args } })).result.content[0].text);
+    // The summary unless the agent asks for every schema; the instructions replace the notes.
+    expect(await call("refresh_get_capabilities")).toEqual({ instructions: INSTRUCTIONS, method: "getCapabilities", params: { includeSchemas: false } });
+    expect((await call("refresh_get_capabilities", { includeSchemas: true })).params).toEqual({ includeSchemas: true });
+    expect(await call("refresh_list_rules")).toEqual({ method: "listRules", notes: ["n"] });
+    expect(await call("refresh_get_schema", { kind: "rule" })).toEqual({ method: "getSchema", params: { kind: "rule" }, notes: ["n"] });
+  });
+
+  it("an older extension that doesn't know includeSchemas still answers get_capabilities", async () => {
+    const seen: unknown[] = [];
+    const old = async (method: string, params: unknown) => {
+      seen.push(params);
+      if (params && typeof params === "object" && Object.keys(params).length > 0)
+        return { ok: false, error: { code: "invalid_params", message: "Invalid parameters", diagnostics: [{ message: "Unknown field(s): includeSchemas" }] } };
+      return { ok: true, result: { method, ruleSchema: {}, notes: ["n"] } };
+    };
+    const handle = createMcpHandler({ callApi: old });
+    const r = (await handle({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "refresh_get_capabilities", arguments: {} } })).result;
+    expect(r.isError).toBeUndefined();
+    expect(JSON.parse(r.content[0].text)).toEqual({ instructions: INSTRUCTIONS, method: "getCapabilities", ruleSchema: {} });
+    expect(seen).toEqual([{ includeSchemas: false }, undefined]);
+    // An agent that asked for includeSchemas itself gets the extension's answer, not a silent retry.
+    const asked = (
+      await handle({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "refresh_get_capabilities", arguments: { includeSchemas: true } } })
+    ).result;
+    expect(asked.isError).toBe(true);
+  });
+
+  it("refresh_get_schema offers the kinds the API accepts", async () => {
+    const env = createApiEnv();
+    await env.pairAgent();
+    const kinds = TOOLS.find((t) => t.name === "refresh_get_schema").inputSchema.properties.kind.enum;
+    for (const kind of kinds) await expect(env.service.call(env.agent(), "getSchema", { kind })).resolves.toHaveProperty("schema");
+    await expect(env.service.call(env.agent(), "getSchema", { kind: "page" })).rejects.toMatchObject({ code: "invalid_params" });
   });
 
   it("errors are compact too", async () => {

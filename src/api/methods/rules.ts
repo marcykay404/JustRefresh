@@ -6,26 +6,48 @@ import type { RuleInput } from "../../core/types";
 import { STATUS_LABELS } from "../../core/types";
 import { compilePattern, matchesAny, patternToString, validatePattern } from "../../core/url-pattern";
 import { z } from "../../core/zod";
-import { buildCapabilities, NO_SCHEMAS } from "../capabilities";
+import { buildCapabilities, NO_SCHEMAS, schemaFor } from "../capabilities";
 import { ApiError, assertCanModify, redactUrl } from "../permissions";
 import { m, none, ruleId, ruleInput, type MethodDef } from "../method";
 import type { ServiceInternals } from "../rule-api";
 
 export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
   const d = svc.deps;
+  const loadSchemas = async () =>
+    (await d.schemas?.().catch((e: Error) => {
+      console.warn("JustRefresh: JSON Schemas unavailable", e);
+      return null;
+    })) ?? null;
   return {
     getCapabilities: m({
       scope: "rules:read",
-      params: none,
-      handler: async () =>
-        buildCapabilities(
-          svc.registries,
-          (await d.config.get()).settings,
-          (await d.schemas?.().catch((e: Error) => {
-            console.warn("JustRefresh: JSON Schemas unavailable for capabilities", e);
-            return null;
-          })) ?? NO_SCHEMAS,
-        ),
+      params: z.optional(z.strictObject({ includeSchemas: z.optional(z.boolean()) })),
+      handler: async (_a, p) => {
+        // Left out = the full payload, as before: older bridges and extension agents keep their schemas.
+        // The MCP bridge asks for the summary unless the agent wants everything.
+        const includeSchemas = p?.includeSchemas !== false;
+        // The schema files are only read when they're asked for.
+        const schemas = includeSchemas ? ((await loadSchemas()) ?? NO_SCHEMAS) : NO_SCHEMAS;
+        return buildCapabilities(svc.registries, (await d.config.get()).settings, schemas, { includeSchemas });
+      },
+    }),
+    getSchema: m({
+      scope: "rules:read",
+      params: z.strictObject({
+        kind: z.enum(["rule", "condition", "trigger", "action"]),
+        type: z.optional(z.string().check(z.minLength(1), z.maxLength(64))),
+      }),
+      handler: async (_a, p) => {
+        if (p.kind === "rule" && p.type !== undefined) throw new ApiError("invalid_params", "A rule schema has no type; leave type out");
+        const schemas = await loadSchemas();
+        if (!schemas) throw new ApiError("internal", "The JSON Schemas couldn't be read from the extension package");
+        const schema = schemaFor(svc.registries, schemas, p.kind, p.type);
+        if (schema === null) {
+          const types = svc.registries[`${p.kind}s` as "conditions"].list().map((h) => h.type);
+          throw new ApiError("not_found", `No ${p.kind} type "${p.type}". Types: ${types.join(", ")}`);
+        }
+        return { kind: p.kind, ...(p.type !== undefined ? { type: p.type } : {}), schema };
+      },
     }),
     listRules: m({
       scope: "rules:read",

@@ -17,6 +17,9 @@ import { clean, draftFromJson, initialDraft, stripMeta, type Capabilities, type 
 import { LimitsCard, NameCard, OnCard, Summary, ThenCard, UntilCard, WhenCard, type SectionProps } from "./sections";
 import { TestPanel } from "./testing";
 
+/** The builder draws its forms from each handler's JSON Schema. */
+const SCHEMAS = { includeSchemas: true };
+
 export { PatternList } from "./controls";
 
 /** The part of the rule a diagnostic is about: "name", "trigger", "actions", … ("$" = the whole rule). */
@@ -38,7 +41,7 @@ const PART_NAMES: Record<string, string> = {
 /** `fromTemplate`: start from the rule a template filled in (Templates → Customise in the Rule Builder). */
 export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: string; initialUrl?: string; fromTemplate?: boolean }) {
   const dialog = useDialog();
-  const caps = useApi<Capabilities>("getCapabilities");
+  const caps = useApi<Capabilities>("getCapabilities", SCHEMAS);
   const tabs = useApi<TabInfo[]>("listTabs");
   const [existing, setExisting] = useState<Rule | null>(null);
   const [draft, setDraft] = useState<Draft>(() => {
