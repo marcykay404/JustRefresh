@@ -90,7 +90,7 @@ All generated from the real built extension: `npm run build && npm run store:ass
 
 **Remote code:** No. All code is packaged with the extension (`script-src 'self'`).
 
-**Data usage:** JustRefresh doesn't send user data to the developer or anyone else. In the form, tick none of the data types, and certify:
+**Data usage:** JustRefresh doesn't send user data to the developer. In the form, tick **Web history** (decided: see below), and certify:
 
 - it does not sell or transfer user data to third parties, outside the approved use cases;
 - it does not use or transfer user data for purposes unrelated to its single purpose;
@@ -98,7 +98,7 @@ All generated from the real built extension: `npm run build && npm run store:ass
 
 Page content (for conditions) and activity (typing, unsaved forms) are read on the user's device to decide whether to refresh, and never sent to the developer. The optional webhook action sends a short message only to `localhost`, and only when the user switches webhooks on.
 
-A judgement call to make before submitting: AI apps (through the optional local bridge) or extensions the user approves can read the titles and addresses of open tabs, the user's rules and their history. That happens on the user's own computer, at the user's direction, and never reaches the developer, so "none" is arguable; but the store's User Data policy also covers passing data to third parties, which an AI app can be, so ticking "Web history" is the safer choice. Either way, PRIVACY.md says so.
+Why "Web history": AI apps (through the optional local bridge) or extensions the user approves can read the titles and addresses of open tabs, the user's rules and the refresh history. That happens on the user's own computer, at the user's direction, and never reaches the developer, so "none" would be arguable; but the store's User Data policy also covers passing data to third parties, which an AI app can be, so "Web history" is the safer answer. If the form asks how it's used: "Only when the user connects an AI app or extension and allows it: the titles and addresses of open tabs (query strings hidden by default), the user's refresh rules and the refresh history are given to that app on the user's own computer, so it can set up refresh rules. Never sent to the developer." PRIVACY.md says the same.
 
 **Privacy policy URL:** https://github.com/marcykay404/JustRefresh/blob/main/PRIVACY.md
 

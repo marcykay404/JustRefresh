@@ -15,11 +15,11 @@ remembered by address and title, so they resume after a restart; the rest of
 the state of running tabs is kept only until Chrome closes.
 
 - Clear the history on the History page, and the agent activity log in Agent
-  Integrations. **Reset to defaults** in Dashboard → Settings deletes your
-  rules, exclusions, settings and paired agents, but not the history or logs
-  (a copy of the previous settings is kept as a backup until your next
-  change). Removing an agent deletes its events. Uninstalling the extension
-  removes all of it.
+  Integrations. **Reset to defaults** in Dashboard → Settings deletes all of
+  it: your rules, exclusions, settings, tab timers and paired agents (with no
+  backup of them kept), what it remembers about each tab, the history, the
+  agent log and agents' events. Removing an agent deletes its events.
+  Uninstalling the extension removes all of it too.
 - **Export** in Settings saves your rules, exclusions and (if you choose)
   settings as a file in your downloads. That file is yours: uninstalling
   doesn't remove it.
@@ -63,7 +63,9 @@ Nothing, unless you switch on one of these yourself:
   their own online service.
 - If you switch on "Also write each app's events to a file", events about an
   app's own rules are also written to a file in the `.justrefresh` folder in
-  your home folder, readable only by your account.
+  your home folder, readable only by your account. These files are yours:
+  neither reset nor uninstalling the extension removes them (uninstalling the
+  bridge does not either; delete the `events` folder to remove them).
 - **Links you click**, such as "Buy me a coffee" or "Source code", open those
   websites in a new tab, like any link.
 

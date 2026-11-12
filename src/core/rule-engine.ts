@@ -67,6 +67,16 @@ export class RuleEngine extends CycleEngine {
 
   private reconcileChain: Promise<unknown> = Promise.resolve();
 
+  /**
+   * Reset: a re-check still running (it read the configuration before the
+   * reset) finishes first, so it can't carry on with the old rules for tabs
+   * after the one it is on.
+   */
+  override async forgetAllTabs() {
+    await this.reconcileChain;
+    return super.forgetAllTabs();
+  }
+
   private async reconcileOnce(reason: "startup" | "wake" | "config", opts: ReconcileOptions): Promise<TabInfo[]> {
     const [config, tabs, runtimes, alarms] = await Promise.all([
       this.deps.stores.config.get(),

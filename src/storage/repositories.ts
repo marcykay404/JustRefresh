@@ -87,13 +87,17 @@ export class ConfigRepository {
     return fresh;
   }
 
-  /** Serialized read-modify-write. `fn` may mutate the draft or return a new config. */
-  async update(fn: (draft: Config) => Config | void | Promise<Config | void>): Promise<Config> {
+  /**
+   * Serialized read-modify-write. `fn` may mutate the draft or return a new
+   * config. The config before the change is kept as the backup, unless
+   * `discardBackup` (a reset, where nothing of the old one should remain).
+   */
+  async update(fn: (draft: Config) => Config | void | Promise<Config | void>, opts: { discardBackup?: boolean } = {}): Promise<Config> {
     const result = await this.mutex.run(async () => {
       const current = this.cache ?? (await this.load());
       const draft = structuredClone(current);
       const next = ((await fn(draft)) ?? draft) as Config;
-      await this.kv.set({ [CONFIG_KEY]: next, [CONFIG_BACKUP_KEY]: current });
+      await this.kv.set({ [CONFIG_KEY]: next, [CONFIG_BACKUP_KEY]: opts.discardBackup ? next : current });
       this.cache = next;
       return next;
     });
@@ -101,8 +105,8 @@ export class ConfigRepository {
     return result;
   }
 
-  async replace(config: Config): Promise<Config> {
-    return this.update(() => config);
+  async replace(config: Config, opts: { discardBackup?: boolean } = {}): Promise<Config> {
+    return this.update(() => config, opts);
   }
 }
 
@@ -238,6 +242,15 @@ export class AgentEventRepository {
       await this.kv.set({ [AGENT_EVENTS_KEY]: next });
       this.cache = next;
       return added;
+    });
+  }
+
+  /** Reset to defaults: every agent's events go. The numbering carries on, so an old cursor never matches new events. */
+  clear(): Promise<void> {
+    return this.mutex.run(async () => {
+      const next = { seq: (await this.load()).seq, events: [], dropped: {} };
+      await this.kv.set({ [AGENT_EVENTS_KEY]: next });
+      this.cache = next;
     });
   }
 
