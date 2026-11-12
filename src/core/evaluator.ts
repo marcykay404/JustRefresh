@@ -127,11 +127,15 @@ export async function evaluateConditionTree(root: ConditionNode, input: Evaluati
  */
 export function onlyFramesNotReady(trace: EvaluationTrace): boolean {
   if (trace.result.status !== "unknown") return false;
+  // Only the unknown parts decide the result's unknown: a subtree that resolved doesn't count.
   const leaves: EvaluationTrace[] = [];
-  const walk = (t: EvaluationTrace) => (t.children?.length ? t.children.forEach(walk) : leaves.push(t));
+  const walk = (t: EvaluationTrace) => {
+    if (t.result.status !== "unknown") return;
+    if (t.children?.length) t.children.forEach(walk);
+    else leaves.push(t);
+  };
   walk(trace);
-  const unknown = leaves.filter((l) => l.result.status === "unknown");
-  return unknown.length > 0 && unknown.every((l) => l.result.status === "unknown" && l.result.code === "frame_not_ready");
+  return leaves.length > 0 && leaves.every((l) => l.result.status === "unknown" && l.result.code === "frame_not_ready");
 }
 
 /** Human-readable one-line explanation of a trace (for status & history). */

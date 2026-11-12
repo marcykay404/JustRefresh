@@ -367,6 +367,8 @@ export interface TabRuntime {
   refreshCount: number;
   /** Clicks by the rule's click action in this run; they count toward `limits.maxRefreshes` too. */
   clickCount?: number;
+  /** Checks in a row that a frame of the page couldn't be read (see FRAME_WAIT_CHECKS). */
+  framesWaiting?: number;
   /** When the rule last clicked: a page that click opens shortly after is the rule's own doing (the run goes on). */
   clickedAt?: number;
   navigationCount: number;

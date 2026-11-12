@@ -125,9 +125,11 @@ export abstract class EngineBase {
     const cur = rt ?? newRuntime(tab.id, tab.url, this.now());
     if (res.kind !== "controller") return restingState(cur, tab, res);
     const rule = res.controller;
-    // A page the rule's own click opened is part of its run (its counts and limits go on).
+    // The first page change shortly after the rule's own click is that click's doing: part of its run
+    // (its counts and limits go on). Later ones are yours.
     const clicked = cur.clickedAt !== undefined && this.now() - cur.clickedAt < CLICK_NAVIGATION_MS;
     if (isNewRun(cur, tab, rule, opts.ownNavigation || clicked)) return this.newRun(cur, tab, rule, config, opts);
+    if (clicked && cur.url !== tab.url) return { ...this.carryOn(cur, tab, rule, opts.restoring === true, opts.slot ?? 0), clickedAt: undefined };
     return this.carryOn(cur, tab, rule, opts.restoring === true, opts.slot ?? 0);
   }
 

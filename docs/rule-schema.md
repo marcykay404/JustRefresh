@@ -49,8 +49,9 @@ gives up after `maxUnknownRetries`, or `onUnknown: "stop"`), a
 "Monitoring stopped" notification is shown (if notifications are enabled),
 so an unattended "refresh until" never ends silently.
 `limits.maxRefreshes` counts the rule's clicks as well as its refreshes; a
-click or refresh that would go over it isn't made, and a page a click opens
-(within 15 seconds) stays in the same run, so its counts go on.
+click or refresh that would go over it isn't made, and the first page change
+within 15 seconds of the rule's click is that click's: it stays in the same
+run, so its counts go on (a later one, yours, starts a new run).
 `safety.maxRefreshes` is accepted for compatibility and normalized into
 `limits.maxRefreshes`. The API adds a read-only `meta` object
 (`createdAt`, `updatedAt`, `revision`, `origin`, `draft`).
@@ -111,7 +112,9 @@ itself only. While a frame can't be read yet, conditions that depend on it
 (`dom.missing`, `not_contains`, `dom.text_lost`, `dom.changed`, or a selector
 not found in the page itself) are `unknown` with code `frame_not_ready`, so
 `not` can't turn them into a match. A check that is unknown only for that
-reason counts as "not this time": the `onUnknown` policy isn't applied. Typing and unsaved changes in
+reason counts as "not this time" (the `onUnknown` policy isn't applied),
+up to 3 checks in a row; after that the frame counts as the page not being
+readable, and `onUnknown` applies. Typing and unsaved changes in
 any frame with access protect the page like its own.
 
 ### Conditions that remember the previous check

@@ -56,6 +56,25 @@ if (g[FLAG] !== version) {
   if (window === window.top) setUpTopFrame(monitor);
 }
 
+/**
+ * Frames whose content the extension would read: same origin as the page and
+ * shown (cross-origin ones can't be told apart from ads here, so they don't
+ * count). Used only when the frames can't be asked, to know whether the page
+ * alone is the whole answer.
+ */
+function readableFrames(): number {
+  let n = 0;
+  for (const el of document.querySelectorAll("iframe, frame")) {
+    try {
+      const doc = (el as HTMLIFrameElement).contentDocument;
+      if (doc && (el as HTMLElement).offsetWidth > 0 && doc.location.href !== "about:blank") n++;
+    } catch {
+      /* cross-origin */
+    }
+  }
+  return n;
+}
+
 function setUpTopFrame(monitor: ActivityMonitor) {
   // Whether this page came from submitting a form (reloading it would send the form again).
   const formResult = detectFormResult(
@@ -80,7 +99,7 @@ function setUpTopFrame(monitor: ActivityMonitor) {
       requestId: msg.requestId,
       kind: "evaluate",
       results: msg.conditions.slice(0, 100).map((c) => evaluateDomCondition(c, document, { includeText: msg.includeText })),
-      frames: window.frames.length,
+      frames: readableFrames(),
     }),
     testSelector: (msg) => ({ requestId: msg.requestId, kind: "testSelector", result: testSelector(document, msg.selector, msg.includeText) }),
     click: (msg) => ({ requestId: msg.requestId, kind: "click", result: clickElement(document, msg.selector) }),

@@ -27,6 +27,9 @@ import { FAST_WAIT_REASON } from "./fast-site-limit";
 import { alarmName, NAVIGATION_TIMEOUT_MS, type CycleResult } from "./ports";
 import { SafetyBlock, siteKey, waitingReason, withMemory } from "./support";
 
+/** Checks in a row a frame may stay unreadable before that counts as the page not being readable. */
+export const FRAME_WAIT_CHECKS = 3;
+
 /** Everything one cycle works with. `rt` is updated as the cycle moves on. */
 interface Cycle {
   tabId: number;
@@ -227,12 +230,20 @@ export abstract class CycleEngine extends EngineBase {
     return { ...(await this.act(c, status, trace)), evaluation: trace };
   }
 
-  /** The actions for what the check found. A frame still loading isn't a problem with the page: "not this time", keeping the unknown streak. */
+  /**
+   * The actions for what the check found. A frame still loading isn't a
+   * problem with the page: "not this time", keeping the unknown streak. A
+   * frame that still can't be read after FRAME_WAIT_CHECKS checks in a row is
+   * one: the rule's onUnknown policy applies, so it doesn't wait unseen forever.
+   */
   private async act(c: Cycle, status: Outcome, trace: EvaluationTrace | undefined): Promise<CycleResult> {
-    if (status === "matched") return this.onMatched(c);
     const framesLoading = status === "unknown" && !!trace && onlyFramesNotReady(trace);
-    const result = status === "unknown" && !framesLoading ? await this.onUnknown(c, trace) : null;
-    return result ?? this.onNotMatched(c, framesLoading ? "not_matched" : status, framesLoading);
+    const waits = framesLoading ? (c.rt.framesWaiting ?? 0) + 1 : 0;
+    c.rt = { ...c.rt, framesWaiting: waits || undefined };
+    if (status === "matched") return this.onMatched(c);
+    const waiting = framesLoading && waits <= FRAME_WAIT_CHECKS;
+    const result = status === "unknown" && !waiting ? await this.onUnknown(c, trace) : null;
+    return result ?? this.onNotMatched(c, waiting ? "not_matched" : status, waiting);
   }
 
   private async onMatched(c: Cycle): Promise<CycleResult> {
@@ -340,7 +351,8 @@ export abstract class CycleEngine extends EngineBase {
       reload: async ({ bypassCache, keepScroll }) => {
         if (!allowRefresh) throw new Error("Refresh is not allowed in this phase");
         // A click earlier in this list may have used the last of the limit: the next check ends the run.
-        if (checkLimits(rule.limits, run.rt, this.now()).reached) return;
+        const limit = checkLimits(rule.limits, run.rt, this.now());
+        if (limit.reached) return { skipped: limit.reason };
         run.rt = await this.performReload(rule, tab, run.rt, bypassCache, config, keepScroll === true);
       },
       // Like a refresh: not where it could loop, and not while you type or have unsaved changes.

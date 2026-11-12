@@ -224,9 +224,9 @@ type FrameCall =
 
 /**
  * One frame's answer: its site's host (from its origin, which about:blank and
- * srcdoc frames inherit), the hosts of the frames it is nested in, whether to
- * leave it out (a hidden helper frame, or an empty about:blank one), and what
- * its content script returned (null: none of ours there yet, e.g. loading).
+ * srcdoc frames inherit; "" for file: pages), the hosts of the frames it is
+ * nested in, whether to leave it out (an empty about:blank one), and what its
+ * content script returned (null: none of ours there yet, e.g. loading).
  */
 type FrameAnswer<T> = { host: string; ancestors: string[]; skip: boolean; value: T | null };
 
@@ -258,11 +258,16 @@ async function inFrames<T>(tabId: number, call: FrameCall): Promise<FrameAnswer<
           const api = Object.hasOwn(g, key) ? g[key] : undefined;
           return api && typeof api.evaluate === "function" && api.version === chrome.runtime.getManifest().version ? api : null;
         };
-        /** Without our content script: a frame on its way to a page is "not read yet"; an empty about:blank or srcdoc one is nothing. */
+        /**
+         * Without our content script: a frame on its way to a page is "not read yet"; an empty
+         * about:blank or srcdoc one is nothing, and so is a lazy frame not scrolled to yet.
+         */
         const emptyBlank = () => {
           let pending = false;
           try {
-            pending = location.href === "about:blank" && !!window.frameElement?.getAttribute("src");
+            const el = window.frameElement as HTMLIFrameElement | null;
+            const src = el?.getAttribute("src") ?? "";
+            pending = location.href === "about:blank" && src !== "" && src !== "about:blank" && el?.loading !== "lazy";
           } catch {
             /* cross-origin parent */
           }
@@ -276,9 +281,8 @@ async function inFrames<T>(tabId: number, call: FrameCall): Promise<FrameAnswer<
               : api.testSelector(c.selector, c.includeText);
         const host = hostOf(self.origin && self.origin !== "null" ? self.origin : location.origin);
         const ancestors = [...(location.ancestorOrigins ?? [])].map(hostOf);
-        const hidden = window !== window.top && (innerWidth === 0 || innerHeight === 0);
         const api = ownApi();
-        return { host, ancestors, skip: hidden || (!api && emptyBlank()), value: api ? call(api) : null };
+        return { host, ancestors, skip: !api && emptyBlank(), value: api ? call(api) : null };
       },
     }),
     MESSAGE_TIMEOUT_MS,
@@ -300,7 +304,10 @@ async function inFrames<T>(tabId: number, call: FrameCall): Promise<FrameAnswer<
  */
 function ownSite<T>(answers: FrameAnswer<T>[]): FrameAnswer<T>[] {
   const site = siteOf(answers[0]!.host);
-  return answers.filter((a, i) => i === 0 || (!a.skip && a.host !== "" && siteOf(a.host) === site && a.ancestors.every((h) => siteOf(h) === site)));
+  // An opaque frame (sandboxed: no host) belongs to no site; on a file: page every frame's host is "".
+  return answers.filter(
+    (a, i) => i === 0 || (!a.skip && (a.host !== "" || site === "") && siteOf(a.host) === site && a.ancestors.every((h) => siteOf(h) === site)),
+  );
 }
 
 /** Best effort: the content script in the page's frames too (a copy already there does nothing). */
@@ -352,11 +359,10 @@ export const chromePage: PagePort & {
     if (!ok.ok) return { activity: null, reason: ok.reason };
     try {
       const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "activity" }, "activity");
-      // Typing in any frame counts too; unsaved changes only in frames of the page's own site (a script
-      // filling in an ad's form isn't yours). The top frame's answer stands if the frames can't be asked.
+      // Typing and unsaved changes in any frame with access count too (only real input marks a form
+      // changed, so a page's script can't). The top frame's answer stands if the frames can't be asked.
       const answers = await inFrames<ActivitySnapshot>(tabId, { kind: "activity" }).catch(() => []);
-      const own = new Set(ownSite(answers));
-      const frames = answers.slice(1).flatMap((a) => (a.value ? [own.has(a) ? a.value : { ...a.value, dirty: "clean" as const }] : []));
+      const frames = answers.slice(1).flatMap((a) => (a.value ? [a.value] : []));
       return { activity: frames.length ? mergeActivity([res.activity, ...frames]) : res.activity };
     } catch (e) {
       return { activity: null, reason: (e as Error).message };

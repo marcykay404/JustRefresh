@@ -77,6 +77,26 @@ describe("click action", () => {
     await env.engine.runCycle(1, "manual");
     expect(env.page.clicks).toHaveLength(1);
     expect(env.browser.reloads).toEqual([]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect((await env.history.list()).find((h) => h.action === "refresh")).toMatchObject({
+      outcome: "error",
+      reason: expect.stringMatching(/Not refreshed: Reached maximum/),
+    });
+  });
+
+  it("only the first page change after a click is the click's: one you make yourself starts a new run", async () => {
+    const env = await setup(whenInStock([{ type: "click", selector: "#add" }]));
+    await env.engine.runCycle(1, "manual");
+    const generation = (await env.runtime.get(1))!.generation;
+    env.browser.addTab(1, `${URL}?page=2`);
+    await env.engine.onTabUpdated(1, { url: `${URL}?page=2` }); // the click's
+    expect((await env.runtime.get(1))?.generation).toBe(generation);
+    env.clock.advance(3000);
+    env.browser.addTab(1, `${URL}?page=9`);
+    await env.engine.onTabUpdated(1, { url: `${URL}?page=9` }); // yours
+    const rt = (await env.runtime.get(1))!;
+    expect(rt.generation).toBeGreaterThan(generation);
+    expect(rt.clickCount ?? 0).toBe(0);
   });
 
   it("a page the click opens is part of the same run, so a 'next page' rule still stops at its limit", async () => {

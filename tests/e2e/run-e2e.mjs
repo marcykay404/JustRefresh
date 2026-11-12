@@ -67,6 +67,11 @@ const server = http.createServer((req, res) => {
     return res.end(
       `<title>Framed</title><h1>ERP</h1><iframe id="same" src="/panel"></iframe><iframe id="other" src="http://localhost:${server.address().port}/panel"></iframe>`,
     );
+  // A frame that loads only when scrolled to, and an empty one: neither is a frame "still loading".
+  if (path === "/lazy")
+    return res.end(
+      `<title>Lazy</title><h1>Report</h1><iframe src="about:blank"></iframe><div style="height:5000px"></div><iframe loading="lazy" src="/panel"></iframe>`,
+    );
   if (path === "/panel") return res.end(`<title>Panel</title><div id="panel-state">${panelText}</div><input id="note">`);
   if (path === "/stock") return res.end(`<title>Stock</title><p>Item 42</p><div>${stockText}</div>`);
   if (path === "/status") return res.end(`<title>Status</title><div id="status">${statusText}</div>`);
@@ -804,6 +809,23 @@ await test("frames: a condition inside an embedded frame, and typing in it, coun
   assert.match((await runtime(tabId)).status, /paused_(activity|unsaved)/);
   assert.equal(loads.get("/framed"), loadsBefore, "not reloaded while typing in the frame");
   await call("stopTab", { tabId });
+
+  // A lazy frame not scrolled to yet and an empty about:blank frame don't hold a check up as "loading".
+  const lazy = await context.newPage();
+  await lazy.goto(`${base}/lazy`);
+  const lazyTab = await tabIdFor(`${base}/lazy`);
+  const missing = await call("testRule", {
+    rule: {
+      name: "x",
+      target: { patterns: [`${base}/lazy`] },
+      trigger: { type: "interval", seconds: 60 },
+      stopWhen: { type: "dom.missing", selector: "#nothing" },
+      actions: { onMatched: [{ type: "stopRefresh" }] },
+    },
+    tabId: lazyTab,
+  });
+  assert.equal(missing.result?.status, "matched", JSON.stringify(missing));
+  await lazy.close();
   for (const r of others) await call("enableRule", { id: r.id });
   await page.close();
 });

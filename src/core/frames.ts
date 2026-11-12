@@ -35,6 +35,9 @@ export function mergeLeaf(leaf: ConditionNode, perFrame: EvaluationResult[]): Ev
   const [top, ...rest] = perFrame;
   if (!top) return { status: "unknown", code: "evaluation_error", reason: "No frame answered" };
   if (top.status === "unknown") return top;
+  // A frame that was read but can't be checked (a real error, not "loading") is the result's problem too.
+  const broken = rest.find((r) => r.status === "unknown" && r.code !== "page_not_ready" && r.code !== "frame_not_ready");
+  if (broken) return broken;
   const read = [top, ...rest.filter((r) => r.status !== "unknown")];
   const unread = read.length < perFrame.length;
   if (leaf.type === "dom.exists" || leaf.type === "dom.missing") return existence(leaf, read, unread);

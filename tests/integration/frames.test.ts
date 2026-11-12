@@ -107,6 +107,29 @@ describe("a frame that can't be read yet (still loading) never makes a condition
     expect((await once({ type: "dom.missing", selector: "#state" }, `<h1>ERP</h1>`, PANEL, null)).matched).toBe(false);
   });
 
+  it("a frame that never becomes readable counts as a problem after a few checks, so the rule doesn't wait unseen", async () => {
+    const env = await setup({ type: "dom.missing", selector: "#spinner" }, `<h1>ERP</h1>`, null);
+    const statuses: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      await env.engine.runCycle(1, "manual");
+      const rt = (await env.runtime.get(1))!;
+      statuses.push(rt.status);
+      if (rt.pendingReload) await env.completeNavigation(1);
+    }
+    expect(statuses).toEqual(["refreshing", "refreshing", "refreshing", "paused_unknown"]);
+    expect((await env.runtime.get(1))?.reason).toMatch(/couldn't be read yet/);
+  });
+
+  it("a frame read again resets the wait", async () => {
+    const env = await setup({ type: "dom.missing", selector: "#spinner" }, `<h1>ERP</h1>`, `<p id="spinner"></p>`);
+    for (const frame of [null, null, `<p id="spinner"></p>`, null, null, null]) {
+      env.page.setFrames(1, frame);
+      await env.engine.runCycle(1, "manual");
+      if ((await env.runtime.get(1))?.pendingReload) await env.completeNavigation(1);
+    }
+    expect((await env.runtime.get(1))?.status).not.toBe("paused_unknown");
+  });
+
   it("a real problem with the page alongside still gets the rule's unknown policy", async () => {
     const r = await once(
       {
@@ -196,6 +219,11 @@ describe("merging rules", () => {
   const m = (count: number, status: "matched" | "not_matched" = count ? "matched" : "not_matched"): EvaluationResult => ({ status, details: { count } });
   const loading: EvaluationResult = { status: "unknown", code: "page_not_ready", reason: "Document is still loading" };
 
+  it("a frame that was read but can't be checked (a real error) isn't passed off as loading", () => {
+    const broken: EvaluationResult = { status: "unknown", code: "evaluation_error", reason: "boom" };
+    expect(mergeLeaf({ type: "dom.missing", selector: "#x" } as ConditionNode, [m(0, "matched"), broken])).toBe(broken);
+  });
+
   it("the page's own problems are the result's", () => {
     expect(mergeLeaf({ type: "dom.exists", selector: "#x" } as ConditionNode, [loading, m(1)])).toBe(loading);
   });
@@ -245,5 +273,22 @@ describe("merging rules", () => {
       { ok: true as const, count: 2, samples: [{ tag: "b" }, { tag: "c" }] },
     ]);
     expect(r).toEqual({ ok: true, count: 3, samples: [{ tag: "a" }, { tag: "b" }, { tag: "c" }] });
+  });
+});
+
+describe("telling 'only frames loading' from real problems", () => {
+  const leaf = (status: EvaluationResult) => ({ type: "x", result: status });
+  const frame: EvaluationResult = { status: "unknown", code: "frame_not_ready", reason: "loading" };
+  const real: EvaluationResult = { status: "unknown", code: "invalid_selector", reason: "bad" };
+
+  it("a part that resolved anyway doesn't count", async () => {
+    const { onlyFramesNotReady } = await import("@/core/evaluator");
+    const trace = {
+      type: "any",
+      result: frame,
+      children: [{ type: "all", result: { status: "not_matched" } as EvaluationResult, children: [leaf({ status: "not_matched" }), leaf(real)] }, leaf(frame)],
+    };
+    expect(onlyFramesNotReady(trace)).toBe(true);
+    expect(onlyFramesNotReady({ type: "any", result: frame, children: [leaf(real), leaf(frame)] })).toBe(false);
   });
 });

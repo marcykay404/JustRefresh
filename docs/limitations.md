@@ -32,14 +32,14 @@
   worked out without a public-suffix list: the last two parts of the
   address, or three under a country's second level (`example.com.sg`), so
   shared hosting domains (`github.io`, `cloudfront.net`, …) count as one
-  site. Typing counts in every frame with access, unsaved changes only in
-  frames of the page's own site. A frame that can't be read yet (still
-  loading) leaves conditions that depend on it "unknown: a frame couldn't be
-  read yet": the rule neither matches nor pauses, and tries again at the
-  next check. Hidden frames and empty `about:blank` / `srcdoc` frames are
-  left out; `about:blank` and `srcdoc` frames with content (rich-text
-  editors) are read. Frames are taken in the order Chrome numbers them, not
-  their order on the page, for "the first frame where the selector
+  site. Typing and unsaved changes count in every frame with access. A frame
+  that can't be read yet (still loading) leaves conditions that depend on it
+  "unknown: a frame couldn't be read yet": the rule neither matches nor
+  pauses and tries again; after 3 such checks in a row the rule's "when the
+  page can't be checked" setting applies. Empty `about:blank` / `srcdoc`
+  frames and lazy frames not scrolled to yet are left out; ones with content
+  (rich-text editors) are read. Frames are taken in the order Chrome numbers
+  them, not their order on the page, for "the first frame where the selector
   matches". Picker, click, highlight and "keep scroll position" work in the
   top frame only.
 - **Activity before monitoring.** On pages loaded before site access was

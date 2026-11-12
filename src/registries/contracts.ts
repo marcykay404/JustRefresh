@@ -87,7 +87,8 @@ export interface ActionContext {
   /** What the check found: why these actions run. */
   condition: "matched" | "not_matched" | "unknown";
   now: number;
-  reload(opts: { bypassCache: boolean; keepScroll?: boolean }): Promise<void>;
+  /** Resolves with a reason when the refresh wasn't made (the rule's limit was reached earlier in this list). */
+  reload(opts: { bypassCache: boolean; keepScroll?: boolean }): Promise<void | { skipped: string }>;
   /** Click an element on the page. Waits like a refresh while you type or have unsaved changes (throws to postpone). */
   click(selector: string): Promise<{ ok: true } | { ok: false; error: string }>;
   /** Highlight an element or text on the page and scroll to it (not while the page is in use). */
