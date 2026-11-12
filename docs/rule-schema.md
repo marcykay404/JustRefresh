@@ -1,7 +1,8 @@
 # Rule schema (v1)
 
 Authoritative JSON Schema: [`schemas/rule.schema.json`](../schemas/rule.schema.json)
-(also returned by the `getCapabilities` API as `ruleSchema`). Runtime
+(also returned by the `getCapabilities` API as `ruleSchema`, unless
+`includeSchemas: false`; `getSchema` returns one piece at a time). Runtime
 validation is stricter than the JSON Schema: it also checks URL pattern
 syntax, regex safety, CSS selector syntax (where a DOM is available),
 condition depth (≤ 6) and size (≤ 50 nodes), refresh loops, and

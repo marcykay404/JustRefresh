@@ -48,7 +48,7 @@ apps → Set up) offers the bridge as one file and the install command.
 
 | Method                  | Scope          | Params                                                                 |
 | ----------------------- | -------------- | ---------------------------------------------------------------------- |
-| `getCapabilities`       | rules:read     | `{ includeSchemas? }` (default: a summary without JSON Schemas)        |
+| `getCapabilities`       | rules:read     | `{ includeSchemas? }` (`false`: a summary without JSON Schemas)        |
 | `getSchema`             | rules:read     | `{ kind: "rule" \| "condition" \| "trigger" \| "action", type? }`      |
 | `listTabs`              | tabs:read      | —                                                                      |
 | `listRules` / `getRule` | rules:read     | `{ id }`                                                               |
@@ -86,7 +86,9 @@ apps → Set up) offers the bridge as one file and the install command.
 
 ## Typical workflow (FR-18)
 
-1. `getCapabilities` (a summary: types, limits, notes) → `getSchema` for the
+1. `getCapabilities({ includeSchemas: false })` (a summary: types, limits,
+   notes; left out, it returns every schema as before; the MCP tool sends
+   the summary unless asked) → `getSchema` for the
    parts you need (`{ kind: "rule" }` for a rule's fields, `{ kind, type }`
    for one condition, trigger or action) → `listTabs` → pick the tab.
 2. Draft a rule; `validateRule`; fix diagnostics by path.
