@@ -37,7 +37,11 @@ import { tabsMethods } from "./methods/tabs";
 import { agentFor, ApiError, authorize, redactConditionUrls, redactPattern, redactUrl } from "./permissions";
 
 export interface ApiDeps {
-  config: { get(): Promise<Config>; update(fn: (c: Config) => Config | void): Promise<Config>; replace(c: Config): Promise<Config> };
+  config: {
+    get(): Promise<Config>;
+    update(fn: (c: Config) => Config | void): Promise<Config>;
+    replace(c: Config, opts?: { discardBackup?: boolean }): Promise<Config>;
+  };
   runtime: { get(tabId: number): Promise<TabRuntime | null>; getAll(): Promise<TabRuntime[]> };
   history: { append(e: HistoryEntry): Promise<void>; list(): Promise<HistoryEntry[]>; clear(): Promise<void> };
   audit: { append(e: AuditEntry): Promise<void>; list(): Promise<AuditEntry[]>; clear(): Promise<void> };

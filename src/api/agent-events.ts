@@ -161,6 +161,11 @@ export class AgentEvents {
     return this.deps.store.forget(agentId);
   }
 
+  /** Every agent's events (Reset to defaults). */
+  clear(): Promise<void> {
+    return this.deps.store.clear();
+  }
+
   async list(agentId: string | null, f: EventFilter): Promise<EventPage> {
     const s = await this.deps.store.read();
     // A cursor from before the events were reset (extension reinstalled, data cleared): start over.

@@ -147,8 +147,11 @@ export function settingsMethods(svc: ServiceInternals): Record<string, MethodDef
       scope: null,
       params: z.strictObject({ confirm: z.literal(true) }),
       mutates: true,
+      // Everything: rules, settings, exclusions and agents (with no backup of them left behind),
+      // the history, the agent activity log and agents' events. Exported files are the user's own.
       handler: async () => {
-        await d.config.replace(defaultConfig());
+        await d.config.replace(defaultConfig(), { discardBackup: true });
+        await Promise.all([d.history.clear(), d.audit.clear(), d.events?.clear()]);
         return { reset: true };
       },
     }),

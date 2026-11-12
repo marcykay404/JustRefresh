@@ -15,11 +15,10 @@ remembered by address and title, so they resume after a restart; the rest of
 the state of running tabs is kept only until Chrome closes.
 
 - Clear the history on the History page, and the agent activity log in Agent
-  Integrations. **Reset to defaults** in Dashboard → Settings deletes your
-  rules, exclusions, settings and paired agents, but not the history or logs
-  (a copy of the previous settings is kept as a backup until your next
-  change). Removing an agent deletes its events. Uninstalling the extension
-  removes all of it.
+  Integrations. **Reset to defaults** in Dashboard → Settings deletes all of
+  it: your rules, exclusions, settings and paired agents (with no backup of
+  them kept), the history, the agent log and agents' events. Removing an agent
+  deletes its events. Uninstalling the extension removes all of it too.
 - **Export** in Settings saves your rules, exclusions and (if you choose)
   settings as a file in your downloads. That file is yours: uninstalling
   doesn't remove it.

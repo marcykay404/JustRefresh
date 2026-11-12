@@ -283,7 +283,8 @@ function ImportExport({ onDone }: { onDone: () => void }) {
           onClick={async () => {
             const ok = await dialog.confirm({
               title: "Reset everything to defaults?",
-              message: "All settings, rules, exclusions and paired agents are deleted. This can't be undone; export first if you're unsure.",
+              message:
+                "All settings, rules, exclusions and paired agents are deleted, with the history and the agent activity log. This can't be undone; export first if you're unsure.",
               confirmLabel: "Reset everything",
               danger: true,
             });
