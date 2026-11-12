@@ -12,7 +12,7 @@ import type { SchemaBundle } from "../api/capabilities";
 import { isApiRequest, isExtensionPage, toErrorResponse } from "../api/messaging";
 import { AuditRepository, ConfigRepository, HistoryRepository, RUNTIME_PREFIX, RuntimeRepository } from "../storage/repositories";
 import { chromeAlarms, chromeBrowser, chromePage, setShortTimerHandler, systemClock } from "./chrome-ports";
-import { hasHostAccess, injectIntoOpenTabs, syncContentScripts } from "./host-access";
+import { hasHostAccess, injectIntoOpenTabs, originPattern, syncContentScripts } from "./host-access";
 import { createThrottle } from "./throttle";
 import { restoreTabOverrides } from "./tab-manager";
 import { registerExternalMessaging } from "../integrations/external-messaging";
@@ -160,19 +160,23 @@ chrome.storage.onChanged.addListener((changes, area) => {
 const afterAccess = createAfterAccess({
   storage: chrome.storage.session,
   granted: async (origin) => chrome.permissions.contains({ origins: [origin] }).catch(() => false),
+  tabOn: async (tabId, origins) => {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    const pattern = tab?.url ? originPattern(tab.url) : null;
+    return pattern !== null && origins.includes(pattern);
+  },
   call: (method, params) => service.call({ type: "user" }, method, params),
-  notify: async (title, message) => {
-    if ((await config.get()).settings.notificationsEnabled) await chromeBrowser.notify(`justrefresh:access:${Date.now()}`, title, message);
+  popupOpen: async () => (await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.POPUP] })).length > 0,
+  notify: async (tabId, title, message) => {
+    // tabId before the time: clicking it brings the tab to the front (see notifications.onClicked).
+    if ((await config.get()).settings.notificationsEnabled) await chromeBrowser.notify(`justrefresh:access:${tabId}:${Date.now()}`, title, message);
   },
   now: () => Date.now(),
 });
 
 /** Run `fn` once startup has finished; `what` names it in the health report while it waits or runs. */
 async function after<T>(fn: () => Promise<T>, what = "an event"): Promise<T> {
-  return timed(what, async () => {
-    await ready;
-    return fn();
-  });
+  return timed(what, fn, ready);
 }
 
 /* ------------------------------------------------------------------ */
@@ -202,8 +206,8 @@ chrome.tabs.onReplaced.addListener((added, removed) => void after(() => engine.o
 chrome.permissions.onAdded.addListener(
   () =>
     void after(async () => {
-      // First what the click was for (the popup may be gone), then the open tabs.
-      await afterAccess.run();
+      // First what the click was for (the popup may be gone), then the open tabs (whatever happened to it).
+      await afterAccess.runGranted().catch((e) => console.warn("JustRefresh: couldn't finish what access was asked for", e));
       await syncContentScripts();
       await injectIntoOpenTabs();
       await engine.reconcileAll("config");
@@ -242,10 +246,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg.method === "afterAccess") {
         const req = parseAfterAccess(msg.params);
         if (!req) return { ok: false, error: { code: "invalid_params", message: "Invalid request" } };
-        await afterAccess.queue(req.origins, req.request);
+        await afterAccess.queue(req.id, req.origins, req.request);
         return { ok: true, result: null };
       }
-      if (msg.method === "runAfterAccess") return { ok: true, result: await afterAccess.run({ quiet: true }) };
+      if (msg.method === "runAfterAccess") {
+        const id = (msg.params as { id?: unknown } | undefined)?.id;
+        return { ok: true, result: typeof id === "string" ? await afterAccess.resultFor(id) : null };
+      }
       if (msg.method === "takeAfterAccess") {
         const tabId = (msg.params as { tabId?: unknown } | undefined)?.tabId;
         return { ok: true, result: typeof tabId === "number" ? await afterAccess.take(tabId) : null };

@@ -38,12 +38,18 @@ export function startupDone() {
   readyAt = Date.now();
 }
 
-/** Run `fn`, listed as waiting meanwhile, and noted if slow. */
-export async function timed<T>(what: string, fn: () => Promise<T>): Promise<T> {
+/**
+ * Run `fn` once `first` has settled (startup), listed as waiting the whole
+ * time; noted if `fn` itself was slow (time spent waiting for startup is
+ * startup's, already noted as its step).
+ */
+export async function timed<T>(what: string, fn: () => Promise<T>, first: Promise<unknown> = Promise.resolve()): Promise<T> {
   const id = ++seq;
-  const at = Date.now();
-  waiting.set(id, { what, at });
+  waiting.set(id, { what, at: Date.now() });
+  let at = Date.now();
   try {
+    await first;
+    at = Date.now();
     return await fn();
   } finally {
     waiting.delete(id);

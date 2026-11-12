@@ -12,14 +12,25 @@ import type { AfterAccessRequest, AfterAccessResult } from "../../background/aft
 
 export type { AfterAccessRequest, AfterAccessResult };
 
-export function askAccessThen(origin: string, then: AfterAccessRequest): Promise<{ granted: boolean; results: AfterAccessResult[] }> {
-  void api("afterAccess", { origins: [origin], ...then }).catch(() => undefined);
+/** `result`: what happened to this click's request (null: nothing ran, e.g. the tab moved on). */
+export function askAccessThen(origin: string, then: AfterAccessRequest): Promise<{ granted: boolean; result: AfterAccessResult | null }> {
+  const id = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  void api("afterAccess", { id, origins: [origin], ...then }).catch(() => undefined);
   return requestOrigins([origin])
     .catch(() => false)
     .then(async (granted) => {
-      // Still open: run it now and show what happened (if Chrome's event ran it first, there's nothing left).
-      if (!granted) return { granted, results: [] };
-      const results = ((await api("runAfterAccess").catch(() => [])) as AfterAccessResult[]) ?? [];
-      return { granted, results };
+      if (!granted) {
+        // Declined: don't leave it waiting to start later by surprise.
+        await api("takeAfterAccess", { tabId: then.params.tabId }).catch(() => null);
+        return { granted, result: null };
+      }
+      // Still open: whichever side ran it (Chrome's event may come first), say what happened.
+      const result = ((await api("runAfterAccess", { id }).catch(() => null)) as AfterAccessResult | null) ?? null;
+      return { granted, result };
     });
+}
+
+/** Cancel what a declined click left waiting (e.g. the user chose "refresh without protection" instead). */
+export function cancelAfterAccess(tabId: number): Promise<unknown> {
+  return api("takeAfterAccess", { tabId }).catch(() => null);
 }

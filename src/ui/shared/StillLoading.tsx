@@ -11,9 +11,12 @@ export const EXPLAIN_AFTER_MS = 5000;
 
 const seconds = (ms: number) => `${Math.round(ms / 1000)} s`;
 
+/** The service worker's report, or null when it doesn't answer within a moment (it may be stuck). */
 async function askHealth(): Promise<HealthReport | null> {
   try {
-    return ((await chrome.runtime.sendMessage({ channel: HEALTH_CHANNEL })) as HealthReport | undefined) ?? null;
+    const answer = chrome.runtime.sendMessage({ channel: HEALTH_CHANNEL }) as Promise<HealthReport | undefined>;
+    const late = new Promise<null>((r) => setTimeout(() => r(null), 1500));
+    return (await Promise.race([answer, late])) ?? null;
   } catch {
     return null;
   }

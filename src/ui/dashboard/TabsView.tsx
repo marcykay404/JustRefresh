@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
 import { useApi, useNow } from "../shared/hooks";
-import { openChromeSiteAccess } from "../shared/chrome-settings";
+import { fileAccessAllowed, openChromeSiteAccess } from "../shared/chrome-settings";
 import { formatDuration, formatTime, statusLabel } from "../shared/format";
 import { Empty, ErrorBox, StatusPill } from "../shared/components";
 import { INTERVAL_PRESETS } from "../../core/defaults";
@@ -39,6 +39,11 @@ export function TabsView() {
   const [bulkInterval, setBulkInterval] = useState(300);
   const [actionError, setActionError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Chrome's "Allow access to file URLs" for JustRefresh. */
+  const [filesOn, setFilesOn] = useState(false);
+  useEffect(() => {
+    void fileAccessAllowed().then(setFilesOn);
+  }, []);
   /** Tabs a bulk start left alone because access to their site was declined. */
   const [declined, setDeclined] = useState<{ tabs: Row[]; intervalSeconds: number } | null>(null);
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -77,8 +82,23 @@ export function TabsView() {
 
   const bulkStart = () => {
     const targets = rows.filter((r) => selected.has(r.tab.id) && !r.tab.restricted);
-    const origins = [...new Set(targets.map((r) => originOf(r.tab.url)).filter((o): o is string => !!o))];
     setDeclined(null);
+    // Tab timers use the default protection: without it, or set to refresh anyway, nothing needs reading.
+    const safety = data?.settings.defaultSafety;
+    const protects =
+      !!safety &&
+      safety.onActivityUnavailable !== "refresh" &&
+      (safety.pauseWhileTyping || safety.protectUnsavedChanges || safety.pauseOnMouse || safety.pauseOnScroll);
+    if (!protects) {
+      void (async () => {
+        for (const r of targets) await act("startTab", { tabId: r.tab.id, intervalSeconds: bulkInterval });
+        setNotice(`Started ${targets.length} tab(s)`);
+      })();
+      return;
+    }
+    // Local files can't be granted by a prompt while Chrome's file switch is off: leave them out of it
+    // (Chrome would refuse the whole request without asking).
+    const origins = [...new Set(targets.map((r) => originOf(r.tab.url)).filter((o): o is string => !!o && (o !== "file:///*" || filesOn)))];
     // Request site access in the click gesture; then start the tabs JustRefresh may read. Like the
     // popup, a declined site isn't started silently: it's listed, with "start without protection".
     void requestOrigins(origins)
@@ -369,10 +389,14 @@ const hostOfUrl = (url: string) => {
 /** A running tab JustRefresh can't see into: it won't refresh until allowed (the dashboard stays open for Chrome's prompt). */
 function AccessNeeded({ url }: { url: string }) {
   const origin = originOf(url);
+  const [filesOff, setFilesOff] = useState(false);
+  useEffect(() => {
+    if (origin === "file:///*") void fileAccessAllowed().then((ok) => setFilesOff(!ok));
+  }, [origin]);
   return (
     <div className="small warn-text" style={{ maxWidth: 220 }}>
       No site access: won't refresh until you allow it.{" "}
-      {origin === "file:///*" ? (
+      {filesOff ? (
         // Chrome lets extensions into local files only with its "Allow access to file URLs" switch.
         <button className="link small" onClick={openChromeSiteAccess}>
           Turn on file access in Chrome's settings

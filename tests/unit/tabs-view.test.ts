@@ -16,7 +16,7 @@ const row = (id: number, status: string | null, extra: Record<string, unknown> =
   ...extra,
 });
 const overview = {
-  settings: { paused: false, enabled: true },
+  settings: { paused: false, enabled: true, defaultSafety: { pauseWhileTyping: true, protectUnsavedChanges: true, onActivityUnavailable: "pause" } },
   counts: {},
   conflicts: [],
   tabs: [
@@ -117,4 +117,21 @@ it("a bulk start leaves a declined site alone, and offers to start it without pr
   const started = calls.filter((c) => c.method === "startTab").map((c) => c.params);
   expect(started.at(-1)).toMatchObject({ tabId: 4, safety: { onActivityUnavailable: "refresh" } });
   expect(el.textContent).not.toContain("Not started");
+});
+
+it("without protection by default, a bulk start doesn't ask Chrome: nothing needs reading", async () => {
+  const safety = overview.settings.defaultSafety;
+  overview.settings.defaultSafety = { ...safety, pauseWhileTyping: false, protectUnsavedChanges: false };
+  try {
+    await act(async () => root.render(createElement(DialogProvider, null, createElement(TabsView))));
+    await flush();
+    permissionsRequest.mockClear();
+    await act(async () => rowOf(4).querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    await act(async () => [...el.querySelectorAll("button")].find((b) => b.textContent === "Start refreshing")!.click());
+    await flush();
+    expect(permissionsRequest).not.toHaveBeenCalled();
+    expect(calls.filter((c) => c.method === "startTab").map((c) => (c.params as { tabId: number }).tabId)).toEqual([4]);
+  } finally {
+    overview.settings.defaultSafety = safety;
+  }
 });

@@ -9,6 +9,8 @@ describe("health report", () => {
       vi.advanceTimersByTime(2500);
       let release!: () => void;
       const running = timed("request getTabState", () => new Promise<void>((r) => (release = r)));
+      await Promise.resolve(); // it starts once startup (here: nothing) has settled
+      await Promise.resolve();
       vi.advanceTimersByTime(4000);
       const during = healthReport();
       expect(during.ready).toBe(false);
@@ -27,4 +29,25 @@ describe("health report", () => {
       vi.useRealTimers();
     }
   });
+});
+
+it("doesn't blame work for the time it spent waiting for startup", async () => {
+  vi.useFakeTimers();
+  try {
+    let started!: () => void;
+    const startup = new Promise<void>((r) => (started = r));
+    const before = healthReport().slow.length;
+    const work = timed("tab 9 complete change", async () => undefined, startup);
+    vi.advanceTimersByTime(5000);
+    expect(healthReport().waiting.map((w) => w.what)).toContain("tab 9 complete change");
+    started();
+    await work;
+    expect(
+      healthReport()
+        .slow.slice(before)
+        .map((s) => s.what),
+    ).not.toContain("tab 9 complete change");
+  } finally {
+    vi.useRealTimers();
+  }
 });

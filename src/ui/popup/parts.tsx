@@ -490,6 +490,30 @@ export function ProtectionLine(p: ProtectionProps) {
   );
 }
 
+/** "Stop when this text appears / disappears". */
+function UntilModeChoice({ mode, onChange }: { mode: UntilMode; onChange: (m: UntilMode) => void }) {
+  return (
+    <div className="col" style={{ gap: 4 }}>
+      <span className="small muted" id="until-mode">
+        Stop when this text
+      </span>
+      <div className="seg" role="group" aria-labelledby="until-mode">
+        {(["appears", "disappears"] as const).map((m) => (
+          <button key={m} type="button" className={mode === m ? "selected" : ""} aria-pressed={mode === m} onClick={() => onChange(m)}>
+            {m}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** What "Start watching" will do, for the mode chosen. */
+const untilExplanation = (mode: UntilMode) =>
+  `It looks anywhere on this page (ignoring upper/lower case), then stops refreshing and notifies you with a sound${
+    mode === "appears" ? ", and highlights the text on the page" : ". The text must be on the page now"
+  }. You'll find it under Rules in the dashboard.`;
+
 export function UntilForm(p: {
   site: string;
   url: string;
@@ -523,28 +547,13 @@ export function UntilForm(p: {
           {p.restored.note}
         </span>
       )}
-      <div className="col" style={{ gap: 4 }}>
-        <span className="small muted" id="until-mode">
-          Stop when this text
-        </span>
-        <div className="seg" role="group" aria-labelledby="until-mode">
-          <button type="button" className={mode === "appears" ? "selected" : ""} aria-pressed={mode === "appears"} onClick={() => setMode("appears")}>
-            appears
-          </button>
-          <button type="button" className={mode === "disappears" ? "selected" : ""} aria-pressed={mode === "disappears"} onClick={() => setMode("disappears")}>
-            disappears
-          </button>
-        </div>
-      </div>
+      <UntilModeChoice mode={mode} onChange={setMode} />
       <input aria-label="Text to look for" placeholder="e.g. In stock" value={text} maxLength={200} onChange={(e) => setText(e.target.value)} autoFocus />
       <span className="small muted">Checking every</span>
       {p.picker}
       {p.problem && <span className="small field-error">{p.problem}</span>}
       <QueryChoice url={p.url} anyQuery={anyQuery} onChange={setAnyQuery} />
-      <span className="small muted">
-        It looks anywhere on this page (ignoring upper/lower case), then stops refreshing and notifies you with a sound
-        {mode === "appears" ? ", and highlights the text on the page" : ". The text must be on the page now"}. You'll find it under Rules in the dashboard.
-      </span>
+      <span className="small muted">{untilExplanation(mode)}</span>
       <button type="submit" className="primary big" disabled={!ready}>
         {busy ? "Setting up…" : "Start watching"}
       </button>

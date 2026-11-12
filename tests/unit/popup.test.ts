@@ -242,6 +242,7 @@ describe("simpler popup", () => {
     expect(toldFirst).toBe(true);
     expect(called("afterAccess")).toEqual([
       {
+        id: expect.any(String),
         origins: ["https://www.youtube.com/*"],
         method: "refreshUntil",
         params: expect.objectContaining({ tabId: 1, url: URL_, text: "In stock", mode: "appears", seconds: 60 }),
@@ -385,8 +386,8 @@ describe("declining site access, then allowing it", () => {
     expect(permissionsRequest).toHaveBeenCalledTimes(2); // Start, then Allow access: no third request outside a click
     // Each click tells the service worker what it's for (it starts the tab once access is granted).
     expect(called("afterAccess")).toEqual([
-      { origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 300 } },
-      { origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 300 } },
+      { id: expect.any(String), origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 300 } },
+      { id: expect.any(String), origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 300 } },
     ]);
     expect(called("runAfterAccess")).toHaveLength(1);
     expect(text()).not.toContain("won't refresh this page until you allow access");
@@ -483,7 +484,9 @@ describe("opened again after Chrome's prompt closed it and access was declined",
     expect(text()).toContain("won't refresh this page until you allow access");
     await click("Allow access");
     await tick();
-    expect(called("afterAccess")).toEqual([{ origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 900 } }]);
+    expect(called("afterAccess")).toEqual([
+      { id: expect.any(String), origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 900 } },
+    ]);
   });
 
   it("Refresh until: the form comes back as it was, saying nothing was set up", async () => {
@@ -508,7 +511,12 @@ describe("opened again after Chrome's prompt closed it and access was declined",
     await click("Start watching");
     await tick();
     expect(called("afterAccess")).toEqual([
-      { origins: ["https://www.youtube.com/*"], method: "refreshUntil", params: expect.objectContaining({ text: "In stock", seconds: 60 }) },
+      {
+        id: expect.any(String),
+        origins: ["https://www.youtube.com/*"],
+        method: "refreshUntil",
+        params: expect.objectContaining({ text: "In stock", seconds: 60 }),
+      },
     ]);
   });
 
