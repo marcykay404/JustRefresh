@@ -90,7 +90,7 @@ export function AgentsView() {
         )}
       </div>
       <AllowedExtensions ids={settings?.allowedExtensionIds ?? []} save={(ids) => act("updateSettings", { allowedExtensionIds: ids })} />
-      <BridgeCard enabled={!!settings?.nativeBridgeEnabled} status={bridge.data} act={act} />
+      <BridgeCard enabled={!!settings?.nativeBridgeEnabled} eventsFile={!!settings?.agentEventsFile} status={bridge.data} act={act} />
       <ActivityLog entries={audit.data ?? []} ruleById={ruleById} agentName={agentName} act={act} />
     </>
   );
@@ -229,7 +229,7 @@ function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: bool
   );
 }
 
-function BridgeCard({ enabled, status, act }: { enabled: boolean; status: BridgeStatus | null; act: Act }) {
+function BridgeCard({ enabled, eventsFile, status, act }: { enabled: boolean; eventsFile: boolean; status: BridgeStatus | null; act: Act }) {
   const connected = !!status?.connected;
   const toggle = (on: boolean) => {
     const ask = on ? chrome.permissions.request({ permissions: ["nativeMessaging"] }).catch(() => false) : Promise.resolve(true);
@@ -258,6 +258,15 @@ function BridgeCard({ enabled, status, act }: { enabled: boolean; status: Bridge
           <button className="small primary" onClick={() => chrome.runtime.reload()}>
             Restart JustRefresh
           </button>
+        </div>
+      )}
+      {enabled && (
+        <div className="col" style={{ gap: 4 }}>
+          <Toggle checked={eventsFile} label="Also write each app's events to a file" onChange={(v) => void act("updateSettings", { agentEventsFile: v })} />
+          <p className="small muted" style={{ margin: 0 }}>
+            For scripts and tools that follow a file, such as Claude Code&apos;s Monitor: <code>~/.justrefresh/events/&lt;app&gt;.jsonl</code>, readable only by
+            your account. Each app gets events about its own rules and requests only, with page addresses hidden as in Settings, and never page text.
+          </p>
         </div>
       )}
       <BridgeSetup enabled={enabled} connected={connected} />

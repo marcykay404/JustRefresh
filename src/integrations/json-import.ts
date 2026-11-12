@@ -40,7 +40,7 @@ export function exportBundle(config: Config, opts: { includeSettings: boolean; r
     .filter((r) => !opts.ruleIds || opts.ruleIds.includes(r.id))
     .map(({ meta: _meta, ...rest }) => rest);
   // Integration access is never exported (nor importable: see SETTINGS_KEYS).
-  const { nativeBridgeEnabled: _n, allowedExtensionIds: _a, allowWebhooks: _w, ...settings } = config.settings;
+  const { nativeBridgeEnabled: _n, allowedExtensionIds: _a, allowWebhooks: _w, agentEventsFile: _f, ...settings } = config.settings;
   return {
     format: BUNDLE_FORMAT,
     version: CONFIG_SCHEMA_VERSION,

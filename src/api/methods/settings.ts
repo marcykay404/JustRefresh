@@ -54,6 +54,7 @@ export function settingsMethods(svc: ServiceInternals): Record<string, MethodDef
         nativeBridgeEnabled: z.optional(z.boolean()),
         allowFastIntervals: z.optional(z.boolean()),
         allowWebhooks: z.optional(z.boolean()),
+        agentEventsFile: z.optional(z.boolean()),
         defaultStopAfterMinutes: z.optional(z.nullable(z.int().check(z.gte(1), z.lte(10_080)))),
         allowedExtensionIds: z.optional(z.array(z.string().check(z.regex(/^[a-p]{32}$/, "Chrome extension IDs are 32 letters a–p"))).check(z.maxLength(50))),
       }),

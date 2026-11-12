@@ -26,9 +26,11 @@ import type {
 } from "../core/types";
 import { RULE_SCHEMA_VERSION, STATUS_LABELS } from "../core/types";
 import { defaultRegistries, type Registries } from "../registries";
+import type { AgentEvents } from "./agent-events";
 import type { SchemaBundle } from "./capabilities";
 import type { MethodDef } from "./method";
 import { agentsMethods } from "./methods/agents";
+import { eventsMethods } from "./methods/events";
 import { rulesMethods } from "./methods/rules";
 import { settingsMethods } from "./methods/settings";
 import { tabsMethods } from "./methods/tabs";
@@ -54,6 +56,8 @@ export interface ApiDeps {
   newId?: (prefix: string) => string;
   /** The generated JSON Schemas (read from the extension package; see capabilities.ts). */
   schemas?: () => Promise<SchemaBundle>;
+  /** Events for agents about their rules and requests (getEvents). */
+  events?: AgentEvents;
 }
 
 /** "Last seen" is informational: record it at most this often (each write rewrites the config). */
@@ -139,7 +143,11 @@ export class RuleManagementService {
       await this.noteAgentSeen(actor, config);
       const result = await def.handler(actor, parsed.data);
       // Re-check only the tabs this change affects (compared with the config before it).
-      if (def.mutates) await this.deps.engine.reconcileAll("config", { before: config });
+      if (def.mutates) {
+        await this.deps.engine.reconcileAll("config", { before: config });
+        // Requests this call settled (approved, rejected, replaced, withdrawn…): tell the agents that asked.
+        await this.deps.events?.approvals(config, await this.deps.config.get()).catch((e) => console.warn("JustRefresh: approval events", e));
+      }
       const pending = result && typeof result === "object" && (result as { status?: string }).status === "pending_approval";
       audit(pending ? "pending_approval" : "ok", undefined, (parsed.data as { id?: string })?.id);
       return result;
@@ -325,7 +333,7 @@ export class RuleManagementService {
   /* ------------------------------------------------------------------ */
 
   private defineMethods(): Record<string, MethodDef> {
-    return { ...rulesMethods(this), ...tabsMethods(this), ...settingsMethods(this), ...agentsMethods(this) };
+    return { ...rulesMethods(this), ...tabsMethods(this), ...settingsMethods(this), ...agentsMethods(this), ...eventsMethods(this) };
   }
 
   /* ------------------------------------------------------------------ */

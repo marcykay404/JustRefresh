@@ -24,8 +24,8 @@ import { MIN_INTERVAL_SECONDS } from "../../triggers/interval";
 import type { ActionConfig, Actor, Config, EvaluationResult, EvaluationTrace, HistoryEntry, Rule, TabInfo, TabRuntime } from "../types";
 import { EngineBase } from "./base";
 import { FAST_WAIT_REASON } from "./fast-site-limit";
-import { alarmName, NAVIGATION_TIMEOUT_MS, type CycleResult } from "./ports";
-import { SafetyBlock, siteKey, waitingReason, withMemory } from "./support";
+import { alarmName, NAVIGATION_TIMEOUT_MS, UNKNOWN_STREAK_EVENT, type CycleResult } from "./ports";
+import { matchedInThisRun, SafetyBlock, siteKey, waitingReason, withMemory } from "./support";
 
 /** How an action's result is recorded in History. */
 const outcomeOf = (r: ActionResult): HistoryEntry["outcome"] => (r.ok ? "ok" : r.skipped ? "skipped" : "error");
@@ -43,6 +43,8 @@ interface Cycle {
   trigger: TriggerHandler;
   now: number;
   rt: TabRuntime;
+  /** The last check of this run already matched (the agent heard about it then). */
+  wasMatched: boolean;
 }
 
 type Outcome = EvaluationResult["status"];
@@ -52,8 +54,18 @@ export abstract class CycleEngine extends EngineBase {
     return this.withLock(tabId, async () => {
       const start = await this.startCycle(tabId, event);
       if ("result" in start) return start.result;
-      return (await this.foreignEvent(start)) ?? (await this.checkEligibility(start)) ?? (await this.evaluateAndAct(start));
+      const before = start.rt.status;
+      const result = (await this.foreignEvent(start)) ?? (await this.checkEligibility(start)) ?? (await this.evaluateAndAct(start));
+      await this.reportRun(start, before, result);
+      return result;
     });
+  }
+
+  /** How the run changed, for the agent behind the rule (see EngineBase.reportChange). */
+  private async reportRun(c: Cycle, before: TabRuntime["status"], result: CycleResult) {
+    if (c.rule.meta.origin.type !== "agent" || result.status === before) return;
+    const after = await this.deps.stores.runtime.get(c.tabId);
+    if (after) this.reportChange(c.rule, c.tab, before, after);
   }
 
   /** Load the tab and its controller. Ends here for tabs no rule runs. */
@@ -74,7 +86,8 @@ export abstract class CycleEngine extends EngineBase {
     const rule = res.controller;
     const trigger = this.registries.triggers.get(rule.trigger.type);
     if (!trigger) return { result: await this.save(transition(rt, "error", { lastError: `Unknown trigger ${rule.trigger.type}`, nextDueAt: null })) };
-    return { tabId, event, config, tab, rule, trigger, now: this.now(), rt };
+    const wasMatched = matchedInThisRun(rt) && !isTerminal(rt.status);
+    return { tabId, event, config, tab, rule, trigger, now: this.now(), rt, wasMatched };
   }
 
   /** A time limit that has passed ends the run (and says so when it was waiting for something). */
@@ -250,6 +263,8 @@ export abstract class CycleEngine extends EngineBase {
   }
 
   private async onMatched(c: Cycle): Promise<CycleResult> {
+    // Once when it starts matching, not at every check while it stays so (a rule that keeps watching).
+    if (!c.wasMatched) this.emit({ kind: "rule.matched", rule: c.rule, tabId: c.tabId, url: c.tab.url });
     c.rt = await this.runActions(c, { ...c.rt, unknownStreak: 0 }, c.rule.actions.onMatched, "matched", { allowRefresh: true });
     if (c.rt.status === "evaluating") c.rt = transition(c.rt, "scheduled", { nextDueAt: this.nextDue(c.rule, c.now) });
     return this.save(c.rt);
@@ -269,7 +284,10 @@ export abstract class CycleEngine extends EngineBase {
       const streak = c.rt.unknownStreak + 1;
       const giveUp = streak > rule.safety.maxUnknownRetries;
       this.log({ ...entry, action: "pause", outcome: "skipped", reason });
-      if (giveUp) await this.notifyStopped(c.config, rule, tab, `Gave up after ${streak} checks could not read the page: ${reason}. Open the popup to retry.`);
+      if (giveUp) {
+        await this.notifyStopped(c.config, rule, tab, `Gave up after ${streak} checks could not read the page: ${reason}. Open the popup to retry.`);
+        this.emit({ kind: "rule.paused", rule, tabId: c.tabId, url: tab.url, status: "paused_unknown", reason: `Gave up after ${streak} checks: ${reason}` });
+      } else this.unknownStreak(c, streak, reason);
       return this.save(
         transition(c.rt, "paused_unknown", {
           unknownStreak: streak,
@@ -287,13 +305,23 @@ export abstract class CycleEngine extends EngineBase {
     }
     if (policy === "skip") {
       this.log({ ...entry, action: "skip", outcome: "skipped", reason });
-      return this.save(transition(c.rt, "scheduled", { reason: `Skipped: condition unknown (${reason})`, nextDueAt: this.nextDue(rule, now) }));
+      const streak = c.rt.unknownStreak + 1;
+      this.unknownStreak(c, streak, reason);
+      return this.save(
+        transition(c.rt, "scheduled", { unknownStreak: streak, reason: `Skipped: condition unknown (${reason})`, nextDueAt: this.nextDue(rule, now) }),
+      );
     }
     return null; // "refresh": carry on as if not matched
   }
 
+  /** The page couldn't be read several checks in a row: say so once, when it reaches UNKNOWN_STREAK_EVENT. */
+  private unknownStreak(c: Cycle, streak: number, reason: string) {
+    if (streak === UNKNOWN_STREAK_EVENT) this.emit({ kind: "rule.unknown_streak", rule: c.rule, tabId: c.tabId, url: c.tab.url, streak, reason });
+  }
+
   private async onNotMatched(c: Cycle, status: Outcome, keepStreak = false): Promise<CycleResult> {
     const start = { ...c.rt, unknownStreak: keepStreak ? c.rt.unknownStreak : status === "unknown" ? c.rt.unknownStreak + 1 : 0 };
+    if (status === "unknown" && !keepStreak) this.unknownStreak(c, start.unknownStreak, c.rt.lastEvaluation?.reason ?? "unknown");
     c.rt = await this.runActions(c, start, c.rule.actions.onNotMatched, status, { allowRefresh: true });
     if (c.rt.status === "evaluating") {
       const nextDueAt = this.nextDue(c.rule, c.now);
@@ -326,6 +354,8 @@ export abstract class CycleEngine extends EngineBase {
       try {
         const result = await handler.execute(action, this.actionContext(c, run, config, condition, opts.allowRefresh));
         if (action.type !== "log") this.log({ ...entry, outcome: outcomeOf(result), reason: result.message });
+        if (outcomeOf(result) === "error")
+          this.emit({ kind: "rule.error", rule: c.rule, tabId: c.tab.id, url: c.tab.url, reason: `${action.type}: ${result.message ?? "failed"}` });
         if (result.terminal) run.ended = true;
       } catch (e) {
         run.rt = this.afterActionError(c.rule, run.rt, entry, e);

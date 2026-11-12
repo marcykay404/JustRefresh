@@ -11,7 +11,8 @@ import { RuleManagementService } from "../api/rule-api";
 import type { SchemaBundle } from "../api/capabilities";
 import { isApiRequest, isExtensionPage, toErrorResponse } from "../api/messaging";
 import { ApiError } from "../api/permissions";
-import { AuditRepository, ConfigRepository, HistoryRepository, RUNTIME_PREFIX, RuntimeRepository } from "../storage/repositories";
+import { AgentEventRepository, AuditRepository, ConfigRepository, HistoryRepository, RUNTIME_PREFIX, RuntimeRepository } from "../storage/repositories";
+import { AgentEvents } from "../api/agent-events";
 import { chromeAlarms, chromeBrowser, chromePage, setShortTimerHandler, systemClock } from "./chrome-ports";
 import { hasHostAccess, injectIntoOpenTabs, originPattern, syncContentScripts } from "./host-access";
 import { createThrottle } from "./throttle";
@@ -41,6 +42,7 @@ const config = new ConfigRepository(chrome.storage.local);
 const runtime = new RuntimeRepository(chrome.storage.session);
 const history = new HistoryRepository(chrome.storage.local, config);
 const audit = new AuditRepository(chrome.storage.local);
+const events = new AgentEvents({ store: new AgentEventRepository(chrome.storage.local), config, now: systemClock.now });
 
 const engine = new RuleEngine({
   browser: chromeBrowser,
@@ -48,6 +50,7 @@ const engine = new RuleEngine({
   page: chromePage,
   clock: systemClock,
   stores: { config, runtime, history },
+  events,
   throttle: createThrottle(750),
 });
 
@@ -61,6 +64,7 @@ const service = new RuleManagementService({
   clock: systemClock,
   hostAccess: hasHostAccess,
   schemas: loadSchemas,
+  events,
   testSelector: (tabId, selector, includeText) => chromePage.testSelector(tabId, selector, includeText),
   picker: { start: (tabId, session) => chromePage.startPicker(tabId, session), cancel: (tabId) => chromePage.cancelPicker(tabId) },
 });

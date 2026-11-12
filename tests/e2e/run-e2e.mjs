@@ -25,6 +25,7 @@ writeFileSync(join(extDir, "manifest.json"), JSON.stringify(manifest));
 // ---- test server ----
 const loads = new Map();
 let statusText = "Sold out";
+let shipText = "Processing";
 let stockText = "Sold out";
 let panelText = "Running";
 let orderPosts = 0;
@@ -81,6 +82,7 @@ const server = http.createServer((req, res) => {
   if (path === "/panel") return res.end(`<title>Panel</title><div id="panel-state">${panelText}</div><input id="note">`);
   if (path === "/stock") return res.end(`<title>Stock</title><p>Item 42</p><div>${stockText}</div>`);
   if (path === "/status") return res.end(`<title>Status</title><div id="status">${statusText}</div>`);
+  if (path === "/shipping") return res.end(`<title>Shipping</title><div id="status">${shipText}</div>`);
   // A page that keeps running JS, so a debugger pause takes effect at once.
   if (path === "/stall") return res.end(`<title>Stall</title><script>setInterval(() => { window.tick = (window.tick || 0) + 1; }, 20);</script><h1>Stall</h1>`);
   res.end(`<title>Page ${path}</title><h1>Loaded ${loads.get(path)} times</h1>`);
@@ -246,6 +248,57 @@ await test("refresh until condition: stops and records completion when #status s
   assert.equal(loads.get("/status"), 2);
   await fireAlarm(tabId);
   assert.equal(loads.get("/status"), 2, "no refresh after completion");
+  await page.close();
+});
+
+await test("events: an agent hears the user's approval, then what its rule finds", async () => {
+  const agentId = "native:e2e-agent";
+  await sw.evaluate(async (id) => {
+    const { service } = globalThis.__justrefresh;
+    await service.ensureAgent({ id, name: "E2E agent", transport: "native" });
+    await service.call({ type: "user" }, "updateAgent", { id, status: "approved", scopes: ["rules:write", "rules:activate", "status:read"] });
+  }, agentId);
+  const asAgent = (method, params) =>
+    sw.evaluate(([id, m, p]) => globalThis.__justrefresh.service.call({ type: "agent", agentId: id }, m, p), [agentId, method, params]);
+  const rule = await asAgent("createRule", {
+    rule: {
+      name: "Order shipped?",
+      target: { patterns: [`${base}/shipping`] },
+      trigger: { type: "interval", seconds: 30 },
+      stopWhen: { type: "dom.text", selector: "#status", operator: "contains", value: "Shipped" },
+      actions: { onMatched: [{ type: "stopRefresh" }], onNotMatched: [{ type: "refresh" }] },
+    },
+  });
+  const pending = await asAgent("enableRule", { id: rule.id });
+  assert.equal(pending.status, "pending_approval");
+  // Waits in the service worker until the user answers.
+  const answer = asAgent("getEvents", { waitSec: 20 });
+  await new Promise((r) => setTimeout(r, 300));
+  await call("resolveApproval", { id: pending.approvalId, approve: true });
+  const first = await answer;
+  assert.deepEqual(
+    first.events.map((e) => [e.kind, e.ruleId]),
+    [["approval.approved", rule.id]],
+    JSON.stringify(first),
+  );
+
+  const page = await context.newPage();
+  await page.goto(`${base}/shipping`);
+  const tabId = await tabIdFor(`${base}/shipping`);
+  await waitFor(async () => (await runtime(tabId))?.controllerId === rule.id, "agent rule runs on the tab");
+  shipText = "Shipped";
+  await fireAlarm(tabId);
+  const next = await asAgent("getEvents", { since: first.cursor, waitSec: 20 });
+  const all = next.events.length === 2 ? next : await asAgent("getEvents", { since: first.cursor, waitSec: 5 });
+  assert.deepEqual(
+    all.events.map((e) => e.kind),
+    ["rule.matched", "rule.completed"],
+    JSON.stringify(all),
+  );
+  assert.equal(all.events[1].url, `${base}/shipping`);
+  // Kept in storage.local, for the agent's next session.
+  const stored = await sw.evaluate(async () => (await chrome.storage.local.get("agentEvents")).agentEvents.events.length);
+  assert.equal(stored, 3);
   await page.close();
 });
 

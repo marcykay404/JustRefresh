@@ -14,6 +14,7 @@ export function createApiEnv() {
     engine: env.engine,
     browser: env.browser,
     clock: env.clock,
+    events: env.events,
     hostAccess: async () => true,
     newId: (p) => `${p}-${++n}`,
     schemas: async () => ({

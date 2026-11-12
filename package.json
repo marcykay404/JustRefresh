@@ -15,7 +15,7 @@
     "check": "npm run typecheck && npm test && npm run build && npm run bundle:report",
     "complexity": "node scripts/complexity.mjs",
     "complexity:update": "node scripts/complexity.mjs --update",
-    "bundle:report": "node scripts/bundle-report.mjs --max-kb 160",
+    "bundle:report": "node scripts/bundle-report.mjs --max-kb 170",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

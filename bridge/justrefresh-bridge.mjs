@@ -17,7 +17,20 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { createLineDecoder, createMcpHandler, createNativeDecoder, encodeNative, isNonce, newNonce, proofOf, sameSecret, sanitizeClientId } from "./lib.mjs";
+import {
+  appendEventLine,
+  createLineDecoder,
+  createMcpHandler,
+  createNativeDecoder,
+  DEFAULT_TIMEOUT_MS,
+  encodeNative,
+  eventsFilePath,
+  isNonce,
+  newNonce,
+  proofOf,
+  sameSecret,
+  sanitizeClientId,
+} from "./lib.mjs";
 import { install, parseInstallArgs, restrictToUser, uninstall } from "./install-lib.mjs";
 
 const DIR = process.env.JUSTREFRESH_BRIDGE_DIR ?? path.join(os.homedir(), ".justrefresh");
@@ -66,6 +79,7 @@ function runNativeHost() {
   process.stdin.on(
     "data",
     createNativeDecoder((msg) => {
+      if (msg?.type === "event") return writeEvent(msg);
       const p = pending.get(msg.id);
       if (!p) return;
       pending.delete(msg.id);
@@ -79,6 +93,16 @@ function runNativeHost() {
     fs.rmSync(TOKEN_FILE, { force: true });
     process.exit(0);
   });
+
+  // An agent's event, for its file (the extension sends these only with "write events to a file" on).
+  const writeEvent = (msg) => {
+    if (typeof msg.agent !== "string" || !msg.event || typeof msg.event !== "object") return;
+    try {
+      appendEventLine(DIR, msg.agent, msg.event, { log });
+    } catch (e) {
+      log(`Could not write an event to its file: ${e.message}`);
+    }
+  };
 
   const relay = (socket, client, msg) => {
     const relayId = `r${++seq}`;
@@ -243,14 +267,14 @@ function runMcp() {
     return ready;
   }
 
-  async function callApi(method, params) {
+  async function callApi(method, params, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     await connect();
     const id = ++seq;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         waiting.delete(id);
         resolve({ ok: false, error: { code: "internal", message: "Timed out waiting for the extension" } });
-      }, 30_000);
+      }, timeoutMs);
       waiting.set(id, (m) => {
         clearTimeout(timer);
         resolve(m);
@@ -261,6 +285,7 @@ function runMcp() {
 
   const handle = createMcpHandler({
     callApi,
+    eventsFile: () => eventsFilePath(DIR, agentId()),
     onInitialize: async (info) => {
       if (info?.name) clientInfo = { name: String(info.name) };
       // Register (pair) right away so the user sees the request.

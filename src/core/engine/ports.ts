@@ -5,7 +5,18 @@
 import type { Registries } from "../../registries";
 import type { NotifyOptions } from "../../registries/contracts";
 import type { ActivitySnapshot } from "../../shared/messaging-types";
-import type { Config, ConditionNode, EvaluationResult, EvaluationTrace, ExecutionStatus, HistoryEntry, TabInfo, TabRuntime } from "../types";
+import type {
+  AgentEventKind,
+  Config,
+  ConditionNode,
+  EvaluationResult,
+  EvaluationTrace,
+  ExecutionStatus,
+  HistoryEntry,
+  Rule,
+  TabInfo,
+  TabRuntime,
+} from "../types";
 
 /* ------------------------------------------------------------------ */
 /* Ports                                                               */
@@ -62,6 +73,20 @@ export interface Stores {
   history: { append(e: HistoryEntry): Promise<void> };
 }
 
+/** Checks in a row that couldn't read the page before the agent behind the rule hears about it. */
+export const UNKNOWN_STREAK_EVENT = 3;
+
+/** What happened in a tab run by an agent's rule, for that agent (api/agent-events.ts). */
+export interface RunEvent {
+  kind: Extract<AgentEventKind, `rule.${string}`>;
+  rule: Rule;
+  tabId: number;
+  url: string;
+  status?: ExecutionStatus;
+  reason?: string;
+  streak?: number;
+}
+
 export interface EngineDeps {
   browser: BrowserPort;
   alarms: AlarmPort;
@@ -71,6 +96,8 @@ export interface EngineDeps {
   registries?: Registries;
   /** Global spacing between reloads to avoid refresh storms. */
   throttle?: () => Promise<void>;
+  /** Told what happens in tabs run by agents' rules. */
+  events?: { rule(e: RunEvent): Promise<void> };
   /** Override the bounded-wait limits (tests use short values). */
   timeouts?: Partial<EngineTimeouts>;
 }
