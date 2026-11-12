@@ -45,6 +45,8 @@ export type ContentRequest =
   | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "testSelector"; selector: string; includeText: boolean }
   /** Click the first element matching the selector (never one that submits a form). */
   | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "click"; selector: string }
+  /** Highlight an element or a text on the page, and scroll to it unless the page is in use. */
+  | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "highlight"; selector?: string; text?: string }
   /** Remember the scroll position for the refresh that follows. */
   | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "saveScroll" }
   /** Start / stop the element picker; the choice is sent as a PickMessage. */
@@ -61,6 +63,7 @@ export type ContentResponse =
       result: { ok: true; count: number; samples: ElementSummary[] } | { ok: false; error: string };
     }
   | { requestId: string; kind: "click"; result: { ok: true } | { ok: false; error: string } }
+  | { requestId: string; kind: "highlight"; result: { ok: true; scrolled: boolean } | { ok: false; error: string } }
   | { requestId: string; kind: "done" }
   | { requestId: string; kind: "error"; error: string };
 

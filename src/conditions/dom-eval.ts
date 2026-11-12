@@ -133,7 +133,60 @@ const attribute: DomEvaluator = (node, doc) => {
   return compared(compareText(value, ATTRIBUTE_TEXT_OPS[op], String(node.value ?? ""), true), details);
 };
 
-const EVALUATORS: Record<string, DomEvaluator> = { "dom.exists": existence, "dom.missing": existence, "dom.text": text, "dom.attribute": attribute };
+/**
+ * A short fingerprint of some text (53-bit cyrb53, as hex). Only this leaves
+ * the page for "content changed": the text itself is never sent or stored.
+ */
+export function fingerprint(s: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+
+/**
+ * dom.changed: the page only reports a fingerprint of the element's text; the
+ * engine compares it with the previous check's (see conditions/dom.ts).
+ */
+const changed: DomEvaluator = (node, doc, opts) => {
+  const r = query(doc, typeof node.selector === "string" && node.selector ? node.selector : "body");
+  if (!r.ok) return invalidSelector(r.error);
+  const el = r.els[0];
+  if (!el) return notFound;
+  return {
+    status: "not_matched",
+    details: { count: r.els.length, element: summarizeElement(el, opts.includeText), fingerprint: fingerprint(normalizeText(readText(el))) },
+  };
+};
+
+/**
+ * dom.text_lost: the page reports whether the text is there now ("matched"),
+ * and the engine turns that into "gone after being seen". A selector that
+ * matches nothing counts as the text being gone (a badge that is removed).
+ */
+const lost: DomEvaluator = (node, doc, opts) => {
+  const r = query(doc, typeof node.selector === "string" && node.selector ? node.selector : "body");
+  if (!r.ok) return invalidSelector(r.error);
+  const el = r.els[0];
+  if (!el) return notFound;
+  const out = compareText(normalizeText(readText(el)), "contains", String(node.value ?? ""), node.caseSensitive === true);
+  return compared(out, { count: r.els.length, element: summarizeElement(el, opts.includeText) });
+};
+
+const EVALUATORS: Record<string, DomEvaluator> = {
+  "dom.exists": existence,
+  "dom.missing": existence,
+  "dom.text": text,
+  "dom.attribute": attribute,
+  "dom.changed": changed,
+  "dom.text_lost": lost,
+};
 
 /** Selector testing utility for the rule builder. */
 export function testSelector(doc: Document, selector: string, includeText: boolean) {

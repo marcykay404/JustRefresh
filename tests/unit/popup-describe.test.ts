@@ -55,10 +55,11 @@ describe("Refresh until something appears", () => {
     const r = v.normalized!;
     expect(r.enabled).toBe(true);
     expect(r.stopWhen).toMatchObject({ type: "dom.text", operator: "contains", value: "In stock", caseSensitive: false });
-    expect(r.actions.onMatched.map((a) => a.type)).toEqual(["stopRefresh", "notify"]);
-    expect(r.actions.onMatched[1]).toMatchObject({ sound: true, title: "Found “In stock”" });
+    expect(r.actions.onMatched.map((a) => a.type)).toEqual(["stopRefresh", "highlight", "notify"]);
+    expect(r.actions.onMatched[1]).toMatchObject({ text: "In stock" });
+    expect(r.actions.onMatched[2]).toMatchObject({ sound: true, title: "Found “In stock”" });
     expect(r.actions.onNotMatched.map((a) => a.type)).toEqual(["refresh"]);
-    expect(describeRule(r)).toBe("Refreshing every 1 min until “In stock” appears, then notify me");
+    expect(describeRule(r)).toBe("Refreshing every 1 min until “In stock” appears, then highlight “In stock” and notify me");
   });
 
   it("matches this exact page only", () => {
@@ -69,8 +70,11 @@ describe("Refresh until something appears", () => {
 
   it("supports 'disappears'", () => {
     const r = untilRule({ url, site: "shop.example.com", seconds: 300, text: "Sold out", mode: "disappears" });
-    expect(r.stopWhen).toMatchObject({ operator: "not_contains", value: "Sold out" });
+    // Gone only after it was seen: a login or error page doesn't count.
+    expect(r.stopWhen).toEqual({ type: "dom.text_lost", value: "Sold out", caseSensitive: false });
+    expect(r.actions!.onMatched!.map((a) => a.type)).toEqual(["stopRefresh", "notify"]);
     expect(validateRule(r).valid).toBe(true);
+    expect(describeRule(validateRule(r).normalized!)).toBe("Refreshing every 5 min until “Sold out” disappears, then notify me");
   });
 });
 

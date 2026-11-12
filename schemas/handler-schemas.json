@@ -132,6 +132,55 @@
       ],
       "additionalProperties": false
     },
+    "dom.changed": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "dom.changed"
+        },
+        "selector": {
+          "description": "CSS selector; the first match's text is watched. Defaults to the whole page (body)",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "dom.text_lost": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "dom.text_lost"
+        },
+        "selector": {
+          "description": "CSS selector; first match is checked. Defaults to body",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "caseSensitive": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "additionalProperties": false
+    },
     "url.match": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -600,6 +649,32 @@
       "required": [
         "type",
         "selector"
+      ],
+      "additionalProperties": false
+    },
+    "highlight": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "highlight"
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "CSS selector of the element (the first match); the page when left out"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Text to highlight in it (the first place it appears)"
+        }
+      },
+      "required": [
+        "type"
       ],
       "additionalProperties": false
     },

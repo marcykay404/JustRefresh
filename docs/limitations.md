@@ -89,6 +89,18 @@
   the page fills in, and stops as soon as you scroll, click or type. Pages
   that rebuild themselves later than that, or keep the scroll inside an inner
   panel rather than the page, may not end up in the same place.
+- **Content changed** compares the visible text of one element (or the
+  page): a change in an attribute, an image or styling alone isn't a change.
+  Whole-page watching changes on every load where the page shows a clock,
+  a counter or rotating ads; pick the part you care about. Changes are seen
+  at each check, so text that changes and changes back between two checks
+  goes unnoticed.
+- **Text gone (after being seen)** can't tell a real change from an error
+  page that also lacks the text, once the text has been seen; it only rules
+  out pages that never showed it.
+- **Highlight** works in the top frame, and only where the CSS Custom
+  Highlight API exists (Chrome 105+; elsewhere it only scrolls). Text inside
+  hidden elements is skipped, but text hidden by CSS alone may be picked first.
 - **Element picker** works in the top frame of the tab chosen under Test,
   and needs site access for it.
 - **Native bridge.** Requires Node.js and a one-time host registration;

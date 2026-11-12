@@ -1,3 +1,4 @@
+import { highlight } from "@/content/highlight";
 import { clickElement } from "@/content/page-actions";
 import { RuleEngine, type AlarmPort, type BrowserPort, type EngineTimeouts, type PagePort } from "@/core/rule-engine";
 import type { ConditionNode, EvaluationResult, TabInfo } from "@/core/types";
@@ -120,6 +121,15 @@ export class FakePage implements PagePort {
     if (!doc) throw new Error("No document");
     const result = clickElement(doc, selector);
     if (result.ok) this.clicks.push({ tabId, selector });
+    return result;
+  }
+  highlights: { tabId: number; selector?: string; text?: string }[] = [];
+  async highlight(tabId: number, target: { selector?: string; text?: string }) {
+    if (this.unavailable.has(tabId)) throw new Error("Content script unavailable");
+    const doc = this.docs.get(tabId);
+    if (!doc) throw new Error("No document");
+    const result = highlight(doc.defaultView!, target, { busy: false });
+    if (result.ok) this.highlights.push({ tabId, ...target });
     return result;
   }
   async saveScroll(tabId: number) {

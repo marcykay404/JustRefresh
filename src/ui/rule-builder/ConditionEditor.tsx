@@ -188,6 +188,8 @@ const DESCRIBE: Record<string, (n: ConditionNode) => string> = {
   "dom.exists": (n) => `${n.selector} exists`,
   "dom.missing": (n) => `${n.selector} is missing`,
   "dom.text": (n) => `${n.selector ?? "page"} text ${String(n.operator).replace(/_/g, " ")} "${n.value}"`,
+  "dom.changed": (n) => `${n.selector ?? "page"} content changed`,
+  "dom.text_lost": (n) => `${n.selector ?? "page"} text "${n.value}" gone (after being seen)`,
   "dom.attribute": (n) => `${n.selector}[${n.attribute}] ${n.operator}${n.value !== undefined ? ` "${n.value}"` : ""}`,
   "url.match": (n) => `URL matches ${typeof n.pattern === "string" ? n.pattern : JSON.stringify(n.pattern)}`,
   refreshCount: (n) => `refresh count ${n.operator} ${n.value}`,

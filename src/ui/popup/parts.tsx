@@ -535,8 +535,8 @@ export function UntilForm(p: {
       {p.problem && <span className="small field-error">{p.problem}</span>}
       <QueryChoice url={p.url} anyQuery={anyQuery} onChange={setAnyQuery} />
       <span className="small muted">
-        It looks anywhere on this page (ignoring upper/lower case), then stops refreshing and notifies you with a sound. You'll find it under Rules in the
-        dashboard.
+        It looks anywhere on this page (ignoring upper/lower case), then stops refreshing and notifies you with a sound
+        {mode === "appears" ? ", and highlights the text on the page" : ". The text must be on the page now"}. You'll find it under Rules in the dashboard.
       </span>
       <button type="submit" className="primary big" disabled={!ready}>
         {busy ? "Setting up…" : "Start watching"}

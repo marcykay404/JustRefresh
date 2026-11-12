@@ -254,6 +254,12 @@ export const chromePage: PagePort & {
     const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "click", selector }, "click");
     return res.result;
   },
+  async highlight(tabId, target) {
+    const ok = await ensureContent(tabId);
+    if (!ok.ok) return { ok: false, error: ok.reason };
+    const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "highlight", ...target }, "highlight");
+    return res.result;
+  },
   async saveScroll(tabId) {
     if ((await ensureContent(tabId)).ok) await done(tabId, "saveScroll");
   },

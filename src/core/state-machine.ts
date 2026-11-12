@@ -83,3 +83,10 @@ export function newRuntime(tabId: number, url: string, now: number, generation =
     lastError: null,
   };
 }
+
+/** A run as the API shows it: without what stateful conditions remember (fingerprints of page text). */
+export function publicRuntime(rt: TabRuntime | null): TabRuntime | null {
+  if (!rt?.memory) return rt;
+  const { memory: _m, ...shown } = rt;
+  return shown;
+}

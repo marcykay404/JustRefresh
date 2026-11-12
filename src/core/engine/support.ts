@@ -78,3 +78,7 @@ export function siteKey(url: string): string | null {
     return null;
   }
 }
+
+/** A check's memory for TabRuntime.memory: left out when empty, so most runs don't carry it. */
+export const withMemory = (memory: Record<string, string>): { memory?: Record<string, string> } =>
+  Object.keys(memory).length ? { memory } : { memory: undefined };

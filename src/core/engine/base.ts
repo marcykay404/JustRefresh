@@ -32,6 +32,8 @@ export abstract class EngineBase {
       evaluate: (tabId, leaves, includeText) => withTimeout(deps.page.evaluate(tabId, leaves, includeText), pageMs, "Page"),
       activity: (tabId) => withTimeout(deps.page.activity(tabId), pageMs, "Page").catch((e: Error) => ({ activity: null, reason: e.message })),
       click: (tabId, selector) => withTimeout(deps.page.click(tabId, selector), pageMs, "Page").catch((e: Error) => ({ ok: false as const, error: e.message })),
+      highlight: (tabId, target) =>
+        withTimeout(deps.page.highlight(tabId, target), pageMs, "Page").catch((e: Error) => ({ ok: false as const, error: e.message })),
       // Best effort: the refresh goes ahead without it.
       saveScroll: (tabId) => withTimeout(deps.page.saveScroll(tabId), pageMs, "Page").catch(() => undefined),
     };
@@ -184,6 +186,7 @@ export abstract class EngineBase {
       runtime: { refreshCount: rt.refreshCount, navigationCount: rt.navigationCount, startedAt: rt.startedAt },
       pageEvaluator: (leaves) => this.page.evaluate(tab.id, leaves, false),
       registries: this.registries,
+      memory: rt.memory,
     });
   }
 }

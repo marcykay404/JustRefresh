@@ -25,7 +25,7 @@ import type { ActionConfig, Actor, Config, EvaluationResult, EvaluationTrace, Hi
 import { EngineBase } from "./base";
 import { FAST_WAIT_REASON } from "./fast-site-limit";
 import { alarmName, NAVIGATION_TIMEOUT_MS, type CycleResult } from "./ports";
-import { SafetyBlock, siteKey, waitingReason } from "./support";
+import { SafetyBlock, siteKey, waitingReason, withMemory } from "./support";
 
 /** Everything one cycle works with. `rt` is updated as the cycle moves on. */
 interface Cycle {
@@ -214,18 +214,14 @@ export abstract class CycleEngine extends EngineBase {
     await this.deps.alarms.set(alarmName(c.tabId), now + this.timeouts.watchdogMs);
     const generation = c.rt.generation;
 
-    let status: Outcome = "not_matched";
-    let trace: EvaluationTrace | undefined;
-    if (rule.stopWhen)
-      ({
-        result: { status },
-        trace,
-      } = await this.evaluate(rule, c.tab, c.rt));
+    const out = rule.stopWhen ? await this.evaluate(rule, c.tab, c.rt) : null;
+    const status: Outcome = out?.result.status ?? "not_matched";
+    const trace: EvaluationTrace | undefined = out?.trace;
     const latest = await this.deps.stores.runtime.get(c.tabId);
     if (!latest || latest.generation !== generation || latest.status !== "evaluating") {
       return { status: latest?.status ?? "idle", reason: "Stale evaluation discarded" };
     }
-    c.rt = { ...latest, lastEvaluation: rule.stopWhen ? { at: now, status, reason: trace ? explainTrace(trace) : undefined } : latest.lastEvaluation };
+    c.rt = out ? { ...latest, lastEvaluation: { at: now, status, reason: explainTrace(out.trace) }, ...withMemory(out.memory) } : latest;
 
     const result = status === "matched" ? await this.onMatched(c) : status === "unknown" ? await this.onUnknown(c, trace) : null;
     return { ...(result ?? (await this.onNotMatched(c, status))), evaluation: trace };
@@ -349,6 +345,8 @@ export abstract class CycleEngine extends EngineBase {
         }
         return result;
       },
+      // Only marks the page: allowed after a page load and after the rule stops.
+      highlight: (target) => this.page.highlight(tab.id, target),
       webhook: (url, payload) => this.callWebhook(config, url, payload),
       setStatus: (status, reason, resumeAt) => {
         run.rt = transition(run.rt, status, {

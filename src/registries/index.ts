@@ -1,6 +1,6 @@
 import { Registry } from "./registry";
 import type { ActionHandler, ConditionHandler, TriggerHandler } from "./contracts";
-import { domAttribute, domExists, domMissing, domText } from "../conditions/dom";
+import { domAttribute, domChanged, domExists, domMissing, domText, domTextLost } from "../conditions/dom";
 import { urlMatch } from "../conditions/url-match";
 import { timeAfter, timeBefore } from "../conditions/time";
 import { refreshCount, tabStatus } from "../conditions/runtime";
@@ -8,7 +8,7 @@ import { allCondition, anyCondition, notCondition } from "../conditions/logical"
 import { intervalTrigger } from "../triggers/interval";
 import { manualTrigger, navigationTrigger, startupTrigger, urlChangeTrigger } from "../triggers/navigation";
 import { logAction, notifyAction, pauseAction, refreshAction, resumeAction, stopAction } from "../actions/builtin";
-import { clickAction, webhookAction } from "../actions/page";
+import { clickAction, highlightAction, webhookAction } from "../actions/page";
 
 export type ConditionRegistry = Registry<ConditionHandler<any>>;
 export type TriggerRegistry = Registry<TriggerHandler<any>>;
@@ -26,6 +26,8 @@ export function createConditionRegistry(): ConditionRegistry {
     .register(domMissing)
     .register(domText)
     .register(domAttribute)
+    .register(domChanged)
+    .register(domTextLost)
     .register(urlMatch)
     .register(timeAfter)
     .register(timeBefore)
@@ -54,6 +56,7 @@ export function createActionRegistry(): ActionRegistry {
     .register(notifyAction)
     .register(logAction)
     .register(clickAction)
+    .register(highlightAction)
     .register(webhookAction);
 }
 

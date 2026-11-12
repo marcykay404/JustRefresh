@@ -312,14 +312,29 @@ await test("popup: start a timer with one tap, then 'Refresh until' hands the ta
   await waitFor(async () => (await runtime(tabId))?.lastEvaluation?.status === "not_matched", "first check: not found yet");
   await popup.close();
   popup = await openPopupFor(tabId);
-  await popup.getByText("Refreshing every 30 sec until “In stock” appears, then notify me").waitFor();
+  await popup.getByText("Refreshing every 30 sec until “In stock” appears, then highlight “In stock” and notify me").waitFor();
   await popup.screenshot({ path: join(root, "test-results", "popup-rule.png") });
   await popup.close();
 
   stockText = "Back In Stock";
   await fireAlarm(tabId);
   await waitFor(async () => (await runtime(tabId))?.status === "completed", "completed when the text appears");
+  // The text it found is highlighted on the page (CSS Custom Highlight API: the page's own content is untouched).
+  const marked = () => page.evaluate(() => (CSS.highlights.has("justrefresh") ? [...CSS.highlights.get("justrefresh")].map(String) : []));
+  await waitFor(async () => (await marked()).join() === "In Stock", "the found text highlighted");
   await call("deleteRule", { id: rule.id, expectedRevision: rule.meta.revision });
+
+  // "Disappears" only counts text that has been there: text that isn't on the page now is refused at once.
+  const before = (await call("listRules")).length;
+  popup = await openPopupFor(tabId);
+  await popup.getByRole("button", { name: /More/ }).click();
+  await popup.getByRole("button", { name: /Refresh until something appears/ }).click();
+  await popup.getByRole("button", { name: "disappears", exact: true }).click();
+  await popup.getByLabel("Text to look for").fill("Sold out");
+  await popup.getByRole("button", { name: "Start watching" }).click();
+  await popup.getByText(/“Sold out” isn't on this page now, so it can't disappear/).waitFor();
+  assert.equal((await call("listRules")).length, before);
+  await popup.close();
   for (const r of others) await call("enableRule", { id: r.id });
   await page.close();
 });
@@ -702,6 +717,42 @@ await test("Rule Builder: Pick fills the selector with the element clicked in th
   await builder.close();
   await page.close();
   await call("deleteRule", { id: "e2e-pick" });
+});
+
+await test("content changed: notices a change between loads, and highlights it", async () => {
+  const others = (await call("listRules")).filter((r) => r.enabled);
+  for (const r of others) await call("disableRule", { id: r.id });
+  stockText = "Sold out";
+  const page = await context.newPage();
+  await page.goto(`${base}/stock`);
+  const tabId = await tabIdFor(`${base}/stock`);
+  const rule = await call("createRule", {
+    rule: {
+      id: "e2e-changed",
+      name: "Stock text changes",
+      target: { patterns: [`${base}/stock`] },
+      trigger: { type: "interval", seconds: 30 },
+      stopWhen: { type: "dom.changed", selector: "div" },
+      actions: { onMatched: [{ type: "stopRefresh" }, { type: "highlight", selector: "div" }], onNotMatched: [{ type: "refresh" }] },
+    },
+  });
+  await call("runNow", { tabId });
+  await waitFor(async () => (await runtime(tabId))?.lastEvaluation?.status === "not_matched", "first check remembers the text");
+  assert.equal((await call("getTabState", { tabId })).runtime.memory, undefined, "what it remembers isn't shown by the API");
+  await fireAlarm(tabId); // same text after the refresh: no change
+  await waitFor(async () => (await runtime(tabId))?.navigationCount >= 1 && (await runtime(tabId))?.status === "scheduled", "reloaded once");
+  assert.equal((await runtime(tabId)).lastEvaluation.status, "not_matched");
+  stockText = "Only 2 left";
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "completed", "completed when the text changes");
+  await waitFor(
+    async () =>
+      (await page.evaluate(() => (CSS.highlights.has("justrefresh") ? [...CSS.highlights.get("justrefresh")].map(String) : []))).join() === "Only 2 left",
+    "the changed element highlighted",
+  );
+  await call("deleteRule", { id: rule.id });
+  for (const r of others) await call("enableRule", { id: r.id });
+  await page.close();
 });
 
 await test("the desktop bridge is packaged as one runnable file", async () => {

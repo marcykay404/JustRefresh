@@ -12,7 +12,8 @@ AI agents all drive through **one** Rule Management API.
 - **URL rules** — exact / domain / glob / regex patterns, exclusions,
   priorities with deterministic tie-breaking, conflict hints, pattern tester.
 - **Conditional refresh** — "refresh until `#status` contains _Available_",
-  element exists/missing, attributes, URL, time, refresh count, nested
+  element exists/missing, attributes, **content changed since the last
+  load**, text gone after being seen, URL, time, refresh count, nested
   AND/OR/NOT with tri-state (`matched` / `not_matched` / `unknown`) logic.
 - **Smart protection** — pauses while typing (incl. IME), protects unsaved
   forms, optional mouse/scroll pause, configurable grace period and fail-safe.
@@ -23,8 +24,9 @@ AI agents all drive through **one** Rule Management API.
   live validation, dry-run testing with an evaluation trace, an in-page
   element picker and selector tester, JSON view, import/export.
 - **Page actions** — keep the scroll position across a refresh, click an
-  element (never one that would submit a form), and an opt-in webhook to a
-  program on this computer (localhost only).
+  element (never one that would submit a form), highlight and scroll to what
+  a rule found, and an opt-in webhook to a program on this computer
+  (localhost only).
 - **Agent-programmable** — capability discovery, validation diagnostics with
   JSON paths, dry runs, draft → approval workflow, scoped & revocable agent
   access, audit log, optional local MCP bridge (one-command install, a key

@@ -224,6 +224,9 @@ function checkAction(a: ActionConfig, p: string, registries: Registries, trigger
   if (a.type === "click" && trigger && !trigger.allowsRefresh) {
     out.push(diag(p, "click_loop", `The "${trigger.type}" trigger cannot use the click action (a click that loads a page would run it again, in a loop)`));
   }
+  if (a.type === "highlight" && !a.selector && !a.text) {
+    out.push(diag(p, "highlight_target", "Say what to highlight: an element (selector), a text, or both"));
+  }
   return out;
 }
 
