@@ -87,7 +87,7 @@ export function createLineDecoder(onMessage, maxLine = 4 * 1024 * 1024, onBad = 
 }
 
 /* ---------------- MCP tools ---------------- */
-const ruleObject = { type: "object", description: "Rule JSON (see refresh_get_capabilities → ruleSchema)" };
+const ruleObject = { type: "object", description: "Rule JSON (fields: refresh_get_schema with kind rule)" };
 const id = { type: "string", description: "Rule id" };
 const revision = { type: "integer", description: "meta.revision from refresh_get_rule; the call fails with conflict if the rule changed since" };
 
@@ -116,7 +116,22 @@ export const TOOLS = [
     "getCapabilities",
     "Get capabilities",
     READ,
-    "Supported triggers, conditions and actions, interval limits, and the rule JSON Schema. Large: call it once per session, before writing your first rule.",
+    "Start here: how to work with JustRefresh (instructions), the supported triggers, conditions and actions, interval limits and notes. " +
+      "Get JSON Schemas one piece at a time with refresh_get_schema; includeSchemas returns them all at once (large).",
+    { includeSchemas: { type: "boolean", description: "Also return every JSON Schema (large; prefer refresh_get_schema)" } },
+  ),
+  tool(
+    "refresh_get_schema",
+    "getSchema",
+    "Get JSON Schema",
+    READ,
+    "The JSON Schema for a rule's fields (kind rule), or for one condition, trigger or action type (kind and type, e.g. condition + dom.exists). " +
+      "Leave type out to get every type of that kind. In the rule schema, conditions, triggers and actions point back here.",
+    {
+      kind: { type: "string", enum: ["rule", "condition", "trigger", "action"] },
+      type: { type: "string", description: "A type from refresh_get_capabilities, e.g. dom.exists, interval, notify" },
+    },
+    ["kind"],
   ),
   tool("refresh_list_tabs", "listTabs", "List tabs", READ_WEB, "Open browser tabs: id, title and URL (query strings hidden unless the user allows them)."),
   tool("refresh_list_rules", "listRules", "List rules", READ, "All rules, the user's and agents', highest priority first."),
@@ -128,7 +143,7 @@ export const TOOLS = [
     "validateRule",
     "Validate rule",
     READ,
-    "Check a rule without saving it. Returns diagnostics with JSON paths to fix, and the rule with defaults filled in.",
+    "Check a rule without saving it. Returns diagnostics with JSON paths to fix, and the rule with defaults filled in. Field definitions: refresh_get_schema.",
     { rule: ruleObject },
     ["rule"],
   ),
@@ -148,7 +163,7 @@ export const TOOLS = [
     "createRule",
     "Create rule (draft)",
     WRITE,
-    "Save a new rule as a disabled draft. Nothing runs until refresh_enable_rule switches it on (after the user approves, unless they trust you).",
+    "Save a new rule as a disabled draft (fields: refresh_get_schema). Nothing runs until refresh_enable_rule switches it on (after the user approves, unless they trust you).",
     { rule: ruleObject },
     ["rule"],
   ),
@@ -213,7 +228,7 @@ export const TOOLS = [
 /** What every agent should know, sent once at initialize. */
 export const INSTRUCTIONS =
   "Controls the JustRefresh Chrome extension, which refreshes the user's tabs on a schedule and can stop, notify or click when something appears on the page. " +
-  "Workflow: refresh_get_capabilities (once) → refresh_list_tabs → refresh_validate_rule → refresh_test_rule (dry run on a tab) → refresh_create_rule (saves a disabled draft) → " +
+  "Workflow: refresh_get_capabilities (once) → refresh_get_schema (the parts you need) → refresh_list_tabs → refresh_validate_rule → refresh_test_rule (dry run on a tab) → refresh_create_rule (saves a disabled draft) → " +
   "refresh_enable_rule (the user approves in the extension) → refresh_get_status. " +
   "Your rules run only once the user approves them (unless the user marked you as trusted: then refresh_enable_rule and refresh_delete_rule act at once, so only do what the user asked for). " +
   "Any refresh_update_rule turns a running rule off until it is enabled again, so ask before changing a rule the user relies on. " +
@@ -284,7 +299,7 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
             const hint = err.code === "pairing_required" ? "\nOpen the extension dashboard → Agent Integrations and approve this agent." : "";
             return reply({ isError: true, content: [{ type: "text", text: JSON.stringify(err) + hint }] });
           }
-          return reply(toolResult(res.result));
+          return reply(toolResult(t.method === "getCapabilities" ? withInstructions(res.result) : res.result));
         } catch (e) {
           return reply({ isError: true, content: [{ type: "text", text: `Bridge error: ${e.message}` }] });
         }
@@ -293,6 +308,11 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
         return fail(-32601, `Method not found: ${msg.method}`);
     }
   };
+}
+
+/** Capabilities carry the instructions too, for MCP clients that don't show `instructions` to the model. */
+function withInstructions(result) {
+  return result && typeof result === "object" && !Array.isArray(result) ? { instructions: INSTRUCTIONS, ...result } : result;
 }
 
 function toolResult(result) {

@@ -92,6 +92,18 @@ describe("MCP handler → extension API (end to end, in memory)", () => {
     const unknown = await handle({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "chrome_eval", arguments: {} } });
     expect(unknown.error.code).toBe(-32602);
   });
+  it("get_capabilities over MCP, instructions included, stays small", async () => {
+    const { env, handle } = await setup();
+    await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await env.service.call(env.user, "updateAgent", { id: "native:claude", status: "approved", scopes: ["rules:read"] });
+    const r = (await handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "refresh_get_capabilities", arguments: {} } })).result;
+    expect(Buffer.byteLength(r.content[0].text, "utf8")).toBeLessThanOrEqual(10 * 1024);
+    expect(JSON.parse(r.content[0].text).instructions).toBe(INSTRUCTIONS);
+    const s = (
+      await handle({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "refresh_get_schema", arguments: { kind: "trigger", type: "interval" } } })
+    ).result;
+    expect(s.structuredContent.schema.properties.type.const).toBe("interval");
+  });
 });
 
 describe("MCP self-description", () => {
@@ -293,6 +305,14 @@ describe("MCP self-description", () => {
     expect(await env.service.call(env.user, "enableRule", { id: created.id })).toEqual({ status: "enabled" });
     expect(await waiting()).toEqual([]);
     expect(await revision()).toBe(running);
+  });
+
+  it("capabilities carry the instructions, for clients that don't show them to the model", async () => {
+    const handle = createMcpHandler({ callApi: async (method: string) => ({ ok: true, result: { method } }) });
+    const call = async (name: string, args = {}) =>
+      JSON.parse((await handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name, arguments: args } })).result.content[0].text);
+    expect(await call("refresh_get_capabilities")).toEqual({ instructions: INSTRUCTIONS, method: "getCapabilities" });
+    expect(await call("refresh_list_rules")).toEqual({ method: "listRules" });
   });
 
   it("errors are compact too", async () => {

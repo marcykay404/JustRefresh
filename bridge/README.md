@@ -66,6 +66,7 @@ From a checkout of this repository, `node bridge/justrefresh-bridge.mjs install 
 | Tool                       | API method            |
 | -------------------------- | --------------------- |
 | `refresh_get_capabilities` | getCapabilities       |
+| `refresh_get_schema`       | getSchema             |
 | `refresh_list_tabs`        | listTabs              |
 | `refresh_list_rules`       | listRules             |
 | `refresh_get_rule`         | getRule               |
@@ -88,6 +89,9 @@ are marked destructive, so clients can ask before running them; and
 they return text from web pages (titles, URLs, page errors) or make a rule act
 on them. Results come back
 as compact JSON text; a result up to 4 KB is also sent as `structuredContent`,
-a larger one (such as `refresh_get_capabilities`) only once, as text.
+a larger one only once, as text. `refresh_get_capabilities` is a summary that
+also carries the server instructions (for clients that don't show
+`instructions` to the model); JSON Schemas come one piece at a time from
+`refresh_get_schema`, or all at once with `includeSchemas: true`.
 
 Unknown tool arguments are rejected. Uninstall with `node ~/.justrefresh/bin/justrefresh-bridge.mjs uninstall`.

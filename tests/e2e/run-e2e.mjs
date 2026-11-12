@@ -559,7 +559,13 @@ await test("the dashboard updates on changes without polling the service worker"
 });
 
 await test("capabilities carry the JSON Schemas, read from the extension package", async () => {
-  const caps = await call("getCapabilities");
+  const summary = await call("getCapabilities");
+  assert.equal(summary.ruleSchema, undefined, "the summary leaves the schemas out");
+  const one = await call("getSchema", { kind: "condition", type: "dom.exists" });
+  assert.equal(one.schema?.properties?.type?.const, "dom.exists");
+  const rule = await call("getSchema", { kind: "rule" });
+  assert.ok(rule.schema?.properties?.trigger, "rule fields");
+  const caps = await call("getCapabilities", { includeSchemas: true });
   assert.ok(caps.ruleSchema?.$defs?.condition, "rule schema with condition definitions");
   const text = caps.conditions.find((c) => c.type === "dom.text");
   assert.equal(text?.schema?.properties?.type?.const, "dom.text");
