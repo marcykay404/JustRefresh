@@ -7,6 +7,7 @@ import { createApiEnv } from "../helpers/api-env";
 import { quietActivity } from "../helpers/fake-env";
 import { makeRule } from "../helpers/fixtures";
 import { ERROR_REPEAT_MS, MAX_WAITS_PER_AGENT } from "@/api/agent-events";
+import { MAX_WAIT_SECONDS } from "@/api/methods/events";
 import { UNKNOWN_STREAK_EVENT } from "@/core/rule-engine";
 import type { AgentEvent, Rule } from "@/core/types";
 import { AGENT_EVENTS_PER_AGENT } from "@/storage/repositories";
@@ -103,6 +104,21 @@ describe("rule events", () => {
     expect(JSON.stringify(page.events)).not.toMatch(/Shipped|Processing/);
   });
 
+  it("a rule that keeps watching says matched once while it stays matched, and again after it stopped matching", async () => {
+    const { env, agent, kinds, create, tick } = await setup({ trusted: true });
+    const id = await create({ ...ORDER_RULE, actions: { onMatched: [{ type: "log", message: "still shipped" }], onNotMatched: [{ type: "refresh" }] } });
+    await env.service.call(agent, "enableRule", { id });
+    env.page.setHtml(TAB, `<p id="status">Shipped</p>`);
+    for (let i = 0; i < 4; i++) await tick();
+    expect(await kinds()).toEqual(["rule.matched"]);
+    env.page.setHtml(TAB, `<p id="status">Returned</p>`);
+    await tick();
+    env.page.setHtml(TAB, `<p id="status">Shipped again</p>`);
+    await tick();
+    await tick();
+    expect(await kinds()).toEqual(["rule.matched", "rule.matched"]);
+  });
+
   it("also when the match is found right after the refresh loads, as in a real browser", async () => {
     const { env, agent, kinds, create } = await setup({ trusted: true });
     const id = await create();
@@ -195,6 +211,26 @@ describe("who hears what", () => {
     expect((await events()).events[0].url).toBe(`${ORDER}?id=42`);
   });
 
+  it("addresses quoted in a reason are hidden too", async () => {
+    const { env, events } = await setup();
+    const rule = makeRule({ id: "r1" }, { origin: { type: "agent", agentId: "native:claude" } });
+    await env.events.rule({ kind: "rule.error", rule, tabId: TAB, url: ORDER, reason: `Cannot access contents of url "${ORDER}?id=42#x". Retry.` });
+    expect((await events()).events[0].reason).toBe(`Cannot access contents of url "${ORDER}?…". Retry.`);
+  });
+
+  it("requests settled by a call running at the same time, or dropped from the list while waiting, are reported", async () => {
+    const { env, events } = await setup();
+    const before = await env.config.get();
+    const req = (id: string, status: "pending" | "approved") =>
+      ({ id, kind: "activate", ruleId: "r1", ruleRevision: 1, agentId: "native:claude", createdAt: 1, status }) as const;
+    // Made and approved while this call ran: not in the config it started from.
+    await env.events.approvals({ ...before, approvals: [req("a-dropped", "pending")] }, { ...before, approvals: [req("a-new", "approved")] });
+    expect((await events()).events.map((e) => [e.kind, e.approvalId])).toEqual([
+      ["approval.approved", "a-new"],
+      ["approval.stale", "a-dropped"],
+    ]);
+  });
+
   it("a removed agent's events are deleted with it", async () => {
     const { env, agent, create } = await setup();
     const id = await create();
@@ -222,16 +258,28 @@ describe("getEvents", () => {
     expect(empty).toEqual({ events: [], cursor: 1, truncated: false });
   });
 
-  it(`at most ${MAX_WAITS_PER_AGENT} waiting calls per agent`, async () => {
+  it(`at most ${MAX_WAITS_PER_AGENT} waiting calls per agent: another lets the oldest return now`, async () => {
     const { env, agent, events, create } = await setup();
-    const waits = Array.from({ length: MAX_WAITS_PER_AGENT }, () => events({ waitSec: 5 }));
+    const started = Date.now();
+    const waits = Array.from({ length: MAX_WAITS_PER_AGENT }, () => events({ waitSec: 30 }));
     await settle();
-    await expect(events({ waitSec: 5 })).rejects.toMatchObject({ code: "conflict" });
-    // An event lets them all return.
+    // A client that gave up on its calls and asks again isn't blocked by them.
+    const third = events({ waitSec: 30 });
+    expect(await waits[0]).toEqual({ events: [], cursor: 0, truncated: false });
+    expect(Date.now() - started).toBeLessThan(2000);
+    // An event lets the rest return.
     const id = await create();
     await env.service.call(agent, "enableRule", { id });
     await env.service.call(agent, "disableRule", { id });
-    for (const w of waits) expect((await w).events.map((e) => e.kind)).toEqual(["approval.stale"]);
+    for (const w of [waits[1], third]) expect((await w).events.map((e) => e.kind)).toEqual(["approval.stale"]);
+  });
+
+  it("a cursor from before the events were reset starts over, and says so", async () => {
+    const { env, events } = await setup();
+    const rule = makeRule({ id: "r1" }, { origin: { type: "agent", agentId: "native:claude" } });
+    await env.events.rule({ kind: "rule.matched", rule, tabId: TAB, url: ORDER });
+    expect(await events({ since: 500 })).toMatchObject({ events: [{ seq: 1 }], cursor: 1, truncated: true });
+    expect(await events({ since: 500, kinds: ["rule.error"] })).toEqual({ events: [], cursor: 1, truncated: true });
   });
 
   it(`keeps the last ${AGENT_EVENTS_PER_AGENT} per agent and says when some were trimmed`, async () => {
@@ -255,6 +303,6 @@ describe("getEvents", () => {
     expect((await events()).file).toBeUndefined();
     await env.service.call(env.user, "updateSettings", { agentEventsFile: true });
     expect((await events()).file).toBe(true);
-    await expect(events({ waitSec: 301 })).rejects.toMatchObject({ code: "invalid_params" });
+    await expect(events({ waitSec: MAX_WAIT_SECONDS + 1 })).rejects.toMatchObject({ code: "invalid_params" });
   });
 });

@@ -13,11 +13,11 @@
  */
 import type { AgentEvent, AgentEventKind, ApprovalRequest, Config, ExecutionStatus, Rule } from "../core/types";
 import type { AgentEventRepository, AgentEventState } from "../storage/repositories";
-import { ApiError, redactUrl } from "./permissions";
+import { redactUrl } from "./permissions";
 
 /** The same error on the same tab is reported again only after this long. */
 export const ERROR_REPEAT_MS = 10 * 60_000;
-/** Calls one agent may have waiting at once. */
+/** Calls one agent may have waiting at once; another lets the oldest return early. */
 export const MAX_WAITS_PER_AGENT = 2;
 
 export type RuleEventKind = Extract<AgentEventKind, `rule.${string}`>;
@@ -46,10 +46,14 @@ export interface EventPage {
   truncated: boolean;
 }
 
-/** An event as an agent sees it. */
+/** An event as an agent sees it: page addresses hidden as the settings say, in its reason too (some Chrome errors quote them). */
 export function publicEvent(e: AgentEvent, redact: boolean): Omit<AgentEvent, "agentId"> {
   const { agentId: _agent, ...rest } = e;
-  return rest.url === undefined ? rest : { ...rest, url: redactUrl(rest.url, redact) };
+  return {
+    ...rest,
+    ...(rest.url !== undefined ? { url: redactUrl(rest.url, redact) } : {}),
+    ...(rest.reason !== undefined && redact ? { reason: rest.reason.replace(/\bhttps?:\/\/[^\s"'<>)]+/g, (u) => redactUrl(u, true) || "…") } : {}),
+  };
 }
 
 /** null agentId = the user: everyone's events. */
@@ -70,9 +74,12 @@ const APPROVAL_EVENT: Partial<Record<ApprovalRequest["status"], AgentEventKind>>
   stale: "approval.stale",
 };
 
+type NewEvent = Omit<AgentEvent, "seq">;
+
 export class AgentEvents {
   private readonly listeners = new Set<(added: AgentEvent[]) => void>();
-  private readonly waiting = new Map<string, number>();
+  /** Per agent, a way to let each waiting call return now (oldest first). */
+  private readonly waiting = new Map<string, (() => void)[]>();
 
   constructor(
     private readonly deps: {
@@ -91,9 +98,9 @@ export class AgentEvents {
   /** Something happened in a tab run by an agent's rule. */
   async rule(input: RuleEventInput): Promise<void> {
     const { type, agentId } = input.rule.meta.origin;
-    if (type !== "agent" || !agentId || !eligible(await this.deps.config.get(), agentId)) return;
+    if (type !== "agent" || !agentId) return;
     const now = this.deps.now();
-    const event: Omit<AgentEvent, "seq"> = {
+    const event: NewEvent = {
       at: now,
       kind: input.kind,
       agentId,
@@ -107,20 +114,30 @@ export class AgentEvents {
     await this.add((s) => (event.kind === "rule.error" && repeatedError(s, event, now) ? [] : [event]));
   }
 
-  /** Approval requests that stopped waiting between two versions of the config. */
+  /**
+   * Approval requests that stopped waiting between two versions of the
+   * config: settled, or dropped from the (bounded) list while still waiting.
+   * A request the "before" doesn't have was made by a call running at the
+   * same time; if it's already settled, this is the only call that sees it.
+   */
   async approvals(before: Config, after: Config): Promise<void> {
     const was = new Map(before.approvals.map((a) => [a.id, a.status]));
-    const settled = after.approvals.filter((a) => was.get(a.id) === "pending" && a.status !== "pending" && eligible(after, a.agentId));
-    if (!settled.length) return;
     const now = this.deps.now();
-    await this.add((s) =>
-      settled.flatMap((a) => {
-        const kind = APPROVAL_EVENT[a.status]!;
-        // Two calls can see the same change (each compares with the config it started from).
-        if (s.events.some((e) => e.approvalId === a.id && e.kind === kind)) return [];
-        return [{ at: now, kind, agentId: a.agentId, ruleId: a.ruleId, approvalId: a.id, approvalKind: a.kind }];
-      }),
-    );
+    const event = (a: ApprovalRequest, kind: AgentEventKind): NewEvent => ({
+      at: now,
+      kind,
+      agentId: a.agentId,
+      ruleId: a.ruleId,
+      approvalId: a.id,
+      approvalKind: a.kind,
+    });
+    const settled = after.approvals.filter((a) => a.status !== "pending" && (was.get(a.id) ?? "pending") === "pending");
+    const kept = new Set(after.approvals.map((a) => a.id));
+    const dropped = before.approvals.filter((a) => a.status === "pending" && !kept.has(a.id));
+    const fresh = [...settled.map((a) => event(a, APPROVAL_EVENT[a.status]!)), ...dropped.map((a) => event(a, "approval.stale"))];
+    if (!fresh.length) return;
+    // Two calls can see the same change (each compares with the config it started from).
+    await this.add((s) => fresh.filter((e) => !s.events.some((o) => o.approvalId === e.approvalId && o.kind === e.kind)));
   }
 
   forget(agentId: string): Promise<void> {
@@ -129,49 +146,60 @@ export class AgentEvents {
 
   async list(agentId: string | null, f: EventFilter): Promise<EventPage> {
     const s = await this.deps.store.read();
-    const events = s.events.filter((e) => matches(e, agentId, f));
+    // A cursor from before the events were reset (extension reinstalled, data cleared): start over.
+    const reset = f.since !== undefined && f.since > s.seq;
+    const filter = reset ? { ...f, since: undefined } : f;
+    const events = s.events.filter((e) => matches(e, agentId, filter));
     const dropped = agentId === null ? Math.max(0, ...Object.values(s.dropped)) : (s.dropped[agentId] ?? 0);
     return {
       events,
       // Nothing yet: from now on (a first call without since waits for what comes next).
-      cursor: events.length ? events[events.length - 1].seq : (f.since ?? s.seq),
-      truncated: f.since !== undefined && f.since < dropped,
+      cursor: events.length ? events[events.length - 1].seq : reset ? s.seq : (f.since ?? s.seq),
+      truncated: reset || (f.since !== undefined && f.since < dropped),
     };
   }
 
   /**
    * The events after `since`, or, if there are none yet, the first ones to
    * come within `ms`. Listens before it looks, so nothing slips in between.
+   * Waiting calls nobody reads any more (the client gave up and asked again)
+   * would hold their places: a call past MAX_WAITS_PER_AGENT lets the oldest
+   * return now, with what it has.
    */
   async wait(agentId: string | null, f: EventFilter, ms: number): Promise<EventPage> {
     if (ms <= 0) return this.list(agentId, f);
     const key = agentId ?? "";
-    if ((this.waiting.get(key) ?? 0) >= MAX_WAITS_PER_AGENT) {
-      throw new ApiError("conflict", `Already waiting for events ${MAX_WAITS_PER_AGENT} times; wait for those to return first`);
-    }
-    this.waiting.set(key, (this.waiting.get(key) ?? 0) + 1);
-    let stop = () => undefined as void;
+    const queue = this.waiting.get(key) ?? [];
+    this.waiting.set(key, queue);
+    while (queue.length >= MAX_WAITS_PER_AGENT) queue.shift()!();
+    let woken!: () => void;
+    const arrived = new Promise<void>((resolve) => (woken = resolve));
+    queue.push(woken);
+    const off = this.onEvents((added) => added.some((e) => matches(e, agentId, { ...f, since: undefined })) && woken());
+    const timer = setTimeout(woken, ms);
     try {
-      let woken!: () => void;
-      const arrived = new Promise<void>((resolve) => (woken = resolve));
-      const off = this.onEvents((added) => added.some((e) => matches(e, agentId, { ...f, since: undefined })) && woken());
-      const timer = setTimeout(woken, ms);
-      stop = () => {
-        off();
-        clearTimeout(timer);
-      };
       const first = await this.list(agentId, f);
       if (first.events.length) return first;
       await arrived;
       return await this.list(agentId, { ...f, since: first.cursor });
     } finally {
-      stop();
-      this.waiting.set(key, (this.waiting.get(key) ?? 1) - 1);
+      off();
+      clearTimeout(timer);
+      const i = queue.indexOf(woken);
+      if (i >= 0) queue.splice(i, 1);
     }
   }
 
-  private async add(pick: (s: AgentEventState) => Omit<AgentEvent, "seq">[]) {
-    const added = await this.deps.store.append(pick);
+  /**
+   * Store new events for agents that may still have them: checked inside the
+   * store's write, so an agent removed meanwhile (its events just deleted)
+   * gets none back.
+   */
+  private async add(pick: (s: AgentEventState) => NewEvent[]) {
+    const added = await this.deps.store.append(async (s) => {
+      const config = await this.deps.config.get();
+      return pick(s).filter((e) => eligible(config, e.agentId));
+    });
     if (!added.length) return;
     for (const l of this.listeners) {
       try {

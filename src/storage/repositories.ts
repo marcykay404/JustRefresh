@@ -227,10 +227,10 @@ export class AgentEventRepository {
   }
 
   /** `pick` sees the stored events and returns the ones to add (it may drop repeats). Returns what was added. */
-  append(pick: (state: AgentEventState) => Omit<AgentEvent, "seq">[]): Promise<AgentEvent[]> {
+  append(pick: (state: AgentEventState) => Omit<AgentEvent, "seq">[] | Promise<Omit<AgentEvent, "seq">[]>): Promise<AgentEvent[]> {
     return this.mutex.run(async () => {
       const cur = await this.load();
-      const fresh = pick(cur);
+      const fresh = await pick(cur);
       if (!fresh.length) return [];
       let seq = cur.seq;
       const added = fresh.map((e) => ({ ...e, seq: ++seq }) as AgentEvent);

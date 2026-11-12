@@ -113,9 +113,9 @@ export const EVENT_KINDS = [
   "approval.rejected",
   "approval.stale",
 ];
-/** Below the 60 s many MCP clients allow a tool call; the extension allows up to 300. */
+/** Below the 60 s many MCP clients allow a tool call; the extension allows up to 240. */
 export const DEFAULT_WAIT_SECONDS = 45;
-export const MAX_WAIT_SECONDS = 300;
+export const MAX_WAIT_SECONDS = 240;
 
 const tool = (name, method, title, annotations, description, properties = {}, required = []) => ({
   name,
@@ -282,6 +282,16 @@ export const INSTRUCTIONS =
  */
 export const STRUCTURED_MAX_BYTES = 4096;
 
+/** How long the bridge waits for the extension to answer a call (a waiting call gets its wait on top). */
+export const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** Added to an error the agent can do something about. */
+const HINTS = {
+  pairing_required: "\nOpen the extension dashboard → Agent Integrations and approve this agent.",
+  // An extension older than this bridge: it doesn't send events.
+  "getEvents:unsupported_method": "\nThis version of JustRefresh doesn't send events: use refresh_get_status instead, and ask the user to update JustRefresh.",
+};
+
 export const PROTOCOL_VERSION = "2025-06-18";
 /** Versions this server can speak; a client asking for another gets ours (MCP version negotiation). */
 export const SUPPORTED_PROTOCOL_VERSIONS = [PROTOCOL_VERSION, "2025-03-26", "2024-11-05"];
@@ -337,13 +347,13 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
         try {
           const api = forApi(t.method, params);
           // A waiting call may take its whole wait: give the reply time to come back after it.
-          const timeoutMs = t.method === "getEvents" ? (api.waitSec + 15) * 1000 : undefined;
+          const timeoutMs = t.method === "getEvents" ? Math.max(DEFAULT_TIMEOUT_MS, (api.waitSec + 15) * 1000) : undefined;
           let res = await callApi(t.method, api, timeoutMs ? { timeoutMs } : undefined);
           // An older extension doesn't know includeSchemas: ask it the way it understands (its full payload).
           if (t.method === "getCapabilities" && params?.includeSchemas === undefined && rejectsIncludeSchemas(res)) res = await callApi(t.method, params);
           if (!res?.ok) {
             const err = res?.error ?? { code: "internal", message: "No response" };
-            const hint = err.code === "pairing_required" ? "\nOpen the extension dashboard → Agent Integrations and approve this agent." : "";
+            const hint = HINTS[err.code === "unsupported_method" ? `${t.method}:${err.code}` : err.code] ?? "";
             return reply({ isError: true, content: [{ type: "text", text: JSON.stringify(err) + hint }] });
           }
           if (t.method === "getCapabilities") return reply(toolResult(withInstructions(res.result)));
@@ -429,13 +439,22 @@ export const eventsFilePath = (dir, agent) => path.join(dir, "events", `${saniti
  * Append one event as a line of JSON to the agent's file (owner-only, like
  * the rest of the folder), for scripts and tools that follow it (tail -F).
  */
-export function appendEventLine(dir, agent, event, { maxBytes = EVENTS_FILE_MAX_BYTES } = {}) {
+export function appendEventLine(dir, agent, event, { maxBytes = EVENTS_FILE_MAX_BYTES, log = () => undefined } = {}) {
   const file = eventsFilePath(dir, agent);
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  let size = 0;
   try {
-    if (fs.statSync(file).size >= maxBytes) fs.renameSync(file, `${file}.1`);
-  } catch {
-    // No file yet.
+    size = fs.statSync(file).size;
+  } catch (e) {
+    if (e.code !== "ENOENT") throw e;
+  }
+  if (size >= maxBytes) {
+    try {
+      fs.renameSync(file, `${file}.1`);
+    } catch (e) {
+      // For example on Windows while another program has the file open: keep writing, and say so.
+      log(`Could not start a new events file (${e.message}); ${path.basename(file)} keeps growing for now`);
+    }
   }
   fs.appendFileSync(file, JSON.stringify(event) + "\n", { mode: 0o600 });
 }

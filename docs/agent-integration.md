@@ -128,32 +128,38 @@ again and again. Events are kept in the extension (storage.local), not in the
 bridge: an agent's session is short, and the next one asks "what happened
 since event N?"; the extension also checks the agent's key on every read.
 
-| Kind                  | When                                                                                                                                                  |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `approval.approved`   | the user approved a request (`approvalKind`: `activate` or `delete`)                                                                                  |
-| `approval.rejected`   | the user declined it                                                                                                                                  |
-| `approval.stale`      | it no longer applies: the rule changed, was switched on or off or deleted, or a newer request replaced it                                             |
-| `rule.matched`        | the rule's stop condition matched on a tab                                                                                                            |
-| `rule.completed`      | the run ended: a stop action, a time or refresh limit, or the "stop" choice for unreadable pages                                                      |
-| `rule.paused`         | the run waits for the user: a page reached by submitting a form (never refreshed), gave up on an unreadable page, or the rule's own pause with no end |
-| `rule.error`          | an action failed (the same error on the same tab at most once every 10 minutes)                                                                       |
-| `rule.unknown_streak` | 3 checks in a row couldn't read the page (`streak`)                                                                                                   |
+| Kind                  | When                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `approval.approved`   | the user approved a request (`approvalKind`: `activate` or `delete`)                                                                                   |
+| `approval.rejected`   | the user declined it                                                                                                                                   |
+| `approval.stale`      | it no longer applies: the rule changed, was switched on or off or deleted, or a newer request replaced it (or it dropped off the list of 200 requests) |
+| `rule.matched`        | the rule's stop condition started matching on a tab (once, not at every check while it stays matched)                                                  |
+| `rule.completed`      | the run ended: a stop action, a time or refresh limit, or the "stop" choice for unreadable pages                                                       |
+| `rule.paused`         | the run waits for the user: a page reached by submitting a form (never refreshed), gave up on an unreadable page, or the rule's own pause with no end  |
+| `rule.error`          | an action failed (the same error on the same tab at most once every 10 minutes)                                                                        |
+| `rule.unknown_streak` | 3 checks in a row couldn't read the page (`streak`)                                                                                                    |
 
 - **Who hears what:** only the agent that created the rule or asked for the
   approval, and only while it is approved with `status:read` (events aren't
   kept for it meanwhile). The user's own rules send nothing. Removing an
-  agent deletes its events.
+  agent deletes the events the extension keeps for it (not its events file,
+  if one was written: delete that yourself).
 - **What's in one:** `seq`, `at`, `kind`, `ruleId`, and as they apply
   `tabId`, `url`, `status`, `reason`, `streak`, `approvalId`,
   `approvalKind`. No page text: reasons are JustRefresh's own words, as in
-  History. `url` is hidden as "Hide URL query strings from agents" says when
-  it is handed out.
+  History. `url`, and any address quoted in `reason` (some Chrome errors
+  do), are hidden as "Hide URL query strings from agents" says when they are
+  handed out.
 - **Reading them:** `getEvents({ since })` returns the events after `since`
-  (left out: everything still kept). With `waitSec` (up to 300) and nothing
-  new yet, the call waits for the first event; at most 2 waiting calls per
-  agent. Pass `cursor` back as `since`. `truncated: true` means some events
-  after `since` were trimmed: the last 100 per agent are kept, for up to 7
-  days.
+  (left out: everything still kept). With `waitSec` (up to 240, below the
+  5 minutes Chrome gives a message from another extension) and nothing new
+  yet, the call waits for the first event. An agent has at most 2 waiting
+  calls: a third lets the oldest return at once (a client that gave up on a
+  call doesn't block the next ones). Pass `cursor` back as `since`.
+  `truncated: true` means some events after `since` were trimmed (the last
+  100 per agent are kept, for up to 7 days), or that `since` is from before
+  the events were reset (the extension reinstalled or its data cleared):
+  then everything still kept comes back.
 - **MCP:** `refresh_wait_for_event` waits 45 s by default (many MCP clients
   give up on a tool call after 60 s). MCP itself can't start a turn for the
   model: a server's notifications reach the client, not the model, so
@@ -166,7 +172,9 @@ since event N?"; the extension also checks the agent's key on every read.
   `<agent>.jsonl.1`). Following the file (Claude Code's Monitor on
   `tail -F`, or any script) wakes the agent only when something happens.
   Only events from while the bridge is connected are written; `getEvents`
-  has the rest. Off by default, and never exported or imported.
+  has the rest. A bridge older than the extension writes nothing: after
+  updating it, turn desktop apps off and on (see `bridge/README.md`). Off by
+  default, and never exported or imported.
 
 MCP agents get this at runtime: the server's `instructions` (sent at
 `initialize`, `INSTRUCTIONS` in `bridge/lib.mjs`) and each tool's description

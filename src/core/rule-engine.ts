@@ -263,6 +263,7 @@ export class RuleEngine extends CycleEngine {
     const evalOut = await this.evaluate(rule, tab, cur, { justLoaded: true });
     const latest = await this.deps.stores.runtime.get(tab.id);
     if (!latest || latest.generation !== cur.generation) return null;
+    const wasMatched = latest.lastEvaluation?.status === "matched";
     cur = {
       ...latest,
       lastEvaluation: { at: now, status: evalOut.result.status, reason: explainTrace(evalOut.trace) },
@@ -271,7 +272,7 @@ export class RuleEngine extends CycleEngine {
       ...(onlyFramesNotReady(evalOut.trace) ? {} : { framesWaiting: undefined }),
     };
     if (evalOut.result.status !== "matched") return transition(cur, "scheduled", { reason: undefined });
-    this.emit({ kind: "rule.matched", rule, tabId: tab.id, url: tab.url });
+    if (!wasMatched) this.emit({ kind: "rule.matched", rule, tabId: tab.id, url: tab.url });
     const after = await this.runActions({ rule, tab, event: "navigation" }, cur, rule.actions.onMatched, "matched", { allowRefresh: false });
     this.reportChange(rule, tab, cur.status, after);
     return after;

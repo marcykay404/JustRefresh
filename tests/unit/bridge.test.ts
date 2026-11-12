@@ -1,6 +1,7 @@
 // @ts-nocheck — the bridge is plain ESM JavaScript.
 import {
   appendEventLine,
+  DEFAULT_TIMEOUT_MS,
   DEFAULT_WAIT_SECONDS,
   EVENT_KINDS,
   eventsFilePath,
@@ -501,9 +502,14 @@ describe("events (refresh_wait_for_event)", () => {
     await env.service.call(env.user, "resolveApproval", { id: req.approvalId, approve: true });
     const r = await wait({ timeoutSec: 0 });
     expect(r.structuredContent).toMatchObject({ events: [{ seq: 1, kind: "approval.approved", ruleId: rule.id }], cursor: 1, truncated: false });
-    expect(calls.at(-1)).toEqual({ method: "getEvents", params: { waitSec: 0 }, o: { timeoutMs: 15_000 } });
+    // Never less time than any other call gets.
+    expect(calls.at(-1)).toEqual({ method: "getEvents", params: { waitSec: 0 }, o: { timeoutMs: DEFAULT_TIMEOUT_MS } });
     await wait({ since: 1, ruleId: rule.id, kinds: ["rule.matched"], timeoutSec: 1 });
-    expect(calls.at(-1)).toEqual({ method: "getEvents", params: { since: 1, ruleId: rule.id, kinds: ["rule.matched"], waitSec: 1 }, o: { timeoutMs: 16_000 } });
+    expect(calls.at(-1)).toEqual({
+      method: "getEvents",
+      params: { since: 1, ruleId: rule.id, kinds: ["rule.matched"], waitSec: 1 },
+      o: { timeoutMs: DEFAULT_TIMEOUT_MS },
+    });
   });
 
   it(`waits ${DEFAULT_WAIT_SECONDS} s by default, below the 60 s many clients allow; refuses a wait out of range`, async () => {
@@ -532,6 +538,13 @@ describe("events (refresh_wait_for_event)", () => {
       truncated: false,
       eventsFile: "/home/me/.justrefresh/events/claude.jsonl",
     });
+  });
+
+  it("tells the agent what to do instead when the extension is older and has no events", async () => {
+    const handle = createMcpHandler({ callApi: async () => ({ ok: false, error: { code: "unsupported_method", message: 'Unknown method "getEvents"' } }) });
+    const r = await handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "refresh_wait_for_event", arguments: { timeoutSec: 0 } } });
+    expect(r.result.isError).toBe(true);
+    expect(r.result.content[0].text).toMatch(/refresh_get_status/);
   });
 
   it("offers the event kinds the extension sends, and the instructions point to it", async () => {
@@ -567,6 +580,20 @@ describe("events file", () => {
     appendEventLine(dir, "Claude Code", { seq: 3, kind: "rule.error" }, { maxBytes: 60 });
     expect(existsSync(`${file}.1`)).toBe(true);
     expect(readFileSync(file, "utf8")).toBe('{"seq":3,"kind":"rule.error"}\n');
+  });
+
+  it("says so when it can't start a new file, and keeps writing", async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-events-"));
+    const file = eventsFilePath(dir, "a");
+    mkdirSync(`${file}.1/blocked`, { recursive: true }); // the rename target can't be replaced
+    writeFileSync(file, "x".repeat(100));
+    const logged = [];
+    appendEventLine(dir, "a", { seq: 1 }, { maxBytes: 50, log: (m) => logged.push(m) });
+    expect(logged).toEqual([expect.stringMatching(/Could not start a new events file/)]);
+    expect(readFileSync(file, "utf8").endsWith('{"seq":1}\n')).toBe(true);
   });
 });
 

@@ -43,6 +43,8 @@ interface Cycle {
   trigger: TriggerHandler;
   now: number;
   rt: TabRuntime;
+  /** The last check of this run already matched (the agent heard about it then). */
+  wasMatched: boolean;
 }
 
 type Outcome = EvaluationResult["status"];
@@ -84,7 +86,8 @@ export abstract class CycleEngine extends EngineBase {
     const rule = res.controller;
     const trigger = this.registries.triggers.get(rule.trigger.type);
     if (!trigger) return { result: await this.save(transition(rt, "error", { lastError: `Unknown trigger ${rule.trigger.type}`, nextDueAt: null })) };
-    return { tabId, event, config, tab, rule, trigger, now: this.now(), rt };
+    const wasMatched = rt.lastEvaluation?.status === "matched" && !isTerminal(rt.status);
+    return { tabId, event, config, tab, rule, trigger, now: this.now(), rt, wasMatched };
   }
 
   /** A time limit that has passed ends the run (and says so when it was waiting for something). */
@@ -260,7 +263,8 @@ export abstract class CycleEngine extends EngineBase {
   }
 
   private async onMatched(c: Cycle): Promise<CycleResult> {
-    this.emit({ kind: "rule.matched", rule: c.rule, tabId: c.tabId, url: c.tab.url });
+    // Once when it starts matching, not at every check while it stays so (a rule that keeps watching).
+    if (!c.wasMatched) this.emit({ kind: "rule.matched", rule: c.rule, tabId: c.tabId, url: c.tab.url });
     c.rt = await this.runActions(c, { ...c.rt, unknownStreak: 0 }, c.rule.actions.onMatched, "matched", { allowRefresh: true });
     if (c.rt.status === "evaluating") c.rt = transition(c.rt, "scheduled", { nextDueAt: this.nextDue(c.rule, c.now) });
     return this.save(c.rt);

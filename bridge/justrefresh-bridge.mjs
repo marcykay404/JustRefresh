@@ -22,6 +22,7 @@ import {
   createLineDecoder,
   createMcpHandler,
   createNativeDecoder,
+  DEFAULT_TIMEOUT_MS,
   encodeNative,
   eventsFilePath,
   isNonce,
@@ -97,7 +98,7 @@ function runNativeHost() {
   const writeEvent = (msg) => {
     if (typeof msg.agent !== "string" || !msg.event || typeof msg.event !== "object") return;
     try {
-      appendEventLine(DIR, msg.agent, msg.event);
+      appendEventLine(DIR, msg.agent, msg.event, { log });
     } catch (e) {
       log(`Could not write an event to its file: ${e.message}`);
     }
@@ -266,7 +267,7 @@ function runMcp() {
     return ready;
   }
 
-  async function callApi(method, params, { timeoutMs = 30_000 } = {}) {
+  async function callApi(method, params, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     await connect();
     const id = ++seq;
     return new Promise((resolve) => {

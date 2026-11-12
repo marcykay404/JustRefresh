@@ -6,8 +6,12 @@ import { ApiError } from "../permissions";
 import { m, type MethodDef } from "../method";
 import type { ServiceInternals } from "../rule-api";
 
-/** The longest an agent may hold a call open waiting for events. */
-export const MAX_WAIT_SECONDS = 300;
+/**
+ * The longest an agent may hold a call open waiting for events. Below the
+ * 5 minutes Chrome gives one event (a message from another extension) before
+ * it stops the service worker.
+ */
+export const MAX_WAIT_SECONDS = 240;
 
 export function eventsMethods(svc: ServiceInternals): Record<string, MethodDef> {
   const d = svc.deps;
