@@ -25,9 +25,23 @@
   Application-level state (e.g. editors with custom models, unsent chat
   drafts kept in JS) may not be detectable. Forms removed from the DOM or
   submitted are treated as saved.
-- **Frames.** Content scripts run in the top frame only. Activity inside
-  iframes and DOM inside cross-origin frames are not observed; DOM conditions
-  only see the top document.
+- **Frames.** Conditions read frames from the page's own site only (a
+  dashboard on `grafana.example.com` inside `erp.example.com`, not an ad or a
+  widget from elsewhere, nor a page of the site that such a frame embeds),
+  and only where JustRefresh has access to that site too. "Own site" is
+  worked out without a public-suffix list: the last two parts of the
+  address, or three under a country's second level (`example.com.sg`), so
+  shared hosting domains (`github.io`, `cloudfront.net`, …) count as one
+  site. Typing and unsaved changes count in every frame with access. A frame
+  that can't be read yet (still loading) leaves conditions that depend on it
+  "unknown: a frame couldn't be read yet": the rule neither matches nor
+  pauses and tries again; after 3 such checks in a row the rule's "when the
+  page can't be checked" setting applies. Empty `about:blank` / `srcdoc`
+  frames and lazy frames not scrolled to yet are left out; ones with content
+  (rich-text editors) are read. Frames are taken in the order Chrome numbers
+  them, not their order on the page, for "the first frame where the selector
+  matches". Picker, click, highlight and "keep scroll position" work in the
+  top frame only.
 - **Activity before monitoring.** On pages loaded before site access was
   granted, typing history is unknown; the monitor is conservative while
   focus is in an editable field during the first grace period.

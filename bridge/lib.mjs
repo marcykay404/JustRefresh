@@ -6,8 +6,11 @@ import crypto from "node:crypto";
 // Both sides prove they know the token without sending it: each signs the
 // other's random challenge (HMAC-SHA256), labelled with its role so a proof
 // can't be reflected back. A program that only pretends to be the bridge (for
-// example one that took its Windows pipe name first) learns nothing it can use,
-// and the MCP side sends nothing else (no agent key) until the bridge has proved itself.
+// example one that took its Windows pipe name first) learns nothing it can use:
+//   bridge → challenge · client → hello (its proof, its own challenge)
+//   bridge → ready (its proof) · client → identify (agent id and name), then requests
+// The MCP side says which agent it is, and sends its key, only after the
+// bridge has proved itself.
 export const newNonce = () => crypto.randomBytes(16).toString("hex");
 export const proofOf = (token, role, nonce) => crypto.createHmac("sha256", token).update(`${role}:${nonce}`).digest("hex");
 export function sameSecret(a, b) {

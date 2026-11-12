@@ -43,7 +43,8 @@ AI apps → Set up), with the commands ready to copy:
    ```
    It copies itself to `~/.justrefresh/bin/`, writes the launcher Chrome
    starts, registers the native host with every Chromium browser it finds
-   (Chrome, Chromium, Edge, Brave; or the one given with `--browser`), and on
+   (Chrome and its Beta/Dev/Canary channels, Chromium, Edge, Brave, Vivaldi,
+   Arc; or the one given with `--browser`), and on
    Windows adds the registry entries (HKCU, no admin). It prints the MCP
    settings with the full path filled in.
 4. Add them to your MCP client:
@@ -51,6 +52,11 @@ AI apps → Set up), with the commands ready to copy:
    { "mcpServers": { "justrefresh": { "command": "node", "args": ["/Users/you/.justrefresh/bin/justrefresh-bridge.mjs", "mcp"] } } }
    ```
 5. Start the agent; approve it in the dashboard when the pairing request appears.
+
+After installing a newer bridge, turn desktop apps off and on in
+JustRefresh → Agent Integrations (or restart Chrome), so Chrome starts the
+new copy; a newer AI-app side refuses an older one with a message saying
+so. Restarting your AI app as well picks up the new copy on its side.
 
 From a checkout of this repository, `node bridge/justrefresh-bridge.mjs install --extension-id <id>`
 (or `node bridge/install.mjs --extension-id <id>`) does the same.

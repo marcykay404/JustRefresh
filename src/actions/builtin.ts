@@ -35,7 +35,8 @@ export const refreshAction: ActionHandler<z.infer<typeof refreshSchema>> = {
   permissions: [],
   disruptive: true,
   execute: async (c, ctx) => {
-    await ctx.reload({ bypassCache: c.bypassCache === true, keepScroll: c.keepScroll === true });
+    const r = await ctx.reload({ bypassCache: c.bypassCache === true, keepScroll: c.keepScroll === true });
+    if (r) return { ok: false, skipped: true, message: `Not refreshed: ${r.skipped}` };
     return { ok: true, reloaded: true };
   },
 };

@@ -57,6 +57,69 @@ describe("click action", () => {
     expect(entry?.reason).toMatch(/submit a form/);
   });
 
+  it("counts clicks toward the refresh limit, so a rule that only clicks stops too", async () => {
+    const rule = whenInStock([{ type: "click", selector: "#add" }]);
+    const env = await setup({ ...rule, limits: { maxRefreshes: 2 } });
+    await env.engine.runCycle(1, "manual");
+    await env.engine.runCycle(1, "manual");
+    expect(env.page.clicks).toHaveLength(2);
+    expect((await env.runtime.get(1))?.clickCount).toBe(2);
+    await env.engine.runCycle(1, "alarm");
+    expect(env.page.clicks).toHaveLength(2);
+    const rt = await env.runtime.get(1);
+    expect(rt?.status).toBe("completed");
+    expect(rt?.reason).toMatch(/maximum of 2 refreshes and clicks/);
+  });
+
+  it("doesn't go over the limit within one list: a refresh after the last allowed click is skipped", async () => {
+    const rule = whenInStock([{ type: "click", selector: "#add" }, { type: "refresh" }]);
+    const env = await setup({ ...rule, limits: { maxRefreshes: 1 } });
+    await env.engine.runCycle(1, "manual");
+    expect(env.page.clicks).toHaveLength(1);
+    expect(env.browser.reloads).toEqual([]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect((await env.history.list()).find((h) => h.action === "refresh")).toMatchObject({
+      outcome: "skipped",
+      reason: expect.stringMatching(/Not refreshed: Reached maximum/),
+    });
+  });
+
+  it("page changes until the click's page has loaded are the click's; one you make after that starts a new run", async () => {
+    const env = await setup(whenInStock([{ type: "click", selector: "#add" }]));
+    await env.engine.runCycle(1, "manual");
+    const generation = (await env.runtime.get(1))!.generation;
+    env.browser.addTab(1, `${URL}?page=2`);
+    await env.engine.onTabUpdated(1, { url: `${URL}?page=2` }); // the click's
+    env.browser.addTab(1, `${URL}?page=2&sort=default`);
+    await env.engine.onTabUpdated(1, { url: `${URL}?page=2&sort=default` }); // that page tidying its address
+    expect((await env.runtime.get(1))?.generation).toBe(generation);
+    expect((await env.runtime.get(1))?.clickCount).toBe(1);
+    await env.engine.onTabUpdated(1, { status: "complete" });
+    env.clock.advance(3000);
+    env.browser.addTab(1, `${URL}?page=9`);
+    await env.engine.onTabUpdated(1, { url: `${URL}?page=9` }); // yours
+    const rt = (await env.runtime.get(1))!;
+    expect(rt.generation).toBeGreaterThan(generation);
+    expect(rt.clickCount ?? 0).toBe(0);
+  });
+
+  it("a page the click opens is part of the same run, so a 'next page' rule still stops at its limit", async () => {
+    const rule = whenInStock([{ type: "click", selector: "#add" }]);
+    const env = await setup({ ...rule, limits: { maxRefreshes: 2 } });
+    for (const page of [2, 3]) {
+      await env.engine.runCycle(1, "manual");
+      // The click opened the next page.
+      env.browser.addTab(1, `${URL}?page=${page}`);
+      env.page.setHtml(1, PAGE);
+      await env.engine.onTabUpdated(1, { url: `${URL}?page=${page}` });
+    }
+    await env.engine.runCycle(1, "alarm"); // the next check: limit reached
+    const rt = await env.runtime.get(1);
+    expect(env.page.clicks).toHaveLength(2);
+    expect(rt?.clickCount).toBe(2);
+    expect(rt?.status).toBe("completed");
+  });
+
   it("waits while you type, like a refresh", async () => {
     const env = await setup(whenInStock([{ type: "click", selector: "#add" }, { type: "stopRefresh" }]));
     env.page.activityByTab.set(1, quietActivity({ editing: true, sinceKeyMs: 500, sinceInputMs: 500 }));

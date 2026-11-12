@@ -15,6 +15,9 @@ import { FAST_WAIT_REASON, FastSiteLimit } from "./fast-site-limit";
 import { alarmName, DEFAULT_TIMEOUTS, type CycleResult, type EngineDeps, type EngineTimeouts, type PagePort } from "./ports";
 import { isNewRun, restingState, waitingReason, withoutHash } from "./support";
 
+/** How long after the rule's click a change of page counts as that click's doing. */
+const CLICK_NAVIGATION_MS = 15_000;
+
 export abstract class EngineBase {
   protected readonly registries: Registries;
   private readonly locks = new Map<number, Promise<unknown>>();
@@ -122,7 +125,10 @@ export abstract class EngineBase {
     const cur = rt ?? newRuntime(tab.id, tab.url, this.now());
     if (res.kind !== "controller") return restingState(cur, tab, res);
     const rule = res.controller;
-    if (isNewRun(cur, tab, rule, opts.ownNavigation)) return this.newRun(cur, tab, rule, config, opts);
+    // A page change shortly after the rule's own click, until that page has loaded, is the click's
+    // doing (like the rule's own refresh): part of its run, so its counts and limits go on.
+    const clicked = cur.clickedAt !== undefined && this.now() - cur.clickedAt < CLICK_NAVIGATION_MS;
+    if (isNewRun(cur, tab, rule, opts.ownNavigation || clicked)) return this.newRun(cur, tab, rule, config, opts);
     return this.carryOn(cur, tab, rule, opts.restoring === true, opts.slot ?? 0);
   }
 

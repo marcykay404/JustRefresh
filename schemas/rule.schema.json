@@ -204,6 +204,7 @@
       "type": "object",
       "properties": {
         "maxRefreshes": {
+          "description": "Stop after this many refreshes; the rule's clicks count too",
           "type": "integer",
           "minimum": 1,
           "maximum": 1000000
@@ -267,7 +268,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 500,
-              "description": "CSS selector evaluated in the top-level document"
+              "description": "CSS selector, looked up in the page, then in its frames from the same site"
             },
             "minCount": {
               "description": "Minimum number of matching elements (default 1)",
@@ -295,7 +296,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 500,
-              "description": "CSS selector evaluated in the top-level document"
+              "description": "CSS selector, looked up in the page, then in its frames from the same site"
             }
           },
           "required": [
@@ -359,7 +360,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 500,
-              "description": "CSS selector evaluated in the top-level document"
+              "description": "CSS selector, looked up in the page, then in its frames from the same site"
             },
             "attribute": {
               "type": "string",

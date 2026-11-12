@@ -1,11 +1,27 @@
 /**
  * Content script entry. Injected at document_start into pages the user
- * granted access to. Responds only to messages from this extension.
+ * granted access to, in the top frame and in frames from granted sites.
+ * Responds only to messages from this extension.
+ *
+ * Every frame watches activity and can check conditions: the extension reads
+ * them all at once through FRAME_API (scripting.executeScript, in this
+ * extension's isolated world only) and treats the frames as one page. Things
+ * that act on the page (form results, scroll, picker, click, highlight) are
+ * the top frame's alone.
  */
 import { evaluateDomCondition, testSelector } from "../conditions/dom-eval";
-import { CONTENT_PROTOCOL, PICK_CHANNEL, type ContentRequest, type ContentResponse, type PickMessage } from "../shared/messaging-types";
+import {
+  CONTENT_PROTOCOL,
+  FRAME_API,
+  PICK_CHANNEL,
+  type ContentRequest,
+  type ContentResponse,
+  type FrameApi,
+  type PickMessage,
+} from "../shared/messaging-types";
 import { ActivityMonitor } from "./activity-monitor";
 import { currentNavigation, detectFormResult, watchFormPosts } from "./form-post";
+import { siteOf } from "../shared/site";
 import { highlight, isBusy } from "./highlight";
 import { clickElement, restoreScroll, saveScroll } from "./page-actions";
 import { cancelPicker, startPicker } from "./picker";
@@ -31,6 +47,38 @@ if (g[FLAG] !== version) {
   g[FLAG] = version;
   const monitor = new ActivityMonitor(document);
   monitor.start();
+  const frameApi: FrameApi = {
+    version,
+    activity: () => ({ ...monitor.snapshot(), formResult: false }),
+    evaluate: (conditions, includeText) => conditions.slice(0, 100).map((c) => evaluateDomCondition(c, document, { includeText })),
+    testSelector: (selector, includeText) => testSelector(document, selector, includeText),
+  };
+  g[FRAME_API] = frameApi;
+  if (window === window.top) setUpTopFrame(monitor);
+}
+
+/**
+ * Frames whose content the extension would read: of the page's own site (an
+ * about:blank or srcdoc one only with content). Used only when the frames
+ * can't be asked, to know whether the page alone is the whole answer.
+ */
+function readableFrames(): number {
+  const site = siteOf(location.hostname);
+  let n = 0;
+  for (const el of document.querySelectorAll<HTMLIFrameElement>("iframe, frame")) {
+    try {
+      const doc = el.contentDocument;
+      const blank = doc ? /^about:/.test(doc.location.href) : false;
+      const read = doc && blank ? !!doc.body?.textContent?.trim() : siteOf(new URL(el.src || "about:blank").hostname) === site;
+      if (read) n++;
+    } catch {
+      /* no address to tell */
+    }
+  }
+  return n;
+}
+
+function setUpTopFrame(monitor: ActivityMonitor) {
   // Whether this page came from submitting a form (reloading it would send the form again).
   const formResult = detectFormResult(
     location.href,
@@ -54,6 +102,7 @@ if (g[FLAG] !== version) {
       requestId: msg.requestId,
       kind: "evaluate",
       results: msg.conditions.slice(0, 100).map((c) => evaluateDomCondition(c, document, { includeText: msg.includeText })),
+      frames: readableFrames(),
     }),
     testSelector: (msg) => ({ requestId: msg.requestId, kind: "testSelector", result: testSelector(document, msg.selector, msg.includeText) }),
     click: (msg) => ({ requestId: msg.requestId, kind: "click", result: clickElement(document, msg.selector) }),

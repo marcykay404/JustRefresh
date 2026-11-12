@@ -12,9 +12,9 @@
  * Navigation completion is tracked separately (rule-engine.ts).
  */
 import { isLocalWebhookUrl } from "../../actions/page";
-import type { ActionContext, TriggerEvent, TriggerHandler } from "../../registries/contracts";
+import type { ActionContext, ActionResult, TriggerEvent, TriggerHandler } from "../../registries/contracts";
 import type { ActivitySnapshot } from "../../shared/messaging-types";
-import { explainTrace } from "../evaluator";
+import { explainTrace, onlyFramesNotReady } from "../evaluator";
 import { resolveTab } from "../rule-resolver";
 import { decideSafety, FORM_RESULT_REASON } from "../safety";
 import { checkLimits, inActiveWindow, limitDeadline, MIN_ALARM_DELAY_MS, nextWindowStart } from "../schedule";
@@ -26,6 +26,12 @@ import { EngineBase } from "./base";
 import { FAST_WAIT_REASON } from "./fast-site-limit";
 import { alarmName, NAVIGATION_TIMEOUT_MS, type CycleResult } from "./ports";
 import { SafetyBlock, siteKey, waitingReason, withMemory } from "./support";
+
+/** How an action's result is recorded in History. */
+const outcomeOf = (r: ActionResult): HistoryEntry["outcome"] => (r.ok ? "ok" : r.skipped ? "skipped" : "error");
+
+/** Checks in a row a frame may stay unreadable before that counts as the page not being readable. */
+export const FRAME_WAIT_CHECKS = 3;
 
 /** Everything one cycle works with. `rt` is updated as the cycle moves on. */
 interface Cycle {
@@ -164,7 +170,7 @@ export abstract class CycleEngine extends EngineBase {
     if (isTerminal(c.rt.status)) {
       if (c.event !== "manual") return { ...c.rt, nextDueAt: null };
       // Running it again starts over: what stateful conditions saw before doesn't count.
-      c.rt = transition(c.rt, "scheduled", { reason: undefined, memory: undefined });
+      c.rt = transition(c.rt, "scheduled", { reason: undefined, memory: undefined, framesWaiting: undefined });
     }
     return null;
   }
@@ -224,8 +230,23 @@ export abstract class CycleEngine extends EngineBase {
     }
     c.rt = out ? { ...latest, lastEvaluation: { at: now, status, reason: explainTrace(out.trace) }, ...withMemory(out.memory) } : latest;
 
-    const result = status === "matched" ? await this.onMatched(c) : status === "unknown" ? await this.onUnknown(c, trace) : null;
-    return { ...(result ?? (await this.onNotMatched(c, status))), evaluation: trace };
+    return { ...(await this.act(c, status, trace)), evaluation: trace };
+  }
+
+  /**
+   * The actions for what the check found. A frame still loading isn't a
+   * problem with the page: "not this time", keeping the unknown streak. A
+   * frame that still can't be read after FRAME_WAIT_CHECKS checks in a row is
+   * one: the rule's onUnknown policy applies, so it doesn't wait unseen forever.
+   */
+  private async act(c: Cycle, status: Outcome, trace: EvaluationTrace | undefined): Promise<CycleResult> {
+    const framesLoading = status === "unknown" && !!trace && onlyFramesNotReady(trace);
+    const waits = framesLoading ? (c.rt.framesWaiting ?? 0) + 1 : 0;
+    c.rt = { ...c.rt, framesWaiting: waits || undefined };
+    if (status === "matched") return this.onMatched(c);
+    const waiting = framesLoading && waits <= FRAME_WAIT_CHECKS;
+    const result = status === "unknown" && !waiting ? await this.onUnknown(c, trace) : null;
+    return result ?? this.onNotMatched(c, waiting ? "not_matched" : status, waiting);
   }
 
   private async onMatched(c: Cycle): Promise<CycleResult> {
@@ -271,8 +292,8 @@ export abstract class CycleEngine extends EngineBase {
     return null; // "refresh": carry on as if not matched
   }
 
-  private async onNotMatched(c: Cycle, status: Outcome): Promise<CycleResult> {
-    const start = { ...c.rt, unknownStreak: status === "unknown" ? c.rt.unknownStreak + 1 : 0 };
+  private async onNotMatched(c: Cycle, status: Outcome, keepStreak = false): Promise<CycleResult> {
+    const start = { ...c.rt, unknownStreak: keepStreak ? c.rt.unknownStreak : status === "unknown" ? c.rt.unknownStreak + 1 : 0 };
     c.rt = await this.runActions(c, start, c.rule.actions.onNotMatched, status, { allowRefresh: true });
     if (c.rt.status === "evaluating") {
       const nextDueAt = this.nextDue(c.rule, c.now);
@@ -304,7 +325,7 @@ export abstract class CycleEngine extends EngineBase {
       }
       try {
         const result = await handler.execute(action, this.actionContext(c, run, config, condition, opts.allowRefresh));
-        if (action.type !== "log") this.log({ ...entry, outcome: result.ok ? "ok" : "error", reason: result.message });
+        if (action.type !== "log") this.log({ ...entry, outcome: outcomeOf(result), reason: result.message });
         if (result.terminal) run.ended = true;
       } catch (e) {
         run.rt = this.afterActionError(c.rule, run.rt, entry, e);
@@ -332,14 +353,20 @@ export abstract class CycleEngine extends EngineBase {
       now: this.now(),
       reload: async ({ bypassCache, keepScroll }) => {
         if (!allowRefresh) throw new Error("Refresh is not allowed in this phase");
+        // A click earlier in this list may have used the last of the limit: the next check ends the run.
+        const limit = checkLimits(rule.limits, run.rt, this.now());
+        if (limit.reached) return { skipped: limit.reason };
         run.rt = await this.performReload(rule, tab, run.rt, bypassCache, config, keepScroll === true);
       },
       // Like a refresh: not where it could loop, and not while you type or have unsaved changes.
       click: async (selector) => {
         if (!allowRefresh) throw new Error("Clicking is not allowed in this phase");
+        const limit = checkLimits(rule.limits, run.rt, this.now());
+        if (limit.reached) return { ok: false as const, skipped: true, error: `Not clicked: ${limit.reason}` };
         const { activity, reason } = await this.page.activity(tab.id);
         this.checkSafety(rule, tab, run.rt, activity, reason, this.now());
         const result = await this.page.click(tab.id, selector);
+        if (result.ok) run.rt = { ...run.rt, clickCount: (run.rt.clickCount ?? 0) + 1, clickedAt: this.now() };
         // The rule's later actions (often "stop") still run: say so, rather than only in History.
         if (!result.ok && config.settings.notificationsEnabled) {
           await this.deps.browser.notify(`justrefresh:click:${tab.id}:${this.now()}`, `${rule.name}: couldn't click`, result.error);

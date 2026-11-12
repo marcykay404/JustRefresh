@@ -257,7 +257,7 @@ export function LimitsCard(p: SectionProps) {
         </Field>
       </div>
       <div className="row">
-        <Field label="Stop after this many refreshes">
+        <Field label="Stop after this many refreshes" hint="Clicks by the rule count too">
           <OptNumber placeholder="No limit" value={limits.maxRefreshes} onChange={(v) => set({ limits: { ...limits, maxRefreshes: v } })} />
         </Field>
         <Field label="Stop after (minutes)">
@@ -353,7 +353,7 @@ export function Summary({ draft }: { draft: Draft }) {
       <div>
         <strong>THEN</strong> {then}
       </div>
-      {draft.limits?.maxRefreshes && <div className="muted">At most {draft.limits.maxRefreshes} refreshes</div>}
+      {draft.limits?.maxRefreshes && <div className="muted">At most {draft.limits.maxRefreshes} refreshes and clicks</div>}
     </div>
   );
 }

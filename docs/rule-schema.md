@@ -48,6 +48,11 @@ When a monitor ends without its condition matching (`onUnknown: "pause"`
 gives up after `maxUnknownRetries`, or `onUnknown: "stop"`), a
 "Monitoring stopped" notification is shown (if notifications are enabled),
 so an unattended "refresh until" never ends silently.
+`limits.maxRefreshes` counts the rule's clicks as well as its refreshes; a
+click or refresh that would go over it isn't made, and page changes after the rule's
+click, until the page it opened has loaded (within 15 seconds), are that
+click's: they stay in the same run, so its counts go on. A page change you
+make after that starts a new run, as after the rule's own refresh.
 `safety.maxRefreshes` is accepted for compatibility and normalized into
 `limits.maxRefreshes`. The API adds a read-only `meta` object
 (`createdAt`, `updatedAt`, `revision`, `origin`, `draft`).
@@ -94,6 +99,24 @@ Logic: `all` → any `not_matched` wins, else any `unknown` → `unknown`;
 `any` → any `matched` wins, else any `unknown` → `unknown`; `not` keeps `unknown`.
 
 "Refresh **while** X" = `stopWhen: { "type": "not", "condition": X }`.
+
+### Pages with frames
+
+Page conditions read the page and its frames from the same site (with
+access) as one page. A selector is looked up in the page first, then in each frame, and the
+first place it matches is compared; `dom.exists` / `dom.missing` count
+matches in every frame. Text conditions without a selector read every
+frame: `contains` and `matches` match when any frame does, `not_contains`
+only when none does, and `dom.changed` watches every frame. Other
+comparisons without a selector (`equals`, `starts_with`, …) read the page
+itself only. While a frame can't be read yet, conditions that depend on it
+(`dom.missing`, `not_contains`, `dom.text_lost`, `dom.changed`, or a selector
+not found in the page itself) are `unknown` with code `frame_not_ready`, so
+`not` can't turn them into a match. A check that is unknown only for that
+reason counts as "not this time" (the `onUnknown` policy isn't applied),
+up to 3 checks in a row; after that the frame counts as the page not being
+readable, and `onUnknown` applies. Typing and unsaved changes in
+any frame with access protect the page like its own.
 
 ### Conditions that remember the previous check
 

@@ -6,13 +6,16 @@ import { restrictedReason } from "../core/url-pattern";
 import type { ConditionNode, EvaluationResult, TabInfo } from "../core/types";
 import {
   CONTENT_PROTOCOL,
+  FRAME_API,
   OFFSCREEN_CHANNEL,
   type ActivitySnapshot,
+  type FrameApi,
   type ContentRequest,
   type ContentResponse,
   type OffscreenMessage,
 } from "../shared/messaging-types";
 import { hasHostAccess } from "./host-access";
+import { mergeActivity, mergeFrames, mergeSelectorTests, siteOf } from "../core/frames";
 import { withTimeout } from "../core/timeout";
 import { isLocalWebhookUrl } from "../actions/page";
 
@@ -207,10 +210,120 @@ async function ensureContent(
       "Content script injection",
     );
     await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "ping" }, "pong");
+    await injectFrames(tabId);
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: `Content script unavailable: ${(e as Error).message}`, code: "content_script_unavailable" };
   }
+}
+
+type FrameCall =
+  | { kind: "activity" }
+  | { kind: "evaluate"; conditions: ConditionNode[]; includeText: boolean }
+  | { kind: "testSelector"; selector: string; includeText: boolean };
+
+/**
+ * One frame's answer: its site's host (from its origin, which about:blank and
+ * srcdoc frames inherit; "" for file: pages), the hosts of the frames it is
+ * nested in, whether to leave it out (an empty about:blank one), and what its
+ * content script returned (null: none of ours there yet, e.g. loading).
+ */
+type FrameAnswer<T> = { host: string; ancestors: string[]; skip: boolean; value: T | null };
+
+/**
+ * Ask every frame's content script at once (scripting.executeScript runs the
+ * function in this extension's isolated world in each frame we may access;
+ * frames without site access don't answer at all). Answers come top frame
+ * first, then by frame id. `injectImmediately`: don't wait for slow frames
+ * to finish loading (a frame still loading says so itself).
+ */
+async function inFrames<T>(tabId: number, call: FrameCall): Promise<FrameAnswer<T>[]> {
+  const results = await withTimeout(
+    chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      injectImmediately: true,
+      args: [FRAME_API, call] as [string, FrameCall],
+      // Runs in each frame, so everything it uses is inside it.
+      func: (key: string, c: FrameCall) => {
+        const hostOf = (origin: string) => {
+          try {
+            return new URL(origin).hostname;
+          } catch {
+            return "";
+          }
+        };
+        /** Our content script's API in this frame (own property: a page element with that id is reachable on the global too). */
+        const ownApi = () => {
+          const g = globalThis as unknown as Record<string, FrameApi | undefined>;
+          const api = Object.hasOwn(g, key) ? g[key] : undefined;
+          return api && typeof api.evaluate === "function" && api.version === chrome.runtime.getManifest().version ? api : null;
+        };
+        /**
+         * Without our content script: a frame on its way to a page is "not read yet"; an empty
+         * about:blank or srcdoc one is nothing, and so is a lazy frame not scrolled to yet.
+         */
+        const emptyBlank = () => {
+          let pending = false;
+          try {
+            const el = window.frameElement as HTMLIFrameElement | null;
+            // Only a real page is on its way (not about:, javascript: or a download that never shows one).
+            const toPage = !!el && /^(https?|file):$/.test(new URL(el.src || "about:blank").protocol);
+            // A lazy frame loads only near the viewport (Chrome's margin is up to ~2500 px).
+            const r = el?.getBoundingClientRect();
+            const view = el?.ownerDocument.defaultView;
+            const near = !!r && !!view && r.top < view.innerHeight + 2500 && r.bottom > -2500;
+            pending = location.href === "about:blank" && toPage && (el.loading !== "lazy" || near);
+          } catch {
+            /* cross-origin parent */
+          }
+          return (location.href === "about:blank" || location.href === "about:srcdoc") && !pending;
+        };
+        const call = (api: FrameApi) =>
+          c.kind === "activity"
+            ? api.activity()
+            : c.kind === "evaluate"
+              ? api.evaluate(c.conditions, c.includeText)
+              : api.testSelector(c.selector, c.includeText);
+        const host = hostOf(self.origin && self.origin !== "null" ? self.origin : location.origin);
+        const ancestors = [...(location.ancestorOrigins ?? [])].map(hostOf);
+        const api = ownApi();
+        // A hidden frame without our script (a download or keep-alive frame) isn't waited for; one with it is read.
+        const hidden = window !== window.top && (innerWidth === 0 || innerHeight === 0);
+        return { host, ancestors, skip: !api && (hidden || emptyBlank()), value: api ? call(api) : null };
+      },
+    }),
+    MESSAGE_TIMEOUT_MS,
+    "Content scripts",
+  );
+  const answers = results
+    .filter((r) => r.result)
+    .sort((a, b) => (a.frameId === 0 ? -1 : b.frameId === 0 ? 1 : a.frameId - b.frameId))
+    .map((r) => r.result as FrameAnswer<T>);
+  if (results.find((r) => r.frameId === 0)?.result?.value == null) throw new Error("The page's own frame didn't answer");
+  return answers;
+}
+
+/**
+ * Conditions read the page's frames from its own site only, and only where
+ * every frame they sit in is of that site too: an ad or a widget from
+ * elsewhere (with "All websites" access), or a page of the site that such a
+ * frame embeds, mustn't make a rule match. Typing protection uses every frame.
+ */
+function ownSite<T>(answers: FrameAnswer<T>[]): FrameAnswer<T>[] {
+  const site = siteOf(answers[0]!.host);
+  // An opaque frame (sandboxed: no host) belongs to no site; on a file: page every frame's host is "".
+  return answers.filter(
+    (a, i) => i === 0 || (!a.skip && (a.host !== "" || site === "") && siteOf(a.host) === site && a.ancestors.every((h) => siteOf(h) === site)),
+  );
+}
+
+/** Best effort: the content script in the page's frames too (a copy already there does nothing). */
+export async function injectFrames(tabId: number) {
+  await withTimeout(
+    chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ["content.js"], injectImmediately: true }),
+    INJECT_TIMEOUT_MS,
+    "Frames",
+  ).catch(() => undefined);
 }
 
 const done = async (tabId: number, kind: "saveScroll" | "cancelPick") => {
@@ -227,8 +340,18 @@ export const chromePage: PagePort & {
     if (!ok.ok) return leaves.map(() => ({ status: "unknown", code: ok.code, reason: ok.reason }));
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        const answers = ownSite(await inFrames<EvaluationResult[]>(tabId, { kind: "evaluate", conditions: leaves, includeText }));
+        return mergeFrames(
+          leaves,
+          answers.map((a) => a.value),
+        );
+      } catch {
+        /* frames couldn't be asked: the top frame alone */
+      }
+      try {
         const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "evaluate", conditions: leaves, includeText }, "evaluate");
-        return res.results;
+        // The page has frames we couldn't ask: they count as not read yet.
+        return mergeFrames(leaves, res.frames ? [res.results, null] : [res.results]);
       } catch (e) {
         if (attempt === 2) {
           return leaves.map(() => ({ status: "unknown", code: "timeout", reason: (e as Error).message }));
@@ -243,7 +366,11 @@ export const chromePage: PagePort & {
     if (!ok.ok) return { activity: null, reason: ok.reason };
     try {
       const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "activity" }, "activity");
-      return { activity: res.activity };
+      // Typing and unsaved changes in any frame with access count too (only real input marks a form
+      // changed, so a page's script can't). The top frame's answer stands if the frames can't be asked.
+      const answers = await inFrames<ActivitySnapshot>(tabId, { kind: "activity" }).catch(() => []);
+      const frames = answers.slice(1).flatMap((a) => (a.value ? [a.value] : []));
+      return { activity: frames.length ? mergeActivity([res.activity, ...frames]) : res.activity };
     } catch (e) {
       return { activity: null, reason: (e as Error).message };
     }
@@ -279,6 +406,10 @@ export const chromePage: PagePort & {
     const ok = await ensureContent(tabId);
     if (!ok.ok) return { ok: false, error: ok.reason };
     const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "testSelector", selector, includeText }, "testSelector");
-    return res.result;
+    type Tested = typeof res.result;
+    const frames = ownSite(await inFrames<Tested>(tabId, { kind: "testSelector", selector, includeText }).catch(() => []))
+      .slice(1)
+      .flatMap((a) => (a.value ? [a.value] : []));
+    return frames.length ? mergeSelectorTests([res.result, ...frames]) : res.result;
   },
 };

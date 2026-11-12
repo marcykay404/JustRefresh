@@ -474,7 +474,7 @@ export function RuleInWords({ rule }: { rule: Rule }) {
   const limits = rule.limits ?? {};
   const extras = [
     rule.schedule && (rule.schedule.startTime || rule.schedule.days?.length) ? "only during its active hours" : null,
-    limits.maxRefreshes ? `at most ${limits.maxRefreshes} refreshes` : null,
+    limits.maxRefreshes ? `at most ${limits.maxRefreshes} refreshes and clicks` : null,
     limits.maxDurationSeconds ? `stops after ${intervalLabel(limits.maxDurationSeconds)}` : null,
     limits.stopAt ? `stops at ${formatTime(Date.parse(limits.stopAt))}` : null,
   ].filter(Boolean);

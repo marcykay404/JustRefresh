@@ -8,7 +8,7 @@ import type { EvaluationResult } from "../core/types";
 export const textOperators = ["contains", "not_contains", "equals", "not_equals", "starts_with", "ends_with", "matches"] as const;
 export const attributeOperators = ["exists", "missing", "equals", "not_equals", "contains", "matches"] as const;
 
-const selector = z.string().check(z.minLength(1), z.maxLength(500), z.describe("CSS selector evaluated in the top-level document"));
+const selector = z.string().check(z.minLength(1), z.maxLength(500), z.describe("CSS selector, looked up in the page, then in its frames from the same site"));
 
 export const domExistsSchema = z.strictObject({
   type: z.literal("dom.exists"),

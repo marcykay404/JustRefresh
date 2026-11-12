@@ -1,4 +1,5 @@
 import { highlight } from "@/content/highlight";
+import { mergeActivity, mergeFrames } from "@/core/frames";
 import { clickElement } from "@/content/page-actions";
 import { RuleEngine, type AlarmPort, type BrowserPort, type EngineTimeouts, type PagePort } from "@/core/rule-engine";
 import type { ConditionNode, EvaluationResult, TabInfo } from "@/core/types";
@@ -101,8 +102,19 @@ export class FakePage implements PagePort {
   stalled = new Set<number>();
   evaluateCalls = 0;
 
+  /** The tab's frames (same site), after its top document, as Chrome reports them; null = a frame that can't be read yet. */
+  frames = new Map<number, (Document | null)[]>();
+  /** Activity in the tab's frames (merged with the top frame's, as chromePage does). */
+  frameActivity = new Map<number, ActivitySnapshot[]>();
+
   setHtml(tabId: number, html: string) {
     this.docs.set(tabId, new JSDOM(html).window.document);
+  }
+  setFrames(tabId: number, ...html: (string | null)[]) {
+    this.frames.set(
+      tabId,
+      html.map((h) => (h === null ? null : new JSDOM(h).window.document)),
+    );
   }
   async evaluate(tabId: number, leaves: ConditionNode[], includeText: boolean): Promise<EvaluationResult[]> {
     this.evaluateCalls++;
@@ -110,7 +122,11 @@ export class FakePage implements PagePort {
     if (this.unavailable.has(tabId)) throw new Error("Content script unavailable");
     const doc = this.docs.get(tabId);
     if (!doc) throw new Error("No document");
-    return leaves.map((l) => evaluateDomCondition(l, doc, { includeText }));
+    const all = [doc, ...(this.frames.get(tabId) ?? [])];
+    return mergeFrames(
+      leaves,
+      all.map((d) => (d ? leaves.map((l) => evaluateDomCondition(l, d, { includeText })) : null)),
+    );
   }
   clicks: { tabId: number; selector: string }[] = [];
   scrollSaves: number[] = [];
@@ -138,7 +154,9 @@ export class FakePage implements PagePort {
   async activity(tabId: number) {
     if (this.stalled.has(tabId)) await never();
     if (this.unavailable.has(tabId)) return { activity: null, reason: "Content script unavailable" };
-    return { activity: this.activityByTab.has(tabId) ? this.activityByTab.get(tabId)! : quietActivity() };
+    const top = this.activityByTab.has(tabId) ? this.activityByTab.get(tabId)! : quietActivity();
+    const frames = this.frameActivity.get(tabId) ?? [];
+    return { activity: top && frames.length ? mergeActivity([top, ...frames]) : top };
   }
 }
 
