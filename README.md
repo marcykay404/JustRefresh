@@ -75,7 +75,7 @@ npm run gen:schema        # regenerate schemas/*.json after changing handlers
 npm run complexity        # cyclomatic + cognitive complexity (max 15 each)
 npm run complexity:update # lower the baseline after simplifying a listed function
 npm run format            # format everything with Prettier (npm run format:check to only check)
-npm run bundle:report     # what the service worker bundle is made of (budget 200 KB)
+npm run bundle:report     # what the service worker bundle is made of (budget 160 KB)
 npm run check             # typecheck + tests + build + bundle budget
 ```
 
