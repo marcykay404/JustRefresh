@@ -26,6 +26,7 @@ writeFileSync(join(extDir, "manifest.json"), JSON.stringify(manifest));
 const loads = new Map();
 let statusText = "Sold out";
 let stockText = "Sold out";
+let panelText = "Running";
 let orderPosts = 0;
 const hooks = [];
 const server = http.createServer((req, res) => {
@@ -61,6 +62,12 @@ const server = http.createServer((req, res) => {
     if (req.method === "POST") orderPosts += 1;
     return res.end(`<title>Order</title><h1>Order received (${orderPosts} POSTs so far)</h1>`);
   }
+  // A page with two frames: one from the same site (access granted), one from "localhost" (no access).
+  if (path === "/framed")
+    return res.end(
+      `<title>Framed</title><h1>ERP</h1><iframe id="same" src="/panel"></iframe><iframe id="other" src="http://localhost:${server.address().port}/panel"></iframe>`,
+    );
+  if (path === "/panel") return res.end(`<title>Panel</title><div id="panel-state">${panelText}</div><input id="note">`);
   if (path === "/stock") return res.end(`<title>Stock</title><p>Item 42</p><div>${stockText}</div>`);
   if (path === "/status") return res.end(`<title>Status</title><div id="status">${statusText}</div>`);
   // A page that keeps running JS, so a debugger pause takes effect at once.
@@ -754,6 +761,49 @@ await test("content changed: notices a change between loads, and highlights it",
     "the changed element highlighted",
   );
   await call("deleteRule", { id: rule.id });
+  for (const r of others) await call("enableRule", { id: r.id });
+  await page.close();
+});
+
+await test("frames: a condition inside an embedded frame, and typing in it, count like the page's own", async () => {
+  const others = (await call("listRules")).filter((r) => r.enabled);
+  for (const r of others) await call("disableRule", { id: r.id });
+  panelText = "Running";
+  const page = await context.newPage();
+  await page.goto(`${base}/framed`);
+  await page.frameLocator("#same").locator("#panel-state").waitFor();
+  const tabId = await tabIdFor(`${base}/framed`);
+  const rule = await call("createRule", {
+    rule: {
+      id: "e2e-frames",
+      name: "Panel done",
+      target: { patterns: [`${base}/framed`] },
+      trigger: { type: "interval", seconds: 30 },
+      stopWhen: { type: "dom.text", selector: "#panel-state", operator: "contains", value: "Done" },
+      actions: { onMatched: [{ type: "stopRefresh" }], onNotMatched: [{ type: "refresh" }] },
+    },
+  });
+  const test = await call("testRule", { rule, tabId });
+  assert.equal(test.result.status, "not_matched", "read inside the frame: Running");
+  const found = await call("testSelector", { tabId, selector: "#panel-state" });
+  assert.equal(found.count, 1, "the frame without site access isn't read");
+
+  panelText = "Done";
+  const before = loads.get("/framed");
+  await fireAlarm(tabId);
+  await waitFor(async () => (await runtime(tabId))?.status === "completed", "completed when the frame says Done");
+  assert.equal(loads.get("/framed"), before + 1);
+  await call("deleteRule", { id: rule.id });
+
+  // Typing inside the frame postpones a refresh, like typing in the page.
+  await call("startTab", { tabId, intervalSeconds: 30 });
+  await page.waitForTimeout(300);
+  await page.frameLocator("#same").locator("#note").pressSequentially("draft");
+  const loadsBefore = loads.get("/framed");
+  await fireAlarm(tabId);
+  assert.match((await runtime(tabId)).status, /paused_(activity|unsaved)/);
+  assert.equal(loads.get("/framed"), loadsBefore, "not reloaded while typing in the frame");
+  await call("stopTab", { tabId });
   for (const r of others) await call("enableRule", { id: r.id });
   await page.close();
 });

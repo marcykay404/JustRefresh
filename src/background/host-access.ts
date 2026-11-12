@@ -66,7 +66,8 @@ async function syncOnce(): Promise<void> {
     js: ["content.js"],
     matches: origins,
     runAt: "document_start",
-    allFrames: false,
+    // Frames from granted sites too: typing in them is protected, and conditions read them (core/frames.ts).
+    allFrames: true,
     persistAcrossSessions: true,
   };
   if (existing.length) await chrome.scripting.updateContentScripts([script]);
@@ -80,6 +81,10 @@ export async function injectIntoOpenTabs(): Promise<void> {
     if (t.id === undefined || !t.url || !(await hasHostAccess(t.url))) continue;
     try {
       await withTimeout(chrome.scripting.executeScript({ target: { tabId: t.id, frameIds: [0] }, files: ["content.js"] }), 5000, "Content script injection");
+      // Then its frames, where we may (one we can't access mustn't stop the page's own).
+      await withTimeout(chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ["content.js"] }), 5000, "Frames").catch(
+        () => undefined,
+      );
     } catch {
       /* tab may be discarded or restricted */
     }

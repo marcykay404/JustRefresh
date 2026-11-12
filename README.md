@@ -14,7 +14,8 @@ AI agents all drive through **one** Rule Management API.
 - **Conditional refresh** — "refresh until `#status` contains _Available_",
   element exists/missing, attributes, **content changed since the last
   load**, text gone after being seen, URL, time, refresh count, nested
-  AND/OR/NOT with tri-state (`matched` / `not_matched` / `unknown`) logic.
+  AND/OR/NOT with tri-state (`matched` / `not_matched` / `unknown`) logic,
+  also inside embedded frames (dashboards) from sites you allowed.
 - **Smart protection** — pauses while typing (incl. IME), protects unsaved
   forms, optional mouse/scroll pause, configurable grace period and fail-safe.
   Never records keystrokes or form values.
@@ -126,7 +127,7 @@ src/conditions/    dom.*, url.match, time.*, refreshCount, tab.status, all/any/n
 src/triggers/      interval, navigation, urlChange, startup, manual
 src/actions/       refresh, stopRefresh, pauseRefresh, resumeRefresh, notify, log
 src/background/    service worker, Chrome adapters, host access, tab restoration
-src/content/       activity monitor + DOM evaluation (top frame)
+src/content/       activity monitor + DOM evaluation (page and frames), page actions
 src/api/           Rule Management API (dispatch, permissions), capabilities, JSON Schema (build time)
 src/api/methods/   the API's methods by area: rules, tabs, settings, agents
 src/integrations/  JSON import/export, external messaging, native bridge client

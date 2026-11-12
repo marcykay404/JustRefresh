@@ -96,6 +96,18 @@ Logic: `all` → any `not_matched` wins, else any `unknown` → `unknown`;
 
 "Refresh **while** X" = `stopWhen: { "type": "not", "condition": X }`.
 
+### Pages with frames
+
+Page conditions read the page and its frames (from sites with access) as one
+page. A selector is looked up in the page first, then in each frame, and the
+first place it matches is compared; `dom.exists` / `dom.missing` count
+matches in every frame. Text conditions without a selector read every
+frame: `contains` and `matches` match when any frame does, `not_contains`
+only when none does, and `dom.changed` watches every frame. Other
+comparisons without a selector (`equals`, `starts_with`, …) read the page
+itself only. Typing and unsaved changes in a frame protect the page like
+its own.
+
 ### Conditions that remember the previous check
 
 `dom.changed` and `dom.text_lost` compare the page with what they saw at the

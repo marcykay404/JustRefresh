@@ -32,6 +32,21 @@ export interface ActivitySnapshot {
   formResult?: boolean;
 }
 
+/**
+ * Where each frame's content script puts its FrameApi, on its isolated-world
+ * global (the page can't see it). The extension calls it in every frame at
+ * once with scripting.executeScript({ allFrames: true, func }).
+ */
+export const FRAME_API = "__justRefreshFrame__";
+
+export interface FrameApi {
+  /** The extension version that set it up (a copy left by an older version is ignored). */
+  version: string;
+  activity(): ActivitySnapshot;
+  evaluate(conditions: ConditionNode[], includeText: boolean): EvaluationResult[];
+  testSelector(selector: string, includeText: boolean): { ok: true; count: number; samples: ElementSummary[] } | { ok: false; error: string };
+}
+
 export type ContentRequest =
   | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "ping" }
   | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "activity" }

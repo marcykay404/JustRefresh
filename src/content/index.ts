@@ -1,9 +1,24 @@
 /**
  * Content script entry. Injected at document_start into pages the user
- * granted access to. Responds only to messages from this extension.
+ * granted access to, in the top frame and in frames from granted sites.
+ * Responds only to messages from this extension.
+ *
+ * Every frame watches activity and can check conditions: the extension reads
+ * them all at once through FRAME_API (scripting.executeScript, in this
+ * extension's isolated world only) and treats the frames as one page. Things
+ * that act on the page (form results, scroll, picker, click, highlight) are
+ * the top frame's alone.
  */
 import { evaluateDomCondition, testSelector } from "../conditions/dom-eval";
-import { CONTENT_PROTOCOL, PICK_CHANNEL, type ContentRequest, type ContentResponse, type PickMessage } from "../shared/messaging-types";
+import {
+  CONTENT_PROTOCOL,
+  FRAME_API,
+  PICK_CHANNEL,
+  type ContentRequest,
+  type ContentResponse,
+  type FrameApi,
+  type PickMessage,
+} from "../shared/messaging-types";
 import { ActivityMonitor } from "./activity-monitor";
 import { currentNavigation, detectFormResult, watchFormPosts } from "./form-post";
 import { highlight, isBusy } from "./highlight";
@@ -31,6 +46,17 @@ if (g[FLAG] !== version) {
   g[FLAG] = version;
   const monitor = new ActivityMonitor(document);
   monitor.start();
+  const frameApi: FrameApi = {
+    version,
+    activity: () => ({ ...monitor.snapshot(), formResult: false }),
+    evaluate: (conditions, includeText) => conditions.slice(0, 100).map((c) => evaluateDomCondition(c, document, { includeText })),
+    testSelector: (selector, includeText) => testSelector(document, selector, includeText),
+  };
+  g[FRAME_API] = frameApi;
+  if (window === window.top) setUpTopFrame(monitor);
+}
+
+function setUpTopFrame(monitor: ActivityMonitor) {
   // Whether this page came from submitting a form (reloading it would send the form again).
   const formResult = detectFormResult(
     location.href,

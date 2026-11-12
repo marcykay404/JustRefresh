@@ -25,9 +25,14 @@
   Application-level state (e.g. editors with custom models, unsent chat
   drafts kept in JS) may not be detectable. Forms removed from the DOM or
   submitted are treated as saved.
-- **Frames.** Content scripts run in the top frame only. Activity inside
-  iframes and DOM inside cross-origin frames are not observed; DOM conditions
-  only see the top document.
+- **Frames.** Frames are read only from sites JustRefresh has access to:
+  a dashboard embedded from another site needs access to that site too
+  (Settings → Site access), and only on a page that itself has access.
+  Without it, typing in that frame isn't noticed and conditions don't see
+  inside it. Frames from `about:blank` or `srcdoc` aren't read. A frame that
+  is still loading is left out of a check, so "missing" can match before a
+  slow frame shows the element. Picker, click, highlight and "keep scroll
+  position" work in the top frame only.
 - **Activity before monitoring.** On pages loaded before site access was
   granted, typing history is unknown; the monitor is conservative while
   focus is in an editable field during the first grace period.
