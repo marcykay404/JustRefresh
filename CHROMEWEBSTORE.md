@@ -37,11 +37,11 @@ REFRESH UNTIL SOMETHING APPEARS
 RULES AND TEMPLATES
 • Ready-made templates: back in stock, status changes, a dashboard during work hours, failed builds, staying signed in.
 • Rules for whole sites: schedules (weekdays, working hours), limits, exclusions, and conditions on what the page shows, also inside embedded dashboards.
-• A visual rule builder with a dry run before anything is saved, and JSON import/export.
+• A visual rule builder with a dry run you can do before saving, and JSON import/export.
 
 PRIVATE BY DESIGN
 • No account, no servers, no ads, no tracking. Everything stays in your browser, unless you switch on local webhooks, AI apps or allow an extension.
-• Asks for access to a site only when you ask: by turning refreshing on there, or with "Allow access to all sites".
+• Asks for access to a site only when you click to allow it (for example by turning refreshing on there), and to all sites only with "Allow access to all sites".
 • Never records what you type or what's in forms.
 
 FOR AI AGENTS (OPTIONAL)

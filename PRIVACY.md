@@ -8,13 +8,18 @@ nothing is sent to anyone else unless you switch on one of the options under
 ## What it stores, and where
 
 Your rules, settings, which tabs are refreshing, a history of recent refreshes
-(which rule ran on which page, and when), and a log of what AI agents asked it
-to do are stored in your browser (`chrome.storage`), on your device. The state
-of running tabs is kept only until Chrome closes.
+(which rule ran on which page, and when), a log of what AI agents asked it to
+do, and the last week's events about each agent's own rules are stored in your
+browser (`chrome.storage`), on your device. Tabs you set to refresh are
+remembered by address and title, so they resume after a restart; the rest of
+the state of running tabs is kept only until Chrome closes.
 
-- Clear the history on the History page, and the agent log in Agent
-  Integrations; reset everything in Dashboard → Settings. Uninstalling the
-  extension removes all of it.
+- Clear the history on the History page, and the agent activity log in Agent
+  Integrations. **Reset to defaults** in Dashboard → Settings deletes your
+  rules, exclusions, settings and paired agents, but not the history or logs
+  (a copy of the previous settings is kept as a backup until your next
+  change). Removing an agent deletes its events. Uninstalling the extension
+  removes all of it.
 - **Export** in Settings saves your rules, exclusions and (if you choose)
   settings as a file in your downloads. That file is yours: uninstalling
   doesn't remove it.
@@ -44,8 +49,9 @@ time.
 Nothing, unless you switch on one of these yourself:
 
 - **Local webhook:** a rule can send a short message to a program on your own
-  computer (`localhost` only): the rule, the tab and what it found, and the
-  page's address only if the rule asks for it.
+  computer (`localhost` only): the rule's name, the tab's number, whether its
+  condition was met and your own message, plus the page's address only if the
+  rule asks for it.
 - **AI apps and extensions you approve:** an optional bridge on your computer
   lets AI apps manage rules, and extensions you add to the allowlist in Agent
   Integrations can too. Depending on what you let each one do, they can see
