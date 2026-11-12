@@ -131,6 +131,16 @@ export abstract class EngineBase {
     await this.deps.alarms.clear(alarmName(tabId));
   }
 
+  /**
+   * Forget every tab's run (Reset to defaults). Each waits for work already
+   * running on that tab, so nothing it was doing is written back afterwards.
+   */
+  async forgetAllTabs() {
+    for (const rt of await this.deps.stores.runtime.getAll()) {
+      await this.withLock(rt.tabId, () => this.forgetTab(rt.tabId)).catch((e) => console.warn(`JustRefresh: could not forget tab ${rt.tabId}`, e));
+    }
+  }
+
   /* ---------------- resolution sync ---------------- */
 
   /**

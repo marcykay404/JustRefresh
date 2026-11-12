@@ -11,6 +11,12 @@ describe("Reset to defaults", () => {
     const agent = env.agent("native:claude");
     await env.service.call(env.user, "createRule", { rule: SPEC_EXAMPLE });
     await env.service.call(agent, "listRules", undefined); // a line in the agent log
+    // A tab timer, with its run and alarm, and an agent's request waiting for approval.
+    env.browser.addTab(7, "https://shop.test/order?id=42");
+    await env.service.call(env.user, "startTab", { tabId: 7, intervalSeconds: 30 });
+    expect(await env.runtime.get(7)).not.toBeNull();
+    const draft = (await env.service.call(agent, "createRule", { rule: { ...SPEC_EXAMPLE, id: "agent-rule" } })) as { id: string };
+    await env.service.call(agent, "enableRule", { id: draft.id });
     await env.service.call(env.user, "updateSettings", { allowWebhooks: true });
     await env.history.append({
       at: env.clock.now(),
@@ -44,7 +50,11 @@ describe("Reset to defaults", () => {
     // Nothing of the old configuration is left in storage, not even as the backup.
     const stored = (await env.local.get([CONFIG_KEY, CONFIG_BACKUP_KEY])) as Record<string, Config>;
     expect(stored[CONFIG_BACKUP_KEY]).toEqual(stored[CONFIG_KEY]);
-    expect(JSON.stringify(await env.local.get(null))).not.toMatch(/rule-001|order\?id=42|native:claude/);
+    expect(JSON.stringify(await env.local.get(null))).not.toMatch(/rule-001|agent-rule|order\?id=42|native:claude/);
+    // Nor anything about the tabs: their runs and alarms are gone.
+    expect(await env.runtime.getAll()).toEqual([]);
+    expect(JSON.stringify(await env.session.get(null))).not.toMatch(/order\?id=42|rule-001/);
+    expect([...env.alarms.alarms.keys()]).toEqual([]);
   });
 
   it("any other change still keeps the previous configuration as the backup", async () => {

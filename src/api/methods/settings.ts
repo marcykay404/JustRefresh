@@ -148,9 +148,12 @@ export function settingsMethods(svc: ServiceInternals): Record<string, MethodDef
       params: z.strictObject({ confirm: z.literal(true) }),
       mutates: true,
       // Everything: rules, settings, exclusions and agents (with no backup of them left behind),
-      // the history, the agent activity log and agents' events. Exported files are the user's own.
+      // every tab's run, the history, the agent activity log and agents' events. Cleared in that
+      // order: forgetting the tabs waits for checks already running, which may still add history.
+      // Exported files, and agents' events files on disk, are the user's own.
       handler: async () => {
         await d.config.replace(defaultConfig(), { discardBackup: true });
+        await d.engine.forgetAllTabs();
         await Promise.all([d.history.clear(), d.audit.clear(), d.events?.clear()]);
         return { reset: true };
       },
