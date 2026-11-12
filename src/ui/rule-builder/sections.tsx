@@ -144,6 +144,7 @@ export function UntilCard(p: SectionProps) {
             conditions={c.conditions}
             advanced={advanced}
             onTestSelector={(sel) => testTab !== null && void testSelector(testTab, sel)}
+            pickTab={testTab}
           />
         </>
       ) : (
@@ -175,6 +176,7 @@ export function ThenCard(p: SectionProps) {
           items={actions.onMatched ?? []}
           caps={c.actions}
           allowRefresh={refreshAllowed}
+          pickTab={p.testTab}
           onChange={(a) => set({ actions: { ...actions, onMatched: a } })}
         />
       )}
@@ -183,6 +185,7 @@ export function ThenCard(p: SectionProps) {
         items={actions.onNotMatched ?? []}
         caps={c.actions}
         allowRefresh={refreshAllowed}
+        pickTab={p.testTab}
         onChange={(a) => set({ actions: { ...actions, onNotMatched: a } })}
       />
       {advanced && draft.stopWhen && (
@@ -191,6 +194,7 @@ export function ThenCard(p: SectionProps) {
           items={actions.onUnknown ?? []}
           caps={c.actions}
           allowRefresh={false}
+          pickTab={p.testTab}
           onChange={(a) => set({ actions: { ...actions, onUnknown: a.length ? a : undefined } })}
         />
       )}

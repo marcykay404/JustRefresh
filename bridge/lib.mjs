@@ -1,5 +1,20 @@
 // Shared, dependency-free building blocks for the JustRefresh bridge.
 // Kept pure so they can be unit tested (see tests/unit/bridge.test.ts).
+import crypto from "node:crypto";
+
+/* ---------------- Socket handshake ---------------- */
+// Both sides prove they know the token without sending it: each signs the
+// other's random challenge (HMAC-SHA256), labelled with its role so a proof
+// can't be reflected back. A program that only pretends to be the bridge (for
+// example one that took its Windows pipe name first) learns nothing it can use,
+// and the MCP side sends nothing else (no agent key) until the bridge has proved itself.
+export const newNonce = () => crypto.randomBytes(16).toString("hex");
+export const proofOf = (token, role, nonce) => crypto.createHmac("sha256", token).update(`${role}:${nonce}`).digest("hex");
+export function sameSecret(a, b) {
+  return typeof a === "string" && typeof b === "string" && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+/** A challenge nonce as sent by the other side: hex, of a sensible length. */
+export const isNonce = (n) => typeof n === "string" && /^[0-9a-f]{16,128}$/.test(n);
 
 /* ---------------- Chrome Native Messaging framing ---------------- */
 // Each message: 4-byte little-endian length + UTF-8 JSON. Max 1 MB host→Chrome.
@@ -24,22 +39,46 @@ export function createNativeDecoder(onMessage) {
       if (buf.length < 4 + len) break;
       const body = buf.subarray(4, 4 + len).toString("utf8");
       buf = buf.subarray(4 + len);
-      onMessage(JSON.parse(body));
+      let msg;
+      try {
+        msg = JSON.parse(body);
+      } catch {
+        continue; // one bad message from Chrome: skip it (the framing is still intact)
+      }
+      onMessage(msg);
     }
   };
 }
 
-/** Newline-delimited JSON for the local socket. */
-export function createLineDecoder(onMessage, maxLine = 4 * 1024 * 1024) {
+/**
+ * Newline-delimited JSON for the local socket and MCP stdio. A line that isn't
+ * a JSON object, or one that grows past `maxLine`, is dropped and reported to
+ * `onBad` instead of crashing the process.
+ */
+export function createLineDecoder(onMessage, maxLine = 4 * 1024 * 1024, onBad = () => undefined) {
   let buf = "";
+  const parse = (line) => {
+    try {
+      const msg = JSON.parse(line);
+      return msg && typeof msg === "object" && !Array.isArray(msg) ? msg : null;
+    } catch {
+      return null;
+    }
+  };
   return (chunk) => {
     buf += chunk.toString("utf8");
-    if (buf.length > maxLine) throw new Error("Line too long");
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i).trim();
       buf = buf.slice(i + 1);
-      if (line) onMessage(JSON.parse(line));
+      if (!line) continue;
+      const msg = parse(line);
+      if (msg) onMessage(msg);
+      else onBad("Not a JSON object");
+    }
+    if (buf.length > maxLine) {
+      buf = "";
+      onBad("Line too long");
     }
   };
 }

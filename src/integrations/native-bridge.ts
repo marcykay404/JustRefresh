@@ -15,7 +15,7 @@ export const NATIVE_HOST = "com.justrefresh.bridge";
 
 interface BridgeRequest {
   id: string;
-  client: { id: string; name: string };
+  client: { id: string; name: string; key?: string };
   method: string;
   params?: unknown;
 }
@@ -89,7 +89,12 @@ function connect(service: RuleManagementService) {
     void handleAgentMessage(
       service,
       limiter,
-      { id: `native:${clientId}`, name: String(req.client.name ?? clientId).slice(0, 80), transport: "native" },
+      {
+        id: `native:${clientId}`,
+        name: String(req.client.name ?? clientId).slice(0, 80),
+        transport: "native",
+        ...(typeof req.client.key === "string" ? { key: req.client.key } : {}),
+      },
       { protocol: AGENT_PROTOCOL, method: req.method, params: req.params, name: req.client.name },
     ).then((res) => port?.postMessage({ id: req.id, ...res }));
   });

@@ -40,7 +40,9 @@ and arbitrary desktop applications cannot use `chrome.runtime.sendMessage`
 
 See [`bridge/README.md`](../bridge/README.md). Chrome Native Messaging +
 a local socket; nothing listens on the network. Each MCP client is a
-separate agent requiring approval.
+separate agent requiring approval; once approved it gets its own key, which
+every later call must carry. The dashboard (Agent Integrations → Desktop AI
+apps → Set up) offers the bridge as one file and the install command.
 
 ## Agent API
 

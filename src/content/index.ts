@@ -3,9 +3,20 @@
  * granted access to. Responds only to messages from this extension.
  */
 import { evaluateDomCondition, testSelector } from "../conditions/dom-eval";
-import { CONTENT_PROTOCOL, type ContentRequest, type ContentResponse } from "../shared/messaging-types";
+import { CONTENT_PROTOCOL, PICK_CHANNEL, type ContentRequest, type ContentResponse, type PickMessage } from "../shared/messaging-types";
 import { ActivityMonitor } from "./activity-monitor";
 import { currentNavigation, detectFormResult, watchFormPosts } from "./form-post";
+import { clickElement, restoreScroll, saveScroll } from "./page-actions";
+import { cancelPicker, startPicker } from "./picker";
+
+/** sessionStorage, or null where the site has storage switched off. */
+function sessionStore(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
 
 const FLAG = "__justRefreshContent__";
 const g = globalThis as unknown as Record<string, unknown>;
@@ -30,31 +41,51 @@ if (g[FLAG] !== version) {
   );
   watchFormPosts(window);
 
+  // A refresh that asked to keep the scroll position: scroll back once the page has content.
+  const store = sessionStore();
+  if (store) restoreScroll(window, store);
+
+  type Handlers = { [K in ContentRequest["kind"]]: (msg: Extract<ContentRequest, { kind: K }>) => ContentResponse };
+  const handlers: Handlers = {
+    ping: (msg) => ({ requestId: msg.requestId, kind: "pong", readyState: document.readyState }),
+    activity: (msg) => ({ requestId: msg.requestId, kind: "activity", activity: { ...monitor.snapshot(), formResult } }),
+    evaluate: (msg) => ({
+      requestId: msg.requestId,
+      kind: "evaluate",
+      results: msg.conditions.slice(0, 100).map((c) => evaluateDomCondition(c, document, { includeText: msg.includeText })),
+    }),
+    testSelector: (msg) => ({ requestId: msg.requestId, kind: "testSelector", result: testSelector(document, msg.selector, msg.includeText) }),
+    click: (msg) => ({ requestId: msg.requestId, kind: "click", result: clickElement(document, msg.selector) }),
+    saveScroll: (msg) => {
+      if (store) saveScroll(window, store);
+      return { requestId: msg.requestId, kind: "done" };
+    },
+    pick: (msg) => {
+      startPicker(window, (r) => {
+        const picked = "picked" in r ? r.picked : null;
+        const message: PickMessage = {
+          channel: PICK_CHANNEL,
+          session: msg.session,
+          selector: picked?.selector ?? null,
+          ...(picked ? { count: picked.count, positional: picked.positional } : {}),
+          ...("replaced" in r ? { replaced: true } : {}),
+        };
+        void chrome.runtime.sendMessage(message).catch(() => undefined);
+      });
+      return { requestId: msg.requestId, kind: "done" };
+    },
+    cancelPick: (msg) => {
+      cancelPicker();
+      return { requestId: msg.requestId, kind: "done" };
+    },
+  };
+
   chrome.runtime.onMessage.addListener((msg: ContentRequest, sender, sendResponse: (r: ContentResponse) => void) => {
-    if (sender.id !== chrome.runtime.id || !msg || msg.protocol !== CONTENT_PROTOCOL) return false;
+    if (sender.id !== chrome.runtime.id || !msg || msg.protocol !== CONTENT_PROTOCOL || !Object.hasOwn(handlers, msg.kind)) return false;
     try {
-      switch (msg.kind) {
-        case "ping":
-          sendResponse({ requestId: msg.requestId, kind: "pong", readyState: document.readyState });
-          break;
-        case "activity":
-          sendResponse({ requestId: msg.requestId, kind: "activity", activity: { ...monitor.snapshot(), formResult } });
-          break;
-        case "evaluate":
-          sendResponse({
-            requestId: msg.requestId,
-            kind: "evaluate",
-            results: msg.conditions.slice(0, 100).map((c) => evaluateDomCondition(c, document, { includeText: msg.includeText })),
-          });
-          break;
-        case "testSelector":
-          sendResponse({ requestId: msg.requestId, kind: "testSelector", result: testSelector(document, msg.selector, msg.includeText) });
-          break;
-        default:
-          return false;
-      }
+      sendResponse((handlers[msg.kind] as (m: ContentRequest) => ContentResponse)(msg));
     } catch (e) {
-      sendResponse({ requestId: (msg as { requestId: string }).requestId, kind: "error", error: (e as Error).message });
+      sendResponse({ requestId: msg.requestId, kind: "error", error: (e as Error).message });
     }
     return false;
   });

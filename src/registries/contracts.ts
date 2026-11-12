@@ -74,8 +74,16 @@ export interface NotifyOptions {
 export interface ActionContext {
   tabId: number;
   url: string;
+  ruleId: string;
   ruleName: string;
-  reload(opts: { bypassCache: boolean }): Promise<void>;
+  /** What the check found: why these actions run. */
+  condition: "matched" | "not_matched" | "unknown";
+  now: number;
+  reload(opts: { bypassCache: boolean; keepScroll?: boolean }): Promise<void>;
+  /** Click an element on the page. Waits like a refresh while you type or have unsaved changes (throws to postpone). */
+  click(selector: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** POST JSON to a local webhook, when webhooks are switched on in Settings. */
+  webhook(url: string, payload: Record<string, unknown>): Promise<{ ok: true } | { ok: false; error: string }>;
   setStatus(status: ExecutionStatus, reason: string, resumeAt?: number): void;
   notify(title: string, message: string, opts?: NotifyOptions): Promise<void>;
   log(level: "info" | "warn", message: string): void;

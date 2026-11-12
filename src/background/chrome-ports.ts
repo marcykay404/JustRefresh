@@ -14,6 +14,7 @@ import {
 } from "../shared/messaging-types";
 import { hasHostAccess } from "./host-access";
 import { withTimeout } from "../core/timeout";
+import { isLocalWebhookUrl } from "../actions/page";
 
 export function toTabInfo(t: chrome.tabs.Tab): TabInfo | null {
   if (t.id === undefined || t.id < 0) return null;
@@ -48,6 +49,29 @@ export const chromeBrowser: BrowserPort = {
   },
   async navigate(tabId, url) {
     await chrome.tabs.update(tabId, { url });
+  },
+  /**
+   * A local webhook. Sent as a "simple" request (text/plain, no credentials),
+   * so it needs no site access to localhost and no CORS setup on the
+   * receiving program; the reply can't be read, only whether it got there.
+   * (no-cors can't refuse redirects; a program that redirects is passing the
+   * message on, as it could anyway once it has it.)
+   */
+  async post(url, body) {
+    if (!isLocalWebhookUrl(url)) throw new Error("Not a local address");
+    await withTimeout(
+      fetch(url, {
+        method: "POST",
+        mode: "no-cors",
+        credentials: "omit",
+        cache: "no-store",
+
+        headers: { "content-type": "text/plain;charset=UTF-8" },
+        body,
+      }),
+      WEBHOOK_TIMEOUT_MS,
+      "Webhook",
+    );
   },
   async notify(id, title, message, opts) {
     try {
@@ -142,6 +166,7 @@ let seq = 0;
 const requestId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
 
 const MESSAGE_TIMEOUT_MS = 3000;
+const WEBHOOK_TIMEOUT_MS = 5000;
 const INJECT_TIMEOUT_MS = 5000;
 
 async function send<K extends ContentResponse["kind"]>(tabId: number, req: ContentRequest, expect: K): Promise<Extract<ContentResponse, { kind: K }>> {
@@ -188,7 +213,15 @@ async function ensureContent(
   }
 }
 
-export const chromePage: PagePort & { testSelector(tabId: number, selector: string, includeText: boolean): Promise<unknown> } = {
+const done = async (tabId: number, kind: "saveScroll" | "cancelPick") => {
+  await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind }, "done");
+};
+
+export const chromePage: PagePort & {
+  testSelector(tabId: number, selector: string, includeText: boolean): Promise<unknown>;
+  startPicker(tabId: number, session: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  cancelPicker(tabId: number): Promise<void>;
+} = {
   async evaluate(tabId: number, leaves: ConditionNode[], includeText: boolean): Promise<EvaluationResult[]> {
     const ok = await ensureContent(tabId);
     if (!ok.ok) return leaves.map(() => ({ status: "unknown", code: ok.code, reason: ok.reason }));
@@ -214,6 +247,27 @@ export const chromePage: PagePort & { testSelector(tabId: number, selector: stri
     } catch (e) {
       return { activity: null, reason: (e as Error).message };
     }
+  },
+  async click(tabId, selector) {
+    const ok = await ensureContent(tabId);
+    if (!ok.ok) return { ok: false, error: ok.reason };
+    const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "click", selector }, "click");
+    return res.result;
+  },
+  async saveScroll(tabId) {
+    if ((await ensureContent(tabId)).ok) await done(tabId, "saveScroll");
+  },
+  /** Show the element picker in the tab and bring the tab to the front; the choice arrives as a PickMessage. */
+  async startPicker(tabId, session) {
+    const ok = await ensureContent(tabId);
+    if (!ok.ok) return { ok: false, error: ok.reason };
+    await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "pick", session }, "done");
+    const tab = await chrome.tabs.update(tabId, { active: true });
+    if (tab) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
+    return { ok: true };
+  },
+  async cancelPicker(tabId) {
+    await done(tabId, "cancelPick").catch(() => undefined);
   },
   async testSelector(tabId, selector, includeText) {
     const ok = await ensureContent(tabId);

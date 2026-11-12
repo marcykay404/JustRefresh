@@ -1,5 +1,6 @@
 import type { ConditionNode } from "../../core/types";
 import { defaultsFor, SchemaForm, type JsonSchema } from "./SchemaForm";
+import { PickButton } from "./picker";
 
 export interface CapabilityItem {
   type: string;
@@ -18,9 +19,11 @@ interface Props {
   advanced: boolean;
   depth?: number;
   onTestSelector?: (selector: string) => void;
+  /** The tab to pick elements in (the one chosen under Test); undefined = no Pick button. */
+  pickTab?: number | null;
 }
 
-export function ConditionEditor({ node, onChange, conditions, advanced, depth = 0, onTestSelector }: Props) {
+export function ConditionEditor({ node, onChange, conditions, advanced, depth = 0, onTestSelector, pickTab }: Props) {
   const leafTypes = conditions.filter((c) => !LOGICAL.has(c.type));
   const schemaOf = (t: string) => conditions.find((c) => c.type === t)?.schema;
 
@@ -53,6 +56,7 @@ export function ConditionEditor({ node, onChange, conditions, advanced, depth = 
             advanced={advanced}
             depth={depth + 1}
             onTestSelector={onTestSelector}
+            pickTab={pickTab}
           />
         ))}
         <div className="row">
@@ -112,6 +116,7 @@ export function ConditionEditor({ node, onChange, conditions, advanced, depth = 
           advanced={advanced}
           depth={depth + 1}
           onTestSelector={onTestSelector}
+          pickTab={pickTab}
         />
       </div>
     );
@@ -145,15 +150,20 @@ export function ConditionEditor({ node, onChange, conditions, advanced, depth = 
         value={node}
         onChange={(v) => onChange(v as ConditionNode)}
         extra={(k) =>
-          k === "selector" && onTestSelector ? (
-            <button
-              className="small"
-              type="button"
-              onClick={() => onTestSelector(String(node.selector ?? ""))}
-              title="Count matching elements in the selected tab"
-            >
-              Test
-            </button>
+          k === "selector" ? (
+            <>
+              {onTestSelector && (
+                <button
+                  className="small"
+                  type="button"
+                  onClick={() => onTestSelector(String(node.selector ?? ""))}
+                  title="Count matching elements in the selected tab"
+                >
+                  Test
+                </button>
+              )}
+              {pickTab !== undefined && <PickButton tabId={pickTab} onPicked={(selector) => onChange({ ...node, selector })} />}
+            </>
           ) : null
         }
       />

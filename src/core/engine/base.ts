@@ -31,6 +31,9 @@ export abstract class EngineBase {
       // A rejection here is reported by the evaluator as an `unknown` result.
       evaluate: (tabId, leaves, includeText) => withTimeout(deps.page.evaluate(tabId, leaves, includeText), pageMs, "Page"),
       activity: (tabId) => withTimeout(deps.page.activity(tabId), pageMs, "Page").catch((e: Error) => ({ activity: null, reason: e.message })),
+      click: (tabId, selector) => withTimeout(deps.page.click(tabId, selector), pageMs, "Page").catch((e: Error) => ({ ok: false as const, error: e.message })),
+      // Best effort: the refresh goes ahead without it.
+      saveScroll: (tabId) => withTimeout(deps.page.saveScroll(tabId), pageMs, "Page").catch(() => undefined),
     };
   }
 

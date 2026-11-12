@@ -1,5 +1,6 @@
 // Builds the unpacked extension into dist/:
 //   popup.html / dashboard.html (React, Vite)   background.js (ES module)   content.js (IIFE)
+//   bridge/justrefresh-bridge.mjs (the desktop bridge, one file for Node)
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
 import { cpSync, rmSync, readFileSync, writeFileSync } from "node:fs";
@@ -60,6 +61,22 @@ for (const [entry, file, format] of [
     },
   });
 }
+
+// 4. The desktop bridge as one file, offered for download in Dashboard → Agent Integrations
+//    (`node justrefresh-bridge.mjs install --extension-id …` sets it up). Runs in Node, not Chrome.
+await build({
+  configFile: false,
+  logLevel: "warn",
+  publicDir: false,
+  build: {
+    outDir: resolve(out, "bridge"),
+    emptyOutDir: false,
+    target: "node18",
+    minify: false,
+    ssr: resolve(root, "bridge/justrefresh-bridge.mjs"),
+    rollupOptions: { output: { format: "es", entryFileNames: "justrefresh-bridge.mjs", inlineDynamicImports: true } },
+  },
+});
 
 // Manifest (version synced from package.json).
 const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));

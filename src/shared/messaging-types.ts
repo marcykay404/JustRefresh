@@ -42,7 +42,14 @@ export type ContentRequest =
       conditions: ConditionNode[];
       includeText: boolean;
     }
-  | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "testSelector"; selector: string; includeText: boolean };
+  | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "testSelector"; selector: string; includeText: boolean }
+  /** Click the first element matching the selector (never one that submits a form). */
+  | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "click"; selector: string }
+  /** Remember the scroll position for the refresh that follows. */
+  | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "saveScroll" }
+  /** Start / stop the element picker; the choice is sent as a PickMessage. */
+  | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "pick"; session: string }
+  | { protocol: typeof CONTENT_PROTOCOL; requestId: string; kind: "cancelPick" };
 
 export type ContentResponse =
   | { requestId: string; kind: "pong"; readyState: DocumentReadyState }
@@ -53,7 +60,22 @@ export type ContentResponse =
       kind: "testSelector";
       result: { ok: true; count: number; samples: ElementSummary[] } | { ok: false; error: string };
     }
+  | { requestId: string; kind: "click"; result: { ok: true } | { ok: false; error: string } }
+  | { requestId: string; kind: "done" }
   | { requestId: string; kind: "error"; error: string };
+
+/** Content script → the extension page that started the picker: the picked selector (null = cancelled or replaced). */
+export const PICK_CHANNEL = "justrefresh-pick" as const;
+export interface PickMessage {
+  channel: typeof PICK_CHANNEL;
+  /** Which Pick button asked (each start has its own). */
+  session: string;
+  selector: string | null;
+  count?: number;
+  positional?: boolean;
+  /** Another Pick started in this tab and took over. */
+  replaced?: boolean;
+}
 
 /** Requests from extension pages (popup/dashboard) to the service worker. */
 export interface ApiRequest {

@@ -1,3 +1,4 @@
+import { clickElement } from "@/content/page-actions";
 import { RuleEngine, type AlarmPort, type BrowserPort, type EngineTimeouts, type PagePort } from "@/core/rule-engine";
 import type { ConditionNode, EvaluationResult, TabInfo } from "@/core/types";
 import type { ActivitySnapshot } from "@/shared/messaging-types";
@@ -55,6 +56,13 @@ export class FakeBrowser implements BrowserPort {
   async notify(_id: string, title: string, message: string, opts?: { sound?: boolean }) {
     this.notifications.push({ title, message, ...(opts?.sound ? { sound: true } : {}) });
   }
+  posts: { url: string; body: unknown }[] = [];
+  /** Webhook addresses that can't be reached. */
+  unreachable = new Set<string>();
+  async post(url: string, body: string) {
+    if (this.unreachable.has(url)) throw new Error("Failed to fetch");
+    this.posts.push({ url, body: JSON.parse(body) });
+  }
 }
 
 export class FakeAlarms implements AlarmPort {
@@ -102,6 +110,20 @@ export class FakePage implements PagePort {
     const doc = this.docs.get(tabId);
     if (!doc) throw new Error("No document");
     return leaves.map((l) => evaluateDomCondition(l, doc, { includeText }));
+  }
+  clicks: { tabId: number; selector: string }[] = [];
+  scrollSaves: number[] = [];
+  async click(tabId: number, selector: string) {
+    if (this.stalled.has(tabId)) await never();
+    if (this.unavailable.has(tabId)) throw new Error("Content script unavailable");
+    const doc = this.docs.get(tabId);
+    if (!doc) throw new Error("No document");
+    const result = clickElement(doc, selector);
+    if (result.ok) this.clicks.push({ tabId, selector });
+    return result;
+  }
+  async saveScroll(tabId: number) {
+    this.scrollSaves.push(tabId);
   }
   async activity(tabId: number) {
     if (this.stalled.has(tabId)) await never();

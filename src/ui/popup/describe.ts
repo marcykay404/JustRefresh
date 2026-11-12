@@ -116,27 +116,23 @@ function withCondition(when: string, cond: string, { onMatched, onNotMatched }: 
   return `${cap(when)}: when ${cond}, ${actionsPhrase(onMatched)}; otherwise ${actionsPhrase(onNotMatched)}`;
 }
 
+type ActionWords = ActionConfig & { minutes?: number; selector?: string; keepScroll?: boolean; url?: string; includePageUrl?: boolean };
+
+const ACTION_WORDS: Record<string, (a: ActionWords) => string> = {
+  refresh: (a) => (a.keepScroll ? "refresh (keeping the scroll position)" : "refresh"),
+  stopRefresh: () => "stop",
+  pauseRefresh: (a) => (a.minutes ? `pause for ${intervalLabel(a.minutes * 60)}` : "pause"),
+  resumeRefresh: () => "resume",
+  notify: () => "notify me",
+  log: () => "note it in History",
+  click: (a) => `click ${a.selector}`,
+  // Shown when approving agents' rules: say exactly where it goes and what it sends.
+  webhook: (a) => `send a message to ${a.url}${a.includePageUrl ? " (with the page address)" : ""}`,
+};
+
 /** "refresh", "notify me and stop", … ("do nothing" for none). */
 export function actionsPhrase(list: readonly ActionConfig[]): string {
-  const words = list.map((a) => {
-    const x = a as ActionConfig & { minutes?: number };
-    switch (a.type) {
-      case "refresh":
-        return "refresh";
-      case "stopRefresh":
-        return "stop";
-      case "pauseRefresh":
-        return x.minutes ? `pause for ${intervalLabel(x.minutes * 60)}` : "pause";
-      case "resumeRefresh":
-        return "resume";
-      case "notify":
-        return "notify me";
-      case "log":
-        return "note it in History";
-      default:
-        return a.type;
-    }
-  });
+  const words = list.map((a) => (Object.hasOwn(ACTION_WORDS, a.type) ? ACTION_WORDS[a.type]!(a as ActionWords) : a.type));
   if (!words.length) return "do nothing";
   return words.length === 1 ? words[0]! : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
 }

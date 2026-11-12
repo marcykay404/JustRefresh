@@ -46,22 +46,29 @@ export class RateLimiter {
 export async function handleAgentMessage(
   service: RuleManagementService,
   limiter: RateLimiter,
-  identity: { id: string; name: string; transport: "extension" | "native"; extensionId?: string },
+  /** `key`: a desktop agent's own key (see checkAgentKey); extensions are identified by Chrome instead. */
+  identity: { id: string; name: string; transport: "extension" | "native"; extensionId?: string; key?: string },
   msg: unknown,
 ) {
+  let issued: string | undefined;
+  const withKey = <T extends object>(r: T) => (issued ? { ...r, agentKey: issued } : r);
   try {
     if (!msg || typeof msg !== "object" || (msg as AgentMessage).protocol !== AGENT_PROTOCOL || typeof (msg as AgentMessage).method !== "string") {
       throw new ApiError("invalid_params", `Expected { protocol: "${AGENT_PROTOCOL}", method, params }`);
     }
     const m = msg as AgentMessage;
+    const { key, ...who } = identity;
+    // Before the rate limit: a program without the key can't use up the agent's allowance.
+    issued = await service.checkAgentKey(who.id, key);
     if (!limiter.allow(identity.id)) throw new ApiError("forbidden", "Rate limit exceeded");
     if (m.method === "pair") {
-      const agent = await service.ensureAgent({ ...identity, name: typeof m.name === "string" ? m.name : identity.name });
-      return { ok: true, result: { agentId: agent.id, status: agent.status, scopes: agent.scopes } };
+      const agent = await service.ensureAgent({ ...who, name: typeof m.name === "string" ? m.name : who.name });
+      return withKey({ ok: true, result: { agentId: agent.id, status: agent.status, scopes: agent.scopes } });
     }
-    return { ok: true, result: await service.call({ type: "agent", agentId: identity.id }, m.method, m.params) };
+    return withKey({ ok: true, result: await service.call({ type: "agent", agentId: who.id }, m.method, m.params) });
   } catch (e) {
-    return toErrorResponse(e);
+    // A failed call still delivers a newly issued key.
+    return withKey(toErrorResponse(e));
   }
 }
 

@@ -20,11 +20,15 @@ AI agents all drive through **one** Rule Management API.
 - **Reliable scheduling** — `chrome.alarms` only, persisted state, startup
   reconciliation, no duplicate/overlapping reloads, no refresh storms.
 - **Visual rule builder** — WHEN → ON → UNTIL → THEN, simple/advanced modes,
-  live validation, dry-run testing with an evaluation trace, selector tester,
-  JSON view, import/export.
+  live validation, dry-run testing with an evaluation trace, an in-page
+  element picker and selector tester, JSON view, import/export.
+- **Page actions** — keep the scroll position across a refresh, click an
+  element (never one that would submit a form), and an opt-in webhook to a
+  program on this computer (localhost only).
 - **Agent-programmable** — capability discovery, validation diagnostics with
   JSON paths, dry runs, draft → approval workflow, scoped & revocable agent
-  access, audit log, optional local MCP bridge.
+  access, audit log, optional local MCP bridge (one-command install, a key
+  per approved agent).
 
 Local-first: no account, no backend, no telemetry.
 

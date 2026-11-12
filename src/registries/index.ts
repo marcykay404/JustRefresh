@@ -8,6 +8,7 @@ import { allCondition, anyCondition, notCondition } from "../conditions/logical"
 import { intervalTrigger } from "../triggers/interval";
 import { manualTrigger, navigationTrigger, startupTrigger, urlChangeTrigger } from "../triggers/navigation";
 import { logAction, notifyAction, pauseAction, refreshAction, resumeAction, stopAction } from "../actions/builtin";
+import { clickAction, webhookAction } from "../actions/page";
 
 export type ConditionRegistry = Registry<ConditionHandler<any>>;
 export type TriggerRegistry = Registry<TriggerHandler<any>>;
@@ -51,7 +52,9 @@ export function createActionRegistry(): ActionRegistry {
     .register(pauseAction)
     .register(resumeAction)
     .register(notifyAction)
-    .register(logAction);
+    .register(logAction)
+    .register(clickAction)
+    .register(webhookAction);
 }
 
 export function createRegistries(): Registries {

@@ -11,6 +11,7 @@
  *
  * Navigation completion is tracked separately (rule-engine.ts).
  */
+import { isLocalWebhookUrl } from "../../actions/page";
 import type { ActionContext, TriggerEvent, TriggerHandler } from "../../registries/contracts";
 import type { ActivitySnapshot } from "../../shared/messaging-types";
 import { explainTrace } from "../evaluator";
@@ -328,11 +329,27 @@ export abstract class CycleEngine extends EngineBase {
     return {
       tabId: tab.id,
       url: tab.url,
+      ruleId: rule.id,
       ruleName: rule.name,
-      reload: async ({ bypassCache }) => {
+      condition,
+      now: this.now(),
+      reload: async ({ bypassCache, keepScroll }) => {
         if (!allowRefresh) throw new Error("Refresh is not allowed in this phase");
-        run.rt = await this.performReload(rule, tab, run.rt, bypassCache, config);
+        run.rt = await this.performReload(rule, tab, run.rt, bypassCache, config, keepScroll === true);
       },
+      // Like a refresh: not where it could loop, and not while you type or have unsaved changes.
+      click: async (selector) => {
+        if (!allowRefresh) throw new Error("Clicking is not allowed in this phase");
+        const { activity, reason } = await this.page.activity(tab.id);
+        this.checkSafety(rule, tab, run.rt, activity, reason, this.now());
+        const result = await this.page.click(tab.id, selector);
+        // The rule's later actions (often "stop") still run: say so, rather than only in History.
+        if (!result.ok && config.settings.notificationsEnabled) {
+          await this.deps.browser.notify(`justrefresh:click:${tab.id}:${this.now()}`, `${rule.name}: couldn't click`, result.error);
+        }
+        return result;
+      },
+      webhook: (url, payload) => this.callWebhook(config, url, payload),
       setStatus: (status, reason, resumeAt) => {
         run.rt = transition(run.rt, status, {
           reason,
@@ -350,6 +367,18 @@ export abstract class CycleEngine extends EngineBase {
     };
   }
 
+  /** POST to a local webhook. Off unless the user switched webhooks on; a failure is reported, not fatal. */
+  private async callWebhook(config: Config, url: string, payload: Record<string, unknown>): Promise<{ ok: true } | { ok: false; error: string }> {
+    if (!config.settings.allowWebhooks) return { ok: false, error: "Webhooks are switched off. Turn them on in Dashboard → Settings → Webhooks." };
+    if (!isLocalWebhookUrl(url)) return { ok: false, error: "Webhooks can only call this computer (localhost)" };
+    try {
+      await this.deps.browser.post(url, JSON.stringify(payload));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: `Could not reach ${url}: ${(e as Error).message}` };
+    }
+  }
+
   /** A blocked refresh moves to the state it asks for; any other failure is an error. */
   private afterActionError(rule: Rule, rt: TabRuntime, entry: Omit<HistoryEntry, "at" | "actor" | "outcome" | "reason">, e: unknown): TabRuntime {
     if (e instanceof SafetyBlock) {
@@ -364,13 +393,14 @@ export abstract class CycleEngine extends EngineBase {
   /* ---------------- the refresh ---------------- */
 
   /** Safety gate + throttled reload. Persists state BEFORE reloading. */
-  protected async performReload(rule: Rule, tab: TabInfo, rt: TabRuntime, bypassCache: boolean, config: Config): Promise<TabRuntime> {
+  protected async performReload(rule: Rule, tab: TabInfo, rt: TabRuntime, bypassCache: boolean, config: Config, keepScroll = false): Promise<TabRuntime> {
     const now = this.now();
     const { activity, reason } = await this.page.activity(tab.id);
     if (activity?.formResult) throw await this.formResultBlock(rule, tab, rt, config, now);
     this.checkSafety(rule, tab, rt, activity, reason, now);
     this.takeFastSlot(rule, tab, now);
     if (this.deps.throttle) await this.deps.throttle();
+    if (keepScroll) await this.page.saveScroll(tab.id);
     return this.reloadNow(rule, tab, rt, bypassCache);
   }
 

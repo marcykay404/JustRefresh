@@ -4,6 +4,7 @@ import type { ActionConfig, UrlPatternInput } from "../../core/types";
 import { hasQuery, pagePatterns } from "../popup/describe";
 import type { Capabilities } from "./draft";
 import { defaultsFor, SchemaForm } from "./SchemaForm";
+import { PickButton } from "./picker";
 
 export function IntervalInput({ seconds, onChange, min }: { seconds: number; onChange: (s: number) => void; min: number }) {
   const unit = seconds % 3600 === 0 ? 3600 : seconds % 60 === 0 ? 60 : 1;
@@ -82,20 +83,26 @@ export function PatternList({ label, items, onChange }: { label: string; items: 
   );
 }
 
+/** Actions that act on the tab, so they could loop on page-load triggers. */
+const TAB_ACTIONS = ["refresh", "click"];
+
 export function ActionList({
   label,
   items,
   caps,
   allowRefresh,
+  pickTab,
   onChange,
 }: {
   label: string;
   items: ActionConfig[];
   caps: Capabilities["actions"];
+  /** Refresh and click are left out where they could loop (page-load triggers). */
   allowRefresh: boolean;
+  pickTab?: number | null;
   onChange: (a: ActionConfig[]) => void;
 }) {
-  const available = caps.filter((a) => allowRefresh || a.type !== "refresh");
+  const available = caps.filter((a) => allowRefresh || !TAB_ACTIONS.includes(a.type));
   return (
     <div className="col" style={{ gap: 4 }}>
       <span className="field-label">{label}</span>
@@ -128,7 +135,16 @@ export function ActionList({
                 ✕
               </button>
             </div>
-            <SchemaForm schema={cap?.schema} value={a} onChange={(v) => onChange(items.map((x, j) => (j === i ? (v as ActionConfig) : x)))} />
+            <SchemaForm
+              schema={cap?.schema}
+              value={a}
+              onChange={(v) => onChange(items.map((x, j) => (j === i ? (v as ActionConfig) : x)))}
+              extra={(k) =>
+                k === "selector" && pickTab !== undefined ? (
+                  <PickButton tabId={pickTab} onPicked={(selector) => onChange(items.map((x, j) => (j === i ? ({ ...x, selector } as ActionConfig) : x)))} />
+                ) : null
+              }
+            />
           </div>
         );
       })}
