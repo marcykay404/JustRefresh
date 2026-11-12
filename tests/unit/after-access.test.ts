@@ -81,6 +81,19 @@ describe("after access", () => {
     expect(notes).toHaveLength(1); // quiet: the open popup shows it
   });
 
+  it("hands a declined request back to the popup (and cancels it), but leaves a granted one to run", async () => {
+    const { aa, granted, calls } = setup();
+    await aa.queue([O], { method: "startTab", params: { tabId: 1, intervalSeconds: 60 } });
+    expect(await aa.take(1)).toEqual({ method: "startTab", params: { tabId: 1, intervalSeconds: 60 } });
+    expect(await aa.take(1)).toBeNull();
+    granted.add(O);
+    expect(await aa.run()).toEqual([]); // taken back: never starts by surprise
+    await aa.queue([O], { method: "startTab", params: { tabId: 2 } });
+    expect(await aa.take(2)).toBeNull(); // access granted: it runs instead
+    expect(await aa.run()).toEqual([{ method: "startTab", ok: true }]);
+    expect(calls).toHaveLength(1);
+  });
+
   it("accepts only the popup's three actions, for a tab", () => {
     expect(parseAfterAccess({ origins: [O], method: "startTab", params: { tabId: 1 } })).not.toBeNull();
     expect(parseAfterAccess({ origins: [O], method: "deleteRule", params: { tabId: 1, id: "x" } })).toBeNull();

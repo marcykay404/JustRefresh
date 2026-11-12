@@ -246,6 +246,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return { ok: true, result: null };
       }
       if (msg.method === "runAfterAccess") return { ok: true, result: await afterAccess.run({ quiet: true }) };
+      if (msg.method === "takeAfterAccess") {
+        const tabId = (msg.params as { tabId?: unknown } | undefined)?.tabId;
+        return { ok: true, result: typeof tabId === "number" ? await afterAccess.take(tabId) : null };
+      }
       if (msg.method === "statusLabels") return { ok: true, result: STATUS_LABELS };
       return { ok: true, result: await service.call({ type: "user" }, msg.method, msg.params) };
     } catch (e) {

@@ -78,6 +78,8 @@ const RULE = {
   actions: { onMatched: [{ type: "stopRefresh" }, { type: "notify" }], onNotMatched: [{ type: "refresh" }] },
 };
 const permissionsRequest = vi.fn(async (_p: unknown) => true);
+/** What the service worker hands back when the popup opens again after a "Deny". */
+let takeResult: unknown = null;
 (globalThis as { chrome?: unknown }).chrome = {
   tabs: { query: async () => [{ id: 1 }], create: vi.fn() },
   runtime: {
@@ -100,7 +102,9 @@ const permissionsRequest = vi.fn(async (_p: unknown) => true);
                 ? refreshNowResult
                 : m.method === "createRule"
                   ? ((createdRuleId = "new"), { id: "new" })
-                  : { ok: true };
+                  : m.method === "takeAfterAccess"
+                    ? ((r) => ((takeResult = null), r))(takeResult)
+                    : { ok: true };
       return { ok: true, result };
     },
   },
@@ -463,5 +467,47 @@ describe("pages the popup can't refresh", () => {
     expect(isOwnPage(`${own}dashboard.html#/settings`, own)).toBe(true);
     expect(isOwnPage("https://example.com/", own)).toBe(false);
     expect(isOwnPage("https://example.com/", "")).toBe(false);
+  });
+});
+
+describe("opened again after Chrome's prompt closed it and access was declined", () => {
+  it("Start refreshing: offers Allow access for the interval that was asked for", async () => {
+    takeResult = { method: "startTab", params: { tabId: 1, intervalSeconds: 900 } };
+    await render({ hostAccess: false });
+    expect(text()).toContain("won't refresh this page until you allow access");
+    await click("Allow access");
+    await tick();
+    expect(called("afterAccess")).toEqual([{ origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 900 } }]);
+  });
+
+  it("Refresh until: the form comes back as it was, saying nothing was set up", async () => {
+    takeResult = {
+      method: "refreshUntil",
+      params: {
+        tabId: 1,
+        url: URL_,
+        site: "youtube.com",
+        seconds: 60,
+        text: "In stock",
+        mode: "appears",
+        anyQuery: false,
+        priority: 0,
+        stopAfterMinutes: null,
+      },
+    };
+    await render({ hostAccess: false });
+    expect(text()).toContain("Refresh until something appears");
+    expect(text()).toContain("nothing was set up");
+    expect(el.querySelector<HTMLInputElement>('input[aria-label="Text to look for"]')!.value).toBe("In stock");
+    await click("Start watching");
+    await tick();
+    expect(called("afterAccess")).toEqual([
+      { origins: ["https://www.youtube.com/*"], method: "refreshUntil", params: expect.objectContaining({ text: "In stock", seconds: 60 }) },
+    ]);
+  });
+
+  it("with access already, doesn't ask", async () => {
+    await render({});
+    expect(called("takeAfterAccess")).toEqual([]);
   });
 });

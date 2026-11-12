@@ -498,10 +498,12 @@ export function UntilForm(p: {
   problem: string | null;
   onCancel: () => void;
   onStart: (text: string, mode: UntilMode, anyQuery: boolean) => Promise<void>;
+  /** What was typed before the popup closed for Chrome's prompt, and why nothing was set up. */
+  restored?: { text: string; mode: UntilMode; anyQuery: boolean; note: string };
 }) {
-  const [text, setText] = useState("");
-  const [mode, setMode] = useState<UntilMode>("appears");
-  const [anyQuery, setAnyQuery] = useState(false);
+  const [text, setText] = useState(p.restored?.text ?? "");
+  const [mode, setMode] = useState<UntilMode>(p.restored?.mode ?? "appears");
+  const [anyQuery, setAnyQuery] = useState(p.restored?.anyQuery ?? false);
   const [busy, setBusy] = useState(false);
   const ready = text.trim().length > 0 && p.canStart && !busy;
   return (
@@ -516,6 +518,11 @@ export function UntilForm(p: {
       }}
     >
       <span className="card-title">Refresh until something appears</span>
+      {p.restored && (
+        <span className="notice small" role="status">
+          {p.restored.note}
+        </span>
+      )}
       <div className="col" style={{ gap: 4 }}>
         <span className="small muted" id="until-mode">
           Stop when this text

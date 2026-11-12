@@ -8,13 +8,13 @@
  */
 import { useEffect, useState } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
-import { askAccessThen } from "../shared/access";
+import { askAccessThen, type AfterAccessRequest } from "../shared/access";
 import { useApi, useNow } from "../shared/hooks";
 import { StillLoading } from "../shared/StillLoading";
 import { ErrorBox } from "../shared/components";
 import type { Rule, TabRuntime } from "../../core/types";
 import { useDialog } from "../shared/dialog";
-import { describeRule } from "./describe";
+import { describeRule, type UntilMode } from "./describe";
 import { startUntil } from "./actions";
 import { BlockedCard, type BlockedKind, isOwnPage, RunningCard, StartCard } from "./cards";
 import { useIntervalPicker } from "./picker";
@@ -142,6 +142,32 @@ function TabPopup({
   /** The site-access prompt was declined for the interval in here. */
   const [declinedFor, setDeclinedFor] = useState<number | null>(null);
   const picker = useIntervalPicker(f.currentInterval, overview?.settings.allowFastIntervals === true);
+  /** A "Refresh until" the popup was setting up when it closed for Chrome's prompt (then declined). */
+  const [restored, setRestored] = useState<{ text: string; mode: UntilMode; anyQuery: boolean; note: string } | null>(null);
+
+  // Opened again after "Deny" (Chrome's prompt closes the popup on macOS): carry on from the click
+  // instead of starting over. Taking it back also cancels it, so it can't start later by surprise.
+  useEffect(() => {
+    if (s.hostAccess) return;
+    void api<AfterAccessRequest | null>("takeAfterAccess", { tabId })
+      .catch(() => null)
+      .then((req) => {
+        if (req?.method === "startTab") {
+          if (req.params.intervalSeconds) picker.choose(req.params.intervalSeconds);
+          setDeclinedFor(req.params.intervalSeconds ?? picker.chosen);
+        } else if (req?.method === "refreshUntil") {
+          picker.choose(req.params.seconds);
+          setRestored({
+            text: req.params.text,
+            mode: req.params.mode,
+            anyQuery: req.params.anyQuery,
+            note: `JustRefresh wasn't allowed to read ${f.siteName}, so nothing was set up. Start watching asks Chrome again.`,
+          });
+          setView("until");
+        }
+      });
+    // Once per popup.
+  }, []);
   const { countdown, progress } = countdownOf(f.rt, now, s.interval ?? f.currentInterval);
 
   const begin = async (intervalSeconds: number) => {
@@ -198,6 +224,7 @@ function TabPopup({
         <UntilForm
           site={f.siteName}
           url={s.tab.url}
+          restored={restored ?? undefined}
           picker={picker.element}
           canStart={picker.valid}
           problem={picker.tooShort}

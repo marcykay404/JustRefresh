@@ -86,6 +86,21 @@ export function createAfterAccess(deps: AfterAccessDeps) {
       });
     },
     /**
+     * Take back a tab's request that is still waiting for access: the popup,
+     * opened again after a "Deny", shows it (prefilled) instead, so it can't
+     * start later by surprise. A request whose access is granted is left to run.
+     */
+    take(tabId: number) {
+      return serial(async () => {
+        const now = deps.now();
+        const list = (await load()).filter((p) => p.until > now);
+        const mine = list.find((p) => tabOf(p.request) === tabId);
+        if (!mine || (await Promise.all(mine.origins.map((o) => deps.granted(o)))).every(Boolean)) return null;
+        await save(list.filter((p) => p !== mine));
+        return mine.request;
+      });
+    },
+    /**
      * Run every request whose access is now granted. `quiet`: the popup asking
      * is still open and shows the results itself; otherwise problems are notified.
      */
