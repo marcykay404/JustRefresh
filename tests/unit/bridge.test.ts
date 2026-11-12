@@ -1,5 +1,14 @@
 // @ts-nocheck — the bridge is plain ESM JavaScript.
-import { createLineDecoder, createMcpHandler, createNativeDecoder, encodeNative, sanitizeClientId, TOOLS } from "../../bridge/lib.mjs";
+import {
+  createLineDecoder,
+  createMcpHandler,
+  createNativeDecoder,
+  encodeNative,
+  INSTRUCTIONS,
+  sanitizeClientId,
+  STRUCTURED_MAX_BYTES,
+  TOOLS,
+} from "../../bridge/lib.mjs";
 import { createApiEnv } from "../helpers/api-env";
 import { handleAgentMessage, RateLimiter } from "@/integrations/external-messaging";
 import { SPEC_EXAMPLE } from "../helpers/fixtures";
@@ -82,6 +91,71 @@ describe("MCP handler → extension API (end to end, in memory)", () => {
     expect(bad.result.content[0].text).toMatch(/Unknown argument/);
     const unknown = await handle({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "chrome_eval", arguments: {} } });
     expect(unknown.error.code).toBe(-32602);
+  });
+});
+
+describe("MCP self-description", () => {
+  it("every tool has a title and annotations that match what its API method does", () => {
+    const methods = (createApiEnv().service as unknown as { methods: Record<string, { scope: string | null; mutates?: boolean }> }).methods;
+    for (const t of TOOLS) {
+      const def = methods[t.method];
+      expect(def, t.method).toBeDefined();
+      expect(def.scope, `${t.method} must be callable by agents`).not.toBeNull();
+      expect(t.title.length).toBeGreaterThan(0);
+      expect(t.annotations.title).toBe(t.title);
+      expect(t.annotations.openWorldHint).toBe(false);
+      // A tool says it's read-only exactly when its method changes nothing.
+      expect(t.annotations.readOnlyHint, t.name).toBe(!def.mutates);
+      if (def.mutates) expect(typeof t.annotations.destructiveHint, t.name).toBe("boolean");
+    }
+    const hint = (name: string) => TOOLS.find((t) => t.name === name).annotations;
+    for (const name of ["refresh_update_rule", "refresh_delete_rule", "refresh_disable_rule"]) expect(hint(name).destructiveHint, name).toBe(true);
+    expect(hint("refresh_create_rule").destructiveHint).toBe(false);
+  });
+
+  it("tool descriptions warn about what agents wouldn't expect", () => {
+    const desc = (name: string) => TOOLS.find((t) => t.name === name).description;
+    expect(desc("refresh_update_rule")).toMatch(/turns the rule OFF/);
+    expect(desc("refresh_enable_rule")).toMatch(/pending_approval/);
+    expect(desc("refresh_enable_rule")).toMatch(/Agent Integrations/);
+    expect(desc("refresh_test_rule")).toMatch(/dom\.exists/);
+    expect(desc("refresh_test_rule")).toMatch(/not false/);
+  });
+
+  it("initialize sends short instructions covering the workflow and the gotchas", async () => {
+    const handle = createMcpHandler({ callApi: async () => ({ ok: true, result: {} }) });
+    const init = await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    expect(init.result.instructions).toBe(INSTRUCTIONS);
+    expect(INSTRUCTIONS.length).toBeLessThan(1500);
+    for (const must of [/refresh_create_rule/, /turns a running rule off/, /unknown means/, /dom\.exists/, /30 s/]) expect(INSTRUCTIONS).toMatch(must);
+    // Every tool it names exists.
+    for (const name of INSTRUCTIONS.match(/refresh_[a-z_]+/g))
+      expect(
+        TOOLS.some((t) => t.name === name),
+        name,
+      ).toBe(true);
+  });
+
+  it("results are compact JSON; a large one isn't repeated in structuredContent", async () => {
+    let result: unknown = { status: "enabled", nested: { a: [1, 2] } };
+    const handle = createMcpHandler({ callApi: async () => ({ ok: true, result }) });
+    const call = () => handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "refresh_list_rules", arguments: {} } });
+    const small = (await call()).result;
+    expect(small.content[0].text).toBe(JSON.stringify(result));
+    expect(small.structuredContent).toEqual(result);
+    result = [{ id: "x" }];
+    expect((await call()).result.structuredContent).toEqual({ result: [{ id: "x" }] });
+    result = { big: "x".repeat(STRUCTURED_MAX_BYTES) };
+    const large = (await call()).result;
+    expect(JSON.parse(large.content[0].text)).toEqual(result);
+    expect(large.structuredContent).toBeUndefined();
+  });
+
+  it("errors are compact too", async () => {
+    const handle = createMcpHandler({ callApi: async () => ({ ok: false, error: { code: "forbidden", message: "No" } }) });
+    const r = await handle({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "refresh_list_rules", arguments: {} } });
+    expect(r.result.isError).toBe(true);
+    expect(r.result.content[0].text).toBe('{"code":"forbidden","message":"No"}');
   });
 });
 

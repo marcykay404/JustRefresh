@@ -79,4 +79,10 @@ From a checkout of this repository, `node bridge/justrefresh-bridge.mjs install 
 | `refresh_get_status`       | getRuleStatus         |
 | `refresh_get_history`      | getHistory            |
 
+Each tool has a `title` and MCP annotations: the read-only tools say so, and
+`refresh_update_rule`, `refresh_delete_rule` and `refresh_disable_rule` are
+marked destructive, so clients can ask before running them. Results come back
+as compact JSON text; a result up to 4 KB is also sent as `structuredContent`,
+a larger one (such as `refresh_get_capabilities`) only once, as text.
+
 Unknown tool arguments are rejected. Uninstall with `node ~/.justrefresh/bin/justrefresh-bridge.mjs uninstall`.

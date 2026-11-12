@@ -88,3 +88,20 @@ apps → Set up) offers the bridge as one file and the install command.
 3. `testRule` against the tab — check `result`, `trace`, `explanations`.
 4. `createRule` (draft) → `enableRule` → tell the user to approve.
 5. `getRuleStatus` to monitor.
+
+Things agents wouldn't expect:
+
+- An agent's `updateRule` always turns the rule off and makes it a draft
+  again, even when it was running: it needs `enableRule` and the user's
+  approval again.
+- `unknown` is not `false`: it means the condition couldn't be checked yet
+  (no site access, page still loading).
+- `testSelector` isn't available to agents. They check a selector by
+  running `testRule` with a throwaway rule whose `stopWhen` is a `dom.exists`
+  condition.
+
+MCP agents get this at runtime: the server's `instructions` (sent at
+`initialize`, `INSTRUCTIONS` in `bridge/lib.mjs`) and each tool's description
+cover the workflow and the points above, and every tool has a `title` and
+annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+`openWorldHint: false`) for the client's permission prompts.

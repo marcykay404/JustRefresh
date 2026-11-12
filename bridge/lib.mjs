@@ -89,48 +89,140 @@ export function createLineDecoder(onMessage, maxLine = 4 * 1024 * 1024, onBad = 
 /* ---------------- MCP tools ---------------- */
 const ruleObject = { type: "object", description: "Rule JSON (see refresh_get_capabilities → ruleSchema)" };
 const id = { type: "string", description: "Rule id" };
-const tool = (name, method, description, properties = {}, required = []) => ({
+const revision = { type: "integer", description: "meta.revision from refresh_get_rule; the call fails with conflict if the rule changed since" };
+
+/*
+ * MCP tool annotations: hints for the client's permission prompts. Nothing
+ * here reaches beyond the user's own browser (openWorldHint: false).
+ */
+const READ = { readOnlyHint: true, openWorldHint: false };
+const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+const ONCE = { ...WRITE, idempotentHint: true };
+const DESTRUCTIVE = { ...WRITE, destructiveHint: true };
+
+const tool = (name, method, title, annotations, description, properties = {}, required = []) => ({
   name,
   method,
+  title,
   description,
   inputSchema: { type: "object", properties, required, additionalProperties: false },
+  annotations: { title, ...annotations },
 });
 
 export const TOOLS = [
   tool(
     "refresh_get_capabilities",
     "getCapabilities",
-    "Discover supported triggers, conditions, actions, limits and the full rule JSON Schema. Call this first.",
+    "Get capabilities",
+    READ,
+    "Supported triggers, conditions and actions, interval limits, and the rule JSON Schema. Large: call it once per session, before writing your first rule.",
   ),
-  tool("refresh_list_tabs", "listTabs", "List open browser tabs (id, title, URL; query strings redacted by default)."),
-  tool("refresh_list_rules", "listRules", "List all rules."),
-  tool("refresh_get_rule", "getRule", "Get one rule including meta.revision (needed for safe updates).", { id }, ["id"]),
-  tool("refresh_validate_rule", "validateRule", "Validate a rule without saving. Returns diagnostics with JSON paths you can fix.", { rule: ruleObject }, [
-    "rule",
+  tool("refresh_list_tabs", "listTabs", "List tabs", READ, "Open browser tabs: id, title and URL (query strings hidden unless the user allows them)."),
+  tool("refresh_list_rules", "listRules", "List rules", READ, "All rules, the user's and agents', highest priority first."),
+  tool("refresh_get_rule", "getRule", "Get rule", READ, "One rule, including meta.revision (pass it as expectedRevision to update or delete safely).", { id }, [
+    "id",
   ]),
+  tool(
+    "refresh_validate_rule",
+    "validateRule",
+    "Validate rule",
+    READ,
+    "Check a rule without saving it. Returns diagnostics with JSON paths to fix, and the rule as it would be saved.",
+    { rule: ruleObject },
+    ["rule"],
+  ),
   tool(
     "refresh_test_rule",
     "testRule",
-    "Dry-run a rule's conditions against a tab. No refresh, no actions, no side effects.",
-    { rule: ruleObject, tabId: { type: "integer" } },
+    "Test rule (dry run)",
+    READ,
+    "Dry-run a rule's stopWhen conditions against an open tab: no refresh, no actions. Also says whether the rule targets the tab and whether site access is granted. " +
+      "To check a CSS selector, test a throwaway rule whose stopWhen is a dom.exists condition. An unknown result means it couldn't be checked yet (no site access, page loading), not false.",
+    { rule: ruleObject, tabId: { type: "integer", description: "Tab id from refresh_list_tabs" } },
     ["rule", "tabId"],
   ),
-  tool("refresh_create_rule", "createRule", "Save a rule as a disabled DRAFT. Use refresh_enable_rule to request activation.", { rule: ruleObject }, ["rule"]),
+  tool(
+    "refresh_create_rule",
+    "createRule",
+    "Create rule (draft)",
+    WRITE,
+    "Save a new rule as a disabled draft. Nothing runs until refresh_enable_rule is approved by the user.",
+    { rule: ruleObject },
+    ["rule"],
+  ),
   tool(
     "refresh_update_rule",
     "updateRule",
-    "Patch a rule you created. Pass expectedRevision to avoid overwriting concurrent edits. Updating returns the rule to draft state.",
-    { id, patch: { type: "object" }, expectedRevision: { type: "integer" } },
+    "Update rule",
+    DESTRUCTIVE,
+    "Patch a rule you created (top-level fields are replaced). Any update by an agent turns the rule OFF and makes it a draft again, even a running one: " +
+      "call refresh_enable_rule afterwards and the user must approve again. Pass expectedRevision to avoid overwriting the user's edits.",
+    { id, patch: { type: "object", description: "Top-level rule fields to replace" }, expectedRevision: revision },
     ["id", "patch"],
   ),
-  tool("refresh_delete_rule", "deleteRule", "Delete a rule you created (active rules need user approval).", { id, expectedRevision: { type: "integer" } }, [
-    "id",
-  ]),
-  tool("refresh_enable_rule", "enableRule", "Request activation. Usually returns pending_approval: the user approves in the extension.", { id }, ["id"]),
-  tool("refresh_disable_rule", "disableRule", "Disable a rule.", { id }, ["id"]),
-  tool("refresh_get_status", "getRuleStatus", "Execution status of a rule on each tab (status, next refresh, counts, last evaluation).", { id }, ["id"]),
-  tool("refresh_get_history", "getHistory", "Recent execution history.", { limit: { type: "integer", minimum: 1, maximum: 500 }, ruleId: { type: "string" } }),
+  tool(
+    "refresh_delete_rule",
+    "deleteRule",
+    "Delete rule",
+    { ...DESTRUCTIVE, idempotentHint: true },
+    "Delete a rule you created. A draft or disabled rule is deleted at once; deleting an enabled one returns pending_approval until the user approves.",
+    { id, expectedRevision: revision },
+    ["id"],
+  ),
+  tool(
+    "refresh_enable_rule",
+    "enableRule",
+    "Ask to enable rule",
+    ONCE,
+    "Ask to switch on a rule you created. Usually returns pending_approval: tell the user to approve it in the JustRefresh dashboard → Agent Integrations → Waiting for your OK, " +
+      "then check refresh_get_status: enabled means approved; not enabled with nothing in pendingApprovals means the user declined it or the rule changed since you asked. Agents the user trusts are enabled at once.",
+    { id },
+    ["id"],
+  ),
+  tool(
+    "refresh_disable_rule",
+    "disableRule",
+    "Disable rule",
+    { ...DESTRUCTIVE, idempotentHint: true },
+    "Switch a rule off. Works on any rule, including the user's own; only disable a user's rule when they asked you to.",
+    { id },
+    ["id"],
+  ),
+  tool(
+    "refresh_get_status",
+    "getRuleStatus",
+    "Get rule status",
+    READ,
+    "Whether a rule is enabled, its waiting approvals, and how it runs on each tab (status, next refresh, counts, last evaluation, last error).",
+    { id },
+    ["id"],
+  ),
+  tool(
+    "refresh_get_history",
+    "getHistory",
+    "Get history",
+    READ,
+    "Recent activity (refreshes, matches, actions, errors), newest first; 100 entries unless you set limit. Filter by ruleId to follow one rule.",
+    { limit: { type: "integer", minimum: 1, maximum: 500 }, ruleId: { type: "string", description: "Only this rule's entries" } },
+  ),
 ];
+
+/** What every agent should know, sent once at initialize. */
+export const INSTRUCTIONS =
+  "Controls the JustRefresh Chrome extension, which refreshes the user's tabs on a schedule and can stop, notify or click when something appears on the page. " +
+  "Workflow: refresh_get_capabilities (once) → refresh_list_tabs → refresh_validate_rule → refresh_test_rule (dry run on a tab) → refresh_create_rule (saves a disabled draft) → " +
+  "refresh_enable_rule (the user approves in the extension) → refresh_get_status. " +
+  "Rules you write never run without the user's approval, and any refresh_update_rule turns a running rule off until the user approves it again, so ask before changing a rule the user relies on. " +
+  "Conditions return matched, not_matched or unknown; unknown means it couldn't be checked (no site access, page still loading), not false. " +
+  "To check a CSS selector, refresh_test_rule a throwaway rule whose stopWhen is a dom.exists condition. " +
+  "Keep intervals reasonable: refresh as slowly as the task allows (minimum 30 s, or 5 s if the user enabled fast intervals), and set limits (maxRefreshes, maxDurationSeconds) for one-off watches. " +
+  "You can't read page text or full URLs with query strings; use your own browser tools for that.";
+
+/**
+ * Results larger than this are sent once, as compact JSON text, without the
+ * same payload again in structuredContent (some clients pass both to the model).
+ */
+export const STRUCTURED_MAX_BYTES = 4096;
 
 export const PROTOCOL_VERSION = "2025-06-18";
 
@@ -163,8 +255,7 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
           protocolVersion: msg.params?.protocolVersion ?? PROTOCOL_VERSION,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: serverName, version },
-          instructions:
-            "Controls the JustRefresh Chrome extension. Workflow: get capabilities → list tabs → validate → test (dry run) → create (draft) → enable (user approves in the extension) → get status.",
+          instructions: INSTRUCTIONS,
         });
       case "notifications/initialized":
       case "notifications/cancelled":
@@ -187,9 +278,9 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
           if (!res?.ok) {
             const err = res?.error ?? { code: "internal", message: "No response" };
             const hint = err.code === "pairing_required" ? "\nOpen the extension dashboard → Agent Integrations and approve this agent." : "";
-            return reply({ isError: true, content: [{ type: "text", text: JSON.stringify(err, null, 2) + hint }] });
+            return reply({ isError: true, content: [{ type: "text", text: JSON.stringify(err) + hint }] });
           }
-          return reply({ content: [{ type: "text", text: JSON.stringify(res.result, null, 2) }], structuredContent: wrap(res.result) });
+          return reply(toolResult(res.result));
         } catch (e) {
           return reply({ isError: true, content: [{ type: "text", text: `Bridge error: ${e.message}` }] });
         }
@@ -198,6 +289,13 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
         return fail(-32601, `Method not found: ${msg.method}`);
     }
   };
+}
+
+function toolResult(result) {
+  const text = JSON.stringify(result) ?? "null";
+  const out = { content: [{ type: "text", text }] };
+  if (Buffer.byteLength(text, "utf8") <= STRUCTURED_MAX_BYTES) out.structuredContent = wrap(result);
+  return out;
 }
 
 const wrap = (r) => (r && typeof r === "object" && !Array.isArray(r) ? r : { result: r });
