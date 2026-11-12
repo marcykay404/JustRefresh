@@ -113,14 +113,17 @@ No account or login is needed. To try it: open any website, click the JustRefres
 Confirmed before the first upload. Changing one breaks existing installs, saved
 exports or agents users have set up; `tests/unit/identifiers.test.ts` pins them.
 
-| What                  | Identifier                                                         |
-| --------------------- | ------------------------------------------------------------------ |
-| Native messaging host | `com.justrefresh.bridge`                                           |
-| Bridge folder         | `~/.justrefresh`                                                   |
-| Agent protocol        | `justrefresh-agent/1`                                              |
-| Export format tag     | `justrefresh` (exports tagged `smart-auto-refresh` still import)   |
-| MCP server name       | `justrefresh`                                                      |
-| npm package           | `justrefresh` (not yet published; the name was free on 2026-11-12) |
+| What                       | Identifier                                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Native messaging host      | `com.justrefresh.bridge`                                                                                                                   |
+| Bridge folder              | `~/.justrefresh`                                                                                                                           |
+| Agent protocol             | `justrefresh-agent/1`                                                                                                                      |
+| Export format tag          | `justrefresh` (exports tagged `smart-auto-refresh` still import)                                                                           |
+| Bridge file                | `justrefresh-bridge.mjs`, installed as `~/.justrefresh/bin/justrefresh-bridge.mjs` (users' MCP settings point at it)                       |
+| Bridge files users rely on | `~/.justrefresh/events/<agent>.jsonl`, `~/.justrefresh/agents/<agent>.key`                                                                 |
+| MCP server                 | `justrefresh` in users' MCP settings and as the server's own name; tool names `refresh_*` (new ones may be added, none renamed or removed) |
+| Webhook messages           | `"source": "justrefresh"`                                                                                                                  |
+| npm package                | `justrefresh` (not yet published; the name was free on 2026-11-12)                                                                         |
 
 ## Before each upload
 

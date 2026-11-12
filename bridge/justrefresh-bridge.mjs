@@ -18,7 +18,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
+  agentKeyPath,
   appendEventLine,
+  DATA_DIR_NAME,
   createLineDecoder,
   createMcpHandler,
   createNativeDecoder,
@@ -33,7 +35,7 @@ import {
 } from "./lib.mjs";
 import { install, parseInstallArgs, restrictToUser, uninstall } from "./install-lib.mjs";
 
-const DIR = process.env.JUSTREFRESH_BRIDGE_DIR ?? path.join(os.homedir(), ".justrefresh");
+const DIR = process.env.JUSTREFRESH_BRIDGE_DIR ?? path.join(os.homedir(), DATA_DIR_NAME);
 const isWin = process.platform === "win32";
 const SOCKET = isWin ? `\\\\.\\pipe\\justrefresh-${os.userInfo().username}` : path.join(DIR, "bridge.sock");
 const TOKEN_FILE = path.join(DIR, "token");
@@ -167,7 +169,7 @@ function runNativeHost() {
 
 /** This agent's key from the extension (null until it has been approved and issued one). */
 function agentKeys(agentId) {
-  const file = () => path.join(DIR, "agents", `${sanitizeClientId(agentId())}.key`);
+  const file = () => agentKeyPath(DIR, agentId());
   return {
     read() {
       try {

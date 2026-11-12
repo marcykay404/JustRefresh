@@ -11,10 +11,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { BRIDGE_FILE, DATA_DIR_NAME, MCP_SERVER_KEY } from "./lib.mjs";
 
 export const HOST = "com.justrefresh.bridge";
 /** What the bridge is made of: the bundled download is one file, the repo version three. */
-const BRIDGE_FILES = ["justrefresh-bridge.mjs", "lib.mjs", "install-lib.mjs"];
+const BRIDGE_FILES = [BRIDGE_FILE, "lib.mjs", "install-lib.mjs"];
 
 /* global __JUSTREFRESH_BUNDLED__ */
 /** Set by scripts/build.mjs in the downloadable bridge, which is one file with everything inlined. */
@@ -91,7 +92,7 @@ export function parseInstallArgs(argv) {
 
 /** Where things go. `env` overrides exist for tests. */
 export function locations({ home = os.homedir(), platform = process.platform, env = process.env } = {}) {
-  const dataDir = env.JUSTREFRESH_BRIDGE_DIR ?? path.join(home, ".justrefresh");
+  const dataDir = env.JUSTREFRESH_BRIDGE_DIR ?? path.join(home, DATA_DIR_NAME);
   const bases = {
     win32: env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"),
     darwin: home,
@@ -223,7 +224,7 @@ export function install({
   log(`Installed the JustRefresh bridge in ${loc.bin}`);
   for (const r of registered) log(`  registered with ${r}`);
   log("\nNext: restart JustRefresh if the dashboard asks, then add this to your AI app's MCP settings:");
-  log(JSON.stringify({ mcpServers: { justrefresh: { command: node, args: [script, "mcp"] } } }, null, 2));
+  log(JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: { command: node, args: [script, "mcp"] } } }, null, 2));
   log("\nWhen the app first connects, approve it in JustRefresh → Dashboard → Agent Integrations.");
   log("If you switch Node versions (nvm, a new Homebrew Node), run this install again.");
   return { browsers, launcher, script };
