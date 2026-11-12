@@ -48,6 +48,7 @@ When a monitor ends without its condition matching (`onUnknown: "pause"`
 gives up after `maxUnknownRetries`, or `onUnknown: "stop"`), a
 "Monitoring stopped" notification is shown (if notifications are enabled),
 so an unattended "refresh until" never ends silently.
+`limits.maxRefreshes` counts the rule's clicks as well as its refreshes.
 `safety.maxRefreshes` is accepted for compatibility and normalized into
 `limits.maxRefreshes`. The API adds a read-only `meta` object
 (`createdAt`, `updatedAt`, `revision`, `origin`, `draft`).

@@ -340,6 +340,7 @@ export abstract class CycleEngine extends EngineBase {
         const { activity, reason } = await this.page.activity(tab.id);
         this.checkSafety(rule, tab, run.rt, activity, reason, this.now());
         const result = await this.page.click(tab.id, selector);
+        if (result.ok) run.rt = { ...run.rt, clickCount: (run.rt.clickCount ?? 0) + 1 };
         // The rule's later actions (often "stop") still run: say so, rather than only in History.
         if (!result.ok && config.settings.notificationsEnabled) {
           await this.deps.browser.notify(`justrefresh:click:${tab.id}:${this.now()}`, `${rule.name}: couldn't click`, result.error);

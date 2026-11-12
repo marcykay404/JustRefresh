@@ -87,9 +87,30 @@ describe.skipIf(isWin)("bridge processes", () => {
     await wait(() => msgs.length, "challenge");
     expect(msgs[0]).toMatchObject({ type: "challenge", nonce: expect.stringMatching(/^[0-9a-f]{32}$/) });
     // A proof made with the wrong token (or the right token for another challenge) is refused.
-    sock.write(JSON.stringify({ type: "hello", proof: proofOf("wrong", "client", msgs[0].nonce), nonce: newNonce(), client: { id: "x" } }) + "\n");
+    sock.write(JSON.stringify({ type: "hello", proof: proofOf("wrong", "client", msgs[0].nonce), nonce: newNonce() }) + "\n");
     await new Promise((r) => sock.on("close", r));
     expect(msgs[1]).toEqual({ type: "error", error: "Invalid token" });
+    host.stdin.end();
+  });
+
+  it("a proven client must say who it is before its first request", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
+    const host = spawn(process.execPath, [BRIDGE, "native-host"], { env: { ...process.env, JUSTREFRESH_BRIDGE_DIR: dir }, stdio: ["pipe", "pipe", "pipe"] });
+    await wait(() => existsSync(join(dir, "bridge.sock")) && existsSync(join(dir, "token")), "socket");
+    const token = readFileSync(join(dir, "token"), "utf8").trim();
+    const sock = net.createConnection(join(dir, "bridge.sock"));
+    const msgs: any[] = [];
+    sock.on(
+      "data",
+      createLineDecoder((m) => msgs.push(m)),
+    );
+    await wait(() => msgs.length, "challenge");
+    sock.write(JSON.stringify({ type: "hello", proof: proofOf(token, "client", msgs[0].nonce), nonce: newNonce() }) + "\n");
+    await wait(() => msgs.length > 1, "ready");
+    expect(msgs[1].type).toBe("ready");
+    sock.write(JSON.stringify({ id: 1, method: "listRules" }) + "\n");
+    await new Promise((r) => sock.on("close", r));
+    expect(msgs[2]).toEqual({ type: "error", error: "Expected the client's identity" });
     host.stdin.end();
   });
 
@@ -116,6 +137,8 @@ describe.skipIf(isWin)("bridge processes", () => {
     const r = await mcp.reply(2);
     expect(JSON.stringify(r)).toMatch(/couldn't prove/);
     expect(received.every((m) => m.type === "hello")).toBe(true);
+    // It never learns which agent was connecting: the identity is sent only after the bridge's proof checks out.
+    expect(JSON.stringify(received)).not.toMatch(/test-agent|Test Agent/);
     mcp.proc.kill();
     impostor.close();
   }, 15_000);

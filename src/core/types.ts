@@ -363,6 +363,8 @@ export interface TabRuntime {
   lastAttemptAt: number | null;
   lastNavigationAt: number | null;
   refreshCount: number;
+  /** Clicks by the rule's click action in this run; they count toward `limits.maxRefreshes` too. */
+  clickCount?: number;
   navigationCount: number;
   unknownStreak: number;
   pendingReload: { startedAt: number; generation: number } | null;

@@ -43,7 +43,8 @@ AI apps → Set up), with the commands ready to copy:
    ```
    It copies itself to `~/.justrefresh/bin/`, writes the launcher Chrome
    starts, registers the native host with every Chromium browser it finds
-   (Chrome, Chromium, Edge, Brave; or the one given with `--browser`), and on
+   (Chrome and its Beta/Dev/Canary channels, Chromium, Edge, Brave, Vivaldi,
+   Arc; or the one given with `--browser`), and on
    Windows adds the registry entries (HKCU, no admin). It prints the MCP
    settings with the full path filled in.
 4. Add them to your MCP client:

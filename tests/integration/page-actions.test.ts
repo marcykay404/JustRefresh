@@ -57,6 +57,20 @@ describe("click action", () => {
     expect(entry?.reason).toMatch(/submit a form/);
   });
 
+  it("counts clicks toward the refresh limit, so a rule that only clicks stops too", async () => {
+    const rule = whenInStock([{ type: "click", selector: "#add" }]);
+    const env = await setup({ ...rule, limits: { maxRefreshes: 2 } });
+    await env.engine.runCycle(1, "manual");
+    await env.engine.runCycle(1, "manual");
+    expect(env.page.clicks).toHaveLength(2);
+    expect((await env.runtime.get(1))?.clickCount).toBe(2);
+    await env.engine.runCycle(1, "alarm");
+    expect(env.page.clicks).toHaveLength(2);
+    const rt = await env.runtime.get(1);
+    expect(rt?.status).toBe("completed");
+    expect(rt?.reason).toMatch(/maximum of 2 refreshes and clicks/);
+  });
+
   it("waits while you type, like a refresh", async () => {
     const env = await setup(whenInStock([{ type: "click", selector: "#add" }, { type: "stopRefresh" }]));
     env.page.activityByTab.set(1, quietActivity({ editing: true, sinceKeyMs: 500, sinceInputMs: 500 }));

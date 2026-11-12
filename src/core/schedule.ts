@@ -57,9 +57,11 @@ export function limitDeadline(limits: LimitsConfig, rt: Pick<TabRuntime, "starte
   return times.length ? Math.min(...times) : null;
 }
 
-export function checkLimits(limits: LimitsConfig, rt: Pick<TabRuntime, "refreshCount" | "startedAt">, now: number): LimitOutcome {
-  if (limits.maxRefreshes !== undefined && rt.refreshCount >= limits.maxRefreshes) {
-    return { reached: true, reason: `Reached maximum of ${limits.maxRefreshes} refreshes` };
+export function checkLimits(limits: LimitsConfig, rt: Pick<TabRuntime, "refreshCount" | "clickCount" | "startedAt">, now: number): LimitOutcome {
+  // Clicks count like refreshes: each acts on the page, and a rule that only clicks must stop too.
+  const clicks = rt.clickCount ?? 0;
+  if (limits.maxRefreshes !== undefined && rt.refreshCount + clicks >= limits.maxRefreshes) {
+    return { reached: true, reason: `Reached maximum of ${limits.maxRefreshes} ${clicks ? "refreshes and clicks" : "refreshes"}` };
   }
   if (limits.maxDurationSeconds !== undefined && now - rt.startedAt >= limits.maxDurationSeconds * 1000) {
     const m = Math.round(limits.maxDurationSeconds / 60);

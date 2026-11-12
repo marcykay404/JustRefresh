@@ -1,6 +1,6 @@
 // Installing the bridge: one command sets everything up.
 //
-//   node justrefresh-bridge.mjs install --extension-id <id> [--browser chrome|chromium|edge|brave]
+//   node justrefresh-bridge.mjs install --extension-id <id> [--browser chrome|chrome-beta|…|vivaldi|arc]
 //   node justrefresh-bridge.mjs uninstall
 //
 // It copies the bridge to ~/.justrefresh/bin (so the downloaded file can be
@@ -16,35 +16,66 @@ export const HOST = "com.justrefresh.bridge";
 /** What the bridge is made of: the bundled download is one file, the repo version three. */
 const BRIDGE_FILES = ["justrefresh-bridge.mjs", "lib.mjs", "install-lib.mjs"];
 
-/** Each browser's profile folder (relative to home on macOS/Linux, to %LOCALAPPDATA% on Windows). */
+/**
+ * Each browser's profile folder (relative to home on macOS, to
+ * $XDG_CONFIG_HOME on Linux, to %LOCALAPPDATA% on Windows), where it looks
+ * for NativeMessagingHosts. A browser missing on a platform isn't made there.
+ * Chrome's channels, Vivaldi and Arc follow Chrome's layout; their paths
+ * aren't documented by the browsers, so they are best effort.
+ */
 const PROFILE_DIRS = {
   darwin: {
     chrome: "Library/Application Support/Google/Chrome",
+    "chrome-beta": "Library/Application Support/Google/Chrome Beta",
+    "chrome-dev": "Library/Application Support/Google/Chrome Dev",
+    "chrome-canary": "Library/Application Support/Google/Chrome Canary",
     chromium: "Library/Application Support/Chromium",
     edge: "Library/Application Support/Microsoft Edge",
     brave: "Library/Application Support/BraveSoftware/Brave-Browser",
+    vivaldi: "Library/Application Support/Vivaldi",
+    arc: "Library/Application Support/Arc/User Data",
   },
-  // Relative to $XDG_CONFIG_HOME (default ~/.config).
   linux: {
     chrome: "google-chrome",
+    "chrome-beta": "google-chrome-beta",
+    "chrome-dev": "google-chrome-unstable",
+    "chrome-canary": "google-chrome-canary",
     chromium: "chromium",
     edge: "microsoft-edge",
     brave: "BraveSoftware/Brave-Browser",
+    vivaldi: "vivaldi",
   },
   win32: {
     chrome: "Google/Chrome/User Data",
+    "chrome-beta": "Google/Chrome Beta/User Data",
+    "chrome-dev": "Google/Chrome Dev/User Data",
+    "chrome-canary": "Google/Chrome SxS/User Data",
     chromium: "Chromium/User Data",
     edge: "Microsoft/Edge/User Data",
     brave: "BraveSoftware/Brave-Browser/User Data",
+    vivaldi: "Vivaldi/User Data",
   },
 };
+/**
+ * Windows registry keys (HKCU) each browser reads. Every Chrome channel reads
+ * Chrome's; Vivaldi gets its own and Chrome's (Chromium-based browsers fall
+ * back to Chrome's key).
+ */
+const CHROME_KEY = "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts";
 const WIN_KEYS = {
-  chrome: "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts",
-  chromium: "HKCU\\Software\\Chromium\\NativeMessagingHosts",
-  edge: "HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts",
-  brave: "HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts",
+  chrome: [CHROME_KEY],
+  "chrome-beta": [CHROME_KEY],
+  "chrome-dev": [CHROME_KEY],
+  "chrome-canary": [CHROME_KEY],
+  chromium: ["HKCU\\Software\\Chromium\\NativeMessagingHosts"],
+  edge: ["HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts"],
+  brave: ["HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts"],
+  vivaldi: ["HKCU\\Software\\Vivaldi\\NativeMessagingHosts", CHROME_KEY],
 };
-export const BROWSERS = Object.keys(WIN_KEYS);
+export const BROWSERS = Object.keys(PROFILE_DIRS.darwin);
+
+/** The registry keys to write for these browsers, each once. */
+const winKeys = (browsers) => [...new Set(browsers.flatMap((b) => WIN_KEYS[b] ?? []))];
 
 export function parseInstallArgs(argv) {
   const opt = (name) => {
@@ -68,11 +99,12 @@ export function locations({ home = os.homedir(), platform = process.platform, en
 
 /** The browsers to register with: the one named, else every one found, else Chrome. */
 export function targetBrowsers(loc, browser) {
+  const here = BROWSERS.filter((b) => Object.hasOwn(loc.profiles, b));
   if (browser) {
-    if (!BROWSERS.includes(browser)) throw new Error(`Unknown browser "${browser}". Use one of: ${BROWSERS.join(", ")}`);
+    if (!here.includes(browser)) throw new Error(`Unknown browser "${browser}" here. Use one of: ${here.join(", ")}`);
     return [browser];
   }
-  const found = BROWSERS.filter((b) => fs.existsSync(path.join(loc.profileBase, loc.profiles[b])));
+  const found = here.filter((b) => fs.existsSync(path.join(loc.profileBase, loc.profiles[b])));
   return found.length ? found : ["chrome"];
 }
 
@@ -136,8 +168,9 @@ function register(loc, browsers, manifest, run) {
   if (loc.platform === "win32") {
     const file = path.join(loc.bin, `${HOST}.json`);
     fs.writeFileSync(file, json);
-    for (const b of browsers) run("reg", ["add", `${WIN_KEYS[b]}\\${HOST}`, "/ve", "/t", "REG_SZ", "/d", file, "/f"]);
-    return browsers.map((b) => `${b}: ${WIN_KEYS[b]}\\${HOST}`);
+    const keys = winKeys(browsers);
+    for (const k of keys) run("reg", ["add", `${k}\\${HOST}`, "/ve", "/t", "REG_SZ", "/d", file, "/f"]);
+    return [`${browsers.join(", ")}: ${keys.map((k) => `${k}\\${HOST}`).join(", ")}`];
   }
   return browsers.map((b) => {
     fs.mkdirSync(manifestDir(loc, b), { recursive: true });
@@ -174,14 +207,16 @@ export function install({ extensionId, browser, sourceDir, node = stableNode(), 
 }
 
 export function uninstall({ loc = locations(), run = execFileSync, log = console.log } = {}) {
-  for (const b of BROWSERS) {
-    if (loc.platform === "win32") {
+  if (loc.platform === "win32") {
+    for (const k of winKeys(BROWSERS)) {
       try {
-        run("reg", ["delete", `${WIN_KEYS[b]}\\${HOST}`, "/f"], { stdio: "ignore" });
+        run("reg", ["delete", `${k}\\${HOST}`, "/f"], { stdio: "ignore" });
       } catch {
         /* not registered there */
       }
-    } else fs.rmSync(path.join(manifestDir(loc, b), `${HOST}.json`), { force: true });
+    }
+  } else {
+    for (const b of BROWSERS.filter((x) => Object.hasOwn(loc.profiles, x))) fs.rmSync(path.join(manifestDir(loc, b), `${HOST}.json`), { force: true });
   }
   // Only what install put there; the folder goes only if nothing else is in it.
   for (const f of [...BRIDGE_FILES, "justrefresh-native-host.sh", "justrefresh-native-host.bat", `${HOST}.json`])

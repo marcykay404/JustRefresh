@@ -39,10 +39,15 @@ function ensureDir() {
 /* Native host: started by Chrome, relays socket clients ⇄ extension   */
 /* ------------------------------------------------------------------ */
 
-/** A client's hello, checked against the challenge we sent: its id and name, or null. */
-function admit(msg, token, challenge) {
-  const ok = msg?.type === "hello" && sameSecret(msg.proof, proofOf(token, "client", challenge)) && isNonce(msg.nonce);
-  if (!ok) return null;
+/** Whether a client's hello proves it knows the token, for the challenge we sent. */
+const admit = (msg, token, challenge) => msg?.type === "hello" && sameSecret(msg.proof, proofOf(token, "client", challenge)) && isNonce(msg.nonce);
+
+/**
+ * The client's id and name, sent only after it has checked our proof (so it
+ * never tells a program squatting on the socket name which agent it is), or null.
+ */
+function identified(msg) {
+  if (msg?.type !== "identify") return null;
   return { id: sanitizeClientId(msg.client?.id ?? msg.client?.name), name: String(msg.client?.name ?? "MCP client").slice(0, 80) };
 }
 
@@ -82,6 +87,7 @@ function runNativeHost() {
 
   const server = net.createServer((socket) => {
     const challenge = newNonce();
+    let proven = false;
     let client = null;
     // A client that doesn't finish the handshake in time is dropped.
     const unproven = setTimeout(() => socket.destroy(), HANDSHAKE_MS);
@@ -91,8 +97,13 @@ function runNativeHost() {
       createLineDecoder(
         (msg) => {
           if (client) return relay(socket, client, msg);
-          client = admit(msg, token, challenge);
-          if (!client) return void socket.end(line({ type: "error", error: "Invalid token" }));
+          if (proven) {
+            client = identified(msg);
+            if (!client) socket.end(line({ type: "error", error: "Expected the client's identity" }));
+            return;
+          }
+          if (!admit(msg, token, challenge)) return void socket.end(line({ type: "error", error: "Invalid token" }));
+          proven = true;
           clearTimeout(unproven);
           socket.write(line({ type: "ready", proof: proofOf(token, "server", msg.nonce) }));
         },
@@ -184,13 +195,13 @@ function runMcp() {
       const timer = setTimeout(() => fail("The bridge didn't answer in time."), HANDSHAKE_MS);
       const handshake = (msg) => {
         if (msg.type === "challenge" && isNonce(msg.nonce)) {
-          return socket.write(
-            line({ type: "hello", proof: proofOf(token, "client", msg.nonce), nonce: ours, client: { id: agentId(), name: clientInfo.name } }),
-          );
+          return socket.write(line({ type: "hello", proof: proofOf(token, "client", msg.nonce), nonce: ours }));
         }
         clearTimeout(timer);
         if (msg.type === "ready" && sameSecret(msg.proof, proofOf(token, "server", ours))) {
           proven = true;
+          // Only now, talking to JustRefresh's own bridge, say which agent this is.
+          socket.write(line({ type: "identify", client: { id: agentId(), name: clientInfo.name } }));
           return resolve();
         }
         fail(msg.type === "error" ? msg.error : "The bridge couldn't prove it is JustRefresh's; not connecting.");
