@@ -87,6 +87,8 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
         }
         await d.config.update((c) => {
           delete c.rules[p.id];
+          // Nothing left to approve for it.
+          for (const a of c.approvals) if (a.ruleId === p.id && a.status === "pending") a.status = "stale";
         });
         return { status: "deleted" };
       },
@@ -124,7 +126,7 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
           tab: { id: tab.id, title: tab.title, url: actor.type === "agent" ? redactUrl(tab.url, config.settings.redactUrlsForAgents) : tab.url },
           targetsTab: targets,
           hostAccess,
-          result: dry.ok ? dry.result : { status: "unknown", reason: dry.error },
+          result: dry.ok ? dry.result : { status: "unknown", reason: dry.error, code: "tab_unavailable" },
           trace: dry.ok ? dry.trace : null,
           explanations,
           sideEffects: "none (dry run: no refresh, no actions executed)",
@@ -137,8 +139,10 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
       mutates: true,
       handler: async (actor, p) => {
         const rule = await svc.getRuleOrThrow(p.id);
+        if (actor.type === "agent") assertCanModify(actor, rule);
+        // Already on: nothing to ask for (a new approval would restart its run when approved).
+        if (rule.enabled && !rule.meta.draft) return { status: "enabled" };
         if (actor.type === "agent") {
-          assertCanModify(actor, rule);
           const pending = await svc.requestApproval(actor, "activate", rule);
           if (pending) return pending;
         }
@@ -152,6 +156,7 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
       mutates: true,
       handler: async (_actor, p) => {
         // Disabling is always safe; agents may disable any rule.
+        // Also withdraws a request waiting to switch it on (see setEnabled).
         await svc.setEnabled(p.id, false);
         return { status: "disabled" };
       },
