@@ -88,6 +88,38 @@ describe("Reset to defaults", () => {
     expect([...env.alarms.alarms.keys()]).toEqual([]);
   });
 
+  it("waits for a re-check of every tab that started with the old rules", async () => {
+    const env = createApiEnv();
+    await env.service.call(env.user, "createRule", { rule: SPEC_EXAMPLE });
+    env.browser.addTab(3, "https://example.com/products/3");
+    env.browser.addTab(5, "https://example.com/products/5");
+    // Tab 3 is busy: a check holds its lock.
+    const getTab = env.browser.getTab.bind(env.browser);
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let holding = true;
+    env.browser.getTab = async (id) => {
+      if (id === 3 && holding) {
+        holding = false;
+        await held;
+      }
+      return getTab(id);
+    };
+    const cycle = env.engine.runCycle(3, "manual");
+    await new Promise((r) => setTimeout(r, 10));
+    // A re-check after some other change read the old rules and waits for tab 3; tab 5 comes after it.
+    const recheck = env.engine.reconcileAll("config");
+    await new Promise((r) => setTimeout(r, 10));
+    const reset = env.service.call(env.user, "resetConfig", { confirm: true });
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    await Promise.all([cycle, recheck, reset]);
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(await env.runtime.getAll()).toEqual([]);
+    expect([...env.alarms.alarms.keys()]).toEqual([]);
+    expect(await env.history.list()).toEqual([]);
+  });
+
   it("any other change still keeps the previous configuration as the backup", async () => {
     const env = createApiEnv();
     await env.service.call(env.user, "createRule", { rule: SPEC_EXAMPLE });
