@@ -488,6 +488,10 @@ export function SiteAccess() {
         JustRefresh installs without access to any website and asks per site when you turn on refresh. Access lets it wait while you're typing or have unsaved
         form changes, and lets rules check a page's content.
       </p>
+      <p className="small muted" style={{ margin: 0 }}>
+        Removing a site here stops JustRefresh using it. Chrome remembers you allowed it, so turning refresh on there again won't ask you again. To make Chrome
+        ask again, remove the site in chrome://extensions → JustRefresh → Details → Site access instead.
+      </p>
       {origins === null && <span className="muted small">Loading…</span>}
       {origins !== null && sites.length === 0 && <span className="muted small">No site access granted.</span>}
       {sites.length > 0 && (
