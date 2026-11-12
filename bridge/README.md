@@ -79,13 +79,14 @@ From a checkout of this repository, `node bridge/justrefresh-bridge.mjs install 
 | `refresh_disable_rule`     | disableRule           |
 | `refresh_get_status`       | getRuleStatus         |
 | `refresh_get_history`      | getHistory            |
+| `refresh_wait_for_event`   | getEvents (waits)     |
 
 Each tool has a `title` and MCP annotations: the read-only tools say so;
 `refresh_update_rule`, `refresh_delete_rule`, `refresh_disable_rule` and
 `refresh_enable_rule` (which switches a rule on at once for a trusted agent)
 are marked destructive, so clients can ask before running them; and
 `refresh_list_tabs`, `refresh_test_rule`, `refresh_get_status`,
-`refresh_get_history` and `refresh_enable_rule` are marked open-world, since
+`refresh_get_history`, `refresh_wait_for_event` and `refresh_enable_rule` are marked open-world, since
 they return text from web pages (titles, URLs, page errors) or make a rule act
 on them. Results come back
 as compact JSON text; a result up to 4 KB is also sent as `structuredContent`,
@@ -93,5 +94,13 @@ a larger one only once, as text. `refresh_get_capabilities` is a summary that
 also carries the server instructions (for clients that don't show
 `instructions` to the model); JSON Schemas come one piece at a time from
 `refresh_get_schema`, or all at once with `includeSchemas: true`.
+
+`refresh_wait_for_event` returns what happened to the agent's own rules and
+requests (approval answers, matched, completed, paused, errors), waiting up
+to `timeoutSec` (default 45) for the first one; see
+[Events](../docs/agent-integration.md#events). With "Also write each app's
+events to a file" on in the dashboard, the native host also appends each
+agent's events to `~/.justrefresh/events/<agent>.jsonl` (owner-only, moved
+to `.1` past 256 KB), and the tool's result names that file as `eventsFile`.
 
 Unknown tool arguments are rejected. Uninstall with `node ~/.justrefresh/bin/justrefresh-bridge.mjs uninstall`.

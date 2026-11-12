@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   allowFastIntervals: false,
   defaultStopAfterMinutes: null,
   allowWebhooks: false,
+  agentEventsFile: false,
 };
 
 /** Choices for "Stop watching after" (minutes); null = no limit. */

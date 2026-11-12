@@ -5,7 +5,8 @@ import { RuleEngine, type AlarmPort, type BrowserPort, type EngineTimeouts, type
 import type { ConditionNode, EvaluationResult, TabInfo } from "@/core/types";
 import type { ActivitySnapshot } from "@/shared/messaging-types";
 import { MemoryKV } from "@/storage/kv";
-import { AuditRepository, ConfigRepository, HistoryRepository, RuntimeRepository } from "@/storage/repositories";
+import { AgentEventRepository, AuditRepository, ConfigRepository, HistoryRepository, RuntimeRepository } from "@/storage/repositories";
+import { AgentEvents } from "@/api/agent-events";
 import { evaluateDomCondition } from "@/conditions/dom-eval";
 import { JSDOM } from "jsdom";
 
@@ -173,7 +174,8 @@ export function createEnv(opts: { timeouts?: Partial<EngineTimeouts> } = {}) {
   const runtime = new RuntimeRepository(session);
   const history = new HistoryRepository(local, config, clock.now);
   const audit = new AuditRepository(local, clock.now);
-  const engine = new RuleEngine({ browser, alarms, page, clock, stores: { config, runtime, history }, timeouts: opts.timeouts });
+  const events = new AgentEvents({ store: new AgentEventRepository(local, clock.now), config, now: clock.now });
+  const engine = new RuleEngine({ browser, alarms, page, clock, stores: { config, runtime, history }, events, timeouts: opts.timeouts });
   return {
     clock,
     browser,
@@ -185,6 +187,7 @@ export function createEnv(opts: { timeouts?: Partial<EngineTimeouts> } = {}) {
     runtime,
     history,
     audit,
+    events,
     engine,
     /** Fire every alarm that is due, like Chrome would. */
     async fireDue() {

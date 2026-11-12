@@ -74,6 +74,43 @@ describe.skipIf(isWin)("bridge processes", () => {
     expect(existsSync(join(dir, "token"))).toBe(false);
   }, 15_000);
 
+  it("writes each agent's events to its own owner-only file, and the wait tool says where it is", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
+    const env = { ...process.env, JUSTREFRESH_BRIDGE_DIR: dir };
+    const host = spawn(process.execPath, [BRIDGE, "native-host"], { env });
+    const seen: any[] = [];
+    host.stdout.on(
+      "data",
+      createNativeDecoder((msg) => {
+        seen.push(msg);
+        const result = msg.method === "getEvents" ? { events: [], cursor: 7, truncated: false, file: true } : {};
+        host.stdin.write(encodeNative({ id: msg.id, ok: true, result }));
+      }),
+    );
+    await wait(() => existsSync(join(dir, "bridge.sock")), "socket");
+    // Sent by the extension (Chrome) over the native port, with no request id.
+    host.stdin.write(encodeNative({ type: "event", agent: "test-agent", event: { seq: 7, kind: "approval.approved", ruleId: "r1" } }));
+    host.stdin.write(encodeNative({ type: "event", agent: "../../evil", event: { seq: 8, kind: "rule.matched", ruleId: "r2" } }));
+    const file = join(dir, "events", "test-agent.jsonl");
+    await wait(() => existsSync(file), "events file");
+    expect(readFileSync(file, "utf8")).toBe('{"seq":7,"kind":"approval.approved","ruleId":"r1"}\n');
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, "events")).mode & 0o077).toBe(0);
+    // An agent name can't reach outside the folder.
+    await wait(() => existsSync(join(dir, "events", "..-..-evil.jsonl")), "sanitized file");
+
+    const mcp = startMcp(env);
+    mcp.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: "Test Agent" } } });
+    await mcp.reply(1);
+    mcp.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "refresh_wait_for_event", arguments: { since: 6 } } });
+    expect((await mcp.reply(2)).result.structuredContent).toEqual({ events: [], cursor: 7, truncated: false, eventsFile: file });
+    expect(seen.find((m) => m.method === "getEvents").params).toEqual({ since: 6, waitSec: 45 });
+
+    mcp.proc.kill();
+    host.stdin.end();
+    await new Promise((r) => host.on("exit", r));
+  }, 15_000);
+
   it("rejects socket clients that can't prove they know the token", async () => {
     const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
     const host = spawn(process.execPath, [BRIDGE, "native-host"], { env: { ...process.env, JUSTREFRESH_BRIDGE_DIR: dir } });

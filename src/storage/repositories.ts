@@ -10,12 +10,12 @@
  */
 import { defaultConfig } from "../core/defaults";
 import { validateRule } from "../core/rule-schema";
-import type { AuditEntry, Config, HistoryEntry, Rule, TabRuntime } from "../core/types";
+import type { AgentEvent, AuditEntry, Config, HistoryEntry, Rule, TabRuntime } from "../core/types";
 import type { KeyValueStore } from "./kv";
 import { migrateConfig } from "./migrations";
 
-import { AUDIT_KEY, CONFIG_BACKUP_KEY, CONFIG_KEY, HISTORY_KEY, RUNTIME_PREFIX } from "./keys";
-export { AUDIT_KEY, CONFIG_BACKUP_KEY, CONFIG_KEY, HISTORY_KEY, RUNTIME_PREFIX };
+import { AGENT_EVENTS_KEY, AUDIT_KEY, CONFIG_BACKUP_KEY, CONFIG_KEY, HISTORY_KEY, RUNTIME_PREFIX } from "./keys";
+export { AGENT_EVENTS_KEY, AUDIT_KEY, CONFIG_BACKUP_KEY, CONFIG_KEY, HISTORY_KEY, RUNTIME_PREFIX };
 
 class Mutex {
   private tail: Promise<unknown> = Promise.resolve();
@@ -188,4 +188,83 @@ export class AuditRepository extends BoundedLog<AuditEntry> {
   constructor(kv: KeyValueStore, now: () => number = Date.now) {
     super(kv, AUDIT_KEY, async () => ({ max: 1000, retentionMs: 90 * 24 * 3600_000 }), now);
   }
+}
+
+/** Every agent's events, with the next number to hand out and, per agent, the last one trimmed away. */
+export interface AgentEventState {
+  seq: number;
+  events: AgentEvent[];
+  dropped: Record<string, number>;
+}
+
+/** Kept for each agent: its latest events, for at most a week. */
+export const AGENT_EVENTS_PER_AGENT = 100;
+export const AGENT_EVENTS_RETENTION_MS = 7 * 24 * 3600_000;
+
+/**
+ * Events for agents, in storage.local under one key (they must outlive the
+ * worker and the agent's session). Writes are serialized; each append numbers
+ * its events and trims every agent to its limit.
+ */
+export class AgentEventRepository {
+  private mutex = new Mutex();
+  private cache: AgentEventState | null = null;
+
+  constructor(
+    private readonly kv: KeyValueStore,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  read(): Promise<AgentEventState> {
+    return this.mutex.run(() => this.load());
+  }
+
+  private async load(): Promise<AgentEventState> {
+    if (this.cache) return this.cache;
+    const raw = (await this.kv.get(AGENT_EVENTS_KEY))[AGENT_EVENTS_KEY] as AgentEventState | undefined;
+    this.cache = raw && Array.isArray(raw.events) ? raw : { seq: 0, events: [], dropped: {} };
+    return this.cache;
+  }
+
+  /** `pick` sees the stored events and returns the ones to add (it may drop repeats). Returns what was added. */
+  append(pick: (state: AgentEventState) => Omit<AgentEvent, "seq">[]): Promise<AgentEvent[]> {
+    return this.mutex.run(async () => {
+      const cur = await this.load();
+      const fresh = pick(cur);
+      if (!fresh.length) return [];
+      let seq = cur.seq;
+      const added = fresh.map((e) => ({ ...e, seq: ++seq }) as AgentEvent);
+      const next = trim({ seq, events: [...cur.events, ...added], dropped: { ...cur.dropped } }, this.now());
+      await this.kv.set({ [AGENT_EVENTS_KEY]: next });
+      this.cache = next;
+      return added;
+    });
+  }
+
+  /** An agent removed by the user: its events go too. */
+  forget(agentId: string): Promise<void> {
+    return this.mutex.run(async () => {
+      const cur = await this.load();
+      const { [agentId]: _gone, ...dropped } = cur.dropped;
+      const next = { seq: cur.seq, events: cur.events.filter((e) => e.agentId !== agentId), dropped };
+      await this.kv.set({ [AGENT_EVENTS_KEY]: next });
+      this.cache = next;
+    });
+  }
+}
+
+function trim(state: AgentEventState, now: number): AgentEventState {
+  const cutoff = now - AGENT_EVENTS_RETENTION_MS;
+  const count = new Map<string, number>();
+  const kept: AgentEvent[] = [];
+  // Newest first, so each agent keeps its latest ones.
+  for (let i = state.events.length - 1; i >= 0; i--) {
+    const e = state.events[i];
+    const n = count.get(e.agentId) ?? 0;
+    if (e.at >= cutoff && n < AGENT_EVENTS_PER_AGENT) {
+      count.set(e.agentId, n + 1);
+      kept.push(e);
+    } else state.dropped[e.agentId] = Math.max(state.dropped[e.agentId] ?? 0, e.seq);
+  }
+  return { ...state, events: kept.reverse() };
 }

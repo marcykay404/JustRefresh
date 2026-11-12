@@ -46,6 +46,7 @@ export function agentsMethods(svc: ServiceInternals): Record<string, MethodDef> 
           delete c.agents[p.id];
           c.approvals = c.approvals.filter((a) => a.agentId !== p.id);
         });
+        await d.events?.forget(p.id);
         return { removed: p.id };
       },
     }),

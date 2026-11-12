@@ -256,6 +256,12 @@ export interface Settings {
    * default; like the bridge, never exported or imported.
    */
   allowWebhooks: boolean;
+  /**
+   * Also write each desktop agent's events to a file of its own
+   * (~/.justrefresh/events/<agent>.jsonl), for scripts and Claude Code's
+   * Monitor. Off by default; like the bridge, never exported or imported.
+   */
+  agentEventsFile: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -404,6 +410,39 @@ export interface HistoryEntry {
   reason?: string;
   actor: "system" | "user" | "agent";
   agentId?: string;
+}
+
+/** What an agent hears about its own rules and requests (refresh_wait_for_event, #27 phase 3). */
+export const AGENT_EVENT_KINDS = [
+  "rule.matched",
+  "rule.completed",
+  "rule.paused",
+  "rule.error",
+  "rule.unknown_streak",
+  "approval.approved",
+  "approval.rejected",
+  "approval.stale",
+] as const;
+export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number];
+
+export interface AgentEvent {
+  /** Increases by one with every event (for all agents): the cursor. */
+  seq: number;
+  at: number;
+  kind: AgentEventKind;
+  /** Who it's for: the agent that created the rule or asked for the approval. */
+  agentId: string;
+  ruleId: string;
+  tabId?: number;
+  /** Stored in full; hidden as the user's settings say when it is handed out. */
+  url?: string;
+  /** The tab's run status after it happened (rule.* events). */
+  status?: ExecutionStatus;
+  reason?: string;
+  /** Checks in a row that couldn't read the page (rule.unknown_streak). */
+  streak?: number;
+  approvalId?: string;
+  approvalKind?: ApprovalRequest["kind"];
 }
 
 export interface AuditEntry {

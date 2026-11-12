@@ -7,7 +7,9 @@
  * enables it in Settings and has granted the optional nativeMessaging
  * permission. Each MCP client is a distinct agent that must be approved.
  */
+import { publicEvent } from "../api/agent-events";
 import type { RuleManagementService } from "../api/rule-api";
+import type { AgentEvent } from "../core/types";
 import { BRIDGE_STATUS_KEY } from "../storage/keys";
 import { handleAgentMessage, RateLimiter, AGENT_PROTOCOL } from "./external-messaging";
 
@@ -45,7 +47,28 @@ function publishStatus() {
   void chrome.storage?.session?.set({ [BRIDGE_STATUS_KEY]: s }).catch(() => undefined);
 }
 
+/**
+ * With "write events to a file" on, each desktop agent's events also go to the
+ * native host, which appends them to that agent's file (~/.justrefresh/events).
+ * Only while connected: an agent catches up on the rest with getEvents.
+ */
+let unsubscribe: (() => void) | null = null;
+function forwardEvents(service: RuleManagementService) {
+  unsubscribe ??= service.deps.events?.onEvents((added) => void sendEvents(service, added)) ?? null;
+}
+
+async function sendEvents(service: RuleManagementService, added: AgentEvent[]) {
+  if (!port) return;
+  const { settings, agents } = await service.deps.config.get();
+  if (!settings.agentEventsFile) return;
+  for (const e of added) {
+    if (agents[e.agentId]?.transport !== "native" || !e.agentId.startsWith("native:")) continue;
+    port?.postMessage({ type: "event", agent: e.agentId.slice("native:".length), event: publicEvent(e, settings.redactUrlsForAgents) });
+  }
+}
+
 export async function setBridgeEnabled(service: RuleManagementService, enabled: boolean) {
+  forwardEvents(service);
   try {
     await applyBridgeEnabled(service, enabled);
   } finally {

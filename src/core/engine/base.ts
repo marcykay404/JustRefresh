@@ -12,7 +12,7 @@ import { newRuntime, transition } from "../state-machine";
 import { TimeoutError, withTimeout } from "../timeout";
 import type { Config, HistoryEntry, Rule, TabInfo, TabRuntime } from "../types";
 import { FAST_WAIT_REASON, FastSiteLimit } from "./fast-site-limit";
-import { alarmName, DEFAULT_TIMEOUTS, type CycleResult, type EngineDeps, type EngineTimeouts, type PagePort } from "./ports";
+import { alarmName, DEFAULT_TIMEOUTS, type CycleResult, type EngineDeps, type EngineTimeouts, type PagePort, type RunEvent } from "./ports";
 import { isNewRun, restingState, waitingReason, withoutHash } from "./support";
 
 /** How long after the rule's click a change of page counts as that click's doing. */
@@ -77,6 +77,28 @@ export abstract class EngineBase {
 
   protected log(e: Omit<HistoryEntry, "at" | "actor"> & { actor?: HistoryEntry["actor"] }) {
     void this.deps.stores.history.append({ at: this.now(), actor: "system", ...e });
+  }
+
+  /** Tell the agent behind a rule what happened (user rules: nothing to do). Never holds up the run. */
+  protected emit(e: RunEvent) {
+    if (e.rule.meta.origin.type !== "agent" || !this.deps.events) return;
+    void this.deps.events.rule(e).catch((err: Error) => console.warn("JustRefresh: agent event", err));
+  }
+
+  /**
+   * A run that changed status, for the agent behind the rule: it ended,
+   * failed, or paused in a way only the user can clear (a form result, or the
+   * rule's own pause with no end). Giving up on an unreadable page is
+   * reported where it happens (onUnknown).
+   */
+  protected reportChange(rule: Rule, tab: Pick<TabInfo, "id" | "url">, before: TabRuntime["status"], after: TabRuntime) {
+    if (after.status === before) return;
+    const e = { rule, tabId: tab.id, url: tab.url, status: after.status, reason: after.reason };
+    const ended = (s: TabRuntime["status"]) => s === "completed" || s === "stopped";
+    if (ended(after.status) && !ended(before)) this.emit({ ...e, kind: "rule.completed" });
+    else if (after.status === "error") this.emit({ ...e, kind: "rule.error" });
+    else if (after.status === "paused_resubmit") this.emit({ ...e, kind: "rule.paused" });
+    else if (after.status === "paused_user" && after.resumeAt === null) this.emit({ ...e, kind: "rule.paused" });
   }
 
   protected async setAlarm(rt: TabRuntime) {

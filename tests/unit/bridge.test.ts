@@ -1,5 +1,12 @@
 // @ts-nocheck — the bridge is plain ESM JavaScript.
 import {
+  appendEventLine,
+  DEFAULT_WAIT_SECONDS,
+  EVENT_KINDS,
+  eventsFilePath,
+  MAX_WAIT_SECONDS,
+  PROTOCOL_VERSION,
+  SUPPORTED_PROTOCOL_VERSIONS,
   createLineDecoder,
   createMcpHandler,
   createNativeDecoder,
@@ -463,5 +470,112 @@ describe("agent keys (desktop agents)", () => {
     );
     expect(r).toMatchObject({ ok: true });
     expect((r as { agentKey?: string }).agentKey).toBeUndefined();
+  });
+});
+
+describe("events (refresh_wait_for_event)", () => {
+  async function setup(opts = {}) {
+    const env = createApiEnv();
+    await env.pairAgent("native:claude");
+    const limiter = new RateLimiter(1000, 60_000);
+    const calls = [];
+    const callApi = (method, params, o) => {
+      calls.push({ method, params, o });
+      return handleAgentMessage(
+        env.service,
+        limiter,
+        { id: "native:claude", name: "Claude", transport: "native" },
+        { protocol: "justrefresh-agent/1", method, params },
+      );
+    };
+    const handle = createMcpHandler({ callApi, ...opts });
+    const wait = async (args) =>
+      (await handle({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "refresh_wait_for_event", arguments: args } })).result;
+    return { env, handle, calls, wait };
+  }
+
+  it("returns the agent's events and a cursor; waits as long as asked, with time for the reply", async () => {
+    const { env, calls, wait } = await setup();
+    const rule = (await env.service.call(env.agent(), "createRule", { rule: SPEC_EXAMPLE })) as { id: string };
+    const req = (await env.service.call(env.agent(), "enableRule", { id: rule.id })) as { approvalId: string };
+    await env.service.call(env.user, "resolveApproval", { id: req.approvalId, approve: true });
+    const r = await wait({ timeoutSec: 0 });
+    expect(r.structuredContent).toMatchObject({ events: [{ seq: 1, kind: "approval.approved", ruleId: rule.id }], cursor: 1, truncated: false });
+    expect(calls.at(-1)).toEqual({ method: "getEvents", params: { waitSec: 0 }, o: { timeoutMs: 15_000 } });
+    await wait({ since: 1, ruleId: rule.id, kinds: ["rule.matched"], timeoutSec: 1 });
+    expect(calls.at(-1)).toEqual({ method: "getEvents", params: { since: 1, ruleId: rule.id, kinds: ["rule.matched"], waitSec: 1 }, o: { timeoutMs: 16_000 } });
+  });
+
+  it(`waits ${DEFAULT_WAIT_SECONDS} s by default, below the 60 s many clients allow; refuses a wait out of range`, async () => {
+    expect(DEFAULT_WAIT_SECONDS).toBeLessThan(60);
+    const calls = [];
+    const handle = createMcpHandler({
+      callApi: async (method, params, o) => (calls.push({ method, params, o }), { ok: true, result: { events: [], cursor: 0, truncated: false } }),
+    });
+    const call = (args) => handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "refresh_wait_for_event", arguments: args } });
+    await call({});
+    expect(calls[0]).toEqual({ method: "getEvents", params: { waitSec: DEFAULT_WAIT_SECONDS }, o: { timeoutMs: (DEFAULT_WAIT_SECONDS + 15) * 1000 } });
+    for (const timeoutSec of [-1, 1.5, MAX_WAIT_SECONDS + 1, "10"]) {
+      const r = await call({ timeoutSec });
+      expect(r.result.isError, String(timeoutSec)).toBe(true);
+    }
+    expect(calls).toHaveLength(1);
+  });
+
+  it("names the agent's file only when the extension says it's being written", async () => {
+    const { env, wait } = await setup({ eventsFile: () => "/home/me/.justrefresh/events/claude.jsonl" });
+    expect((await wait({ timeoutSec: 0 })).structuredContent).toEqual({ events: [], cursor: 0, truncated: false });
+    await env.service.call(env.user, "updateSettings", { agentEventsFile: true });
+    expect((await wait({ timeoutSec: 0 })).structuredContent).toEqual({
+      events: [],
+      cursor: 0,
+      truncated: false,
+      eventsFile: "/home/me/.justrefresh/events/claude.jsonl",
+    });
+  });
+
+  it("offers the event kinds the extension sends, and the instructions point to it", async () => {
+    const { AGENT_EVENT_KINDS } = await import("@/core/types");
+    const { MAX_WAIT_SECONDS: apiMax } = await import("@/api/methods/events");
+    expect(EVENT_KINDS).toEqual([...AGENT_EVENT_KINDS]);
+    expect(MAX_WAIT_SECONDS).toBe(apiMax);
+    const t = TOOLS.find((x) => x.name === "refresh_wait_for_event");
+    expect(t.inputSchema.properties.kinds.items.enum).toEqual(EVENT_KINDS);
+    for (const kind of EVENT_KINDS) expect(t.description).toContain(kind);
+    expect(INSTRUCTIONS).toContain("refresh_wait_for_event");
+    expect(TOOLS.find((x) => x.name === "refresh_enable_rule").description).toContain("refresh_wait_for_event");
+  });
+});
+
+describe("events file", () => {
+  it("appends one JSON line per event, owner-only, and starts a new file past the size limit", async () => {
+    const { mkdtempSync, readFileSync, statSync, existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-events-"));
+    const file = eventsFilePath(dir, "Claude Code");
+    expect(file).toBe(join(dir, "events", "claude-code.jsonl"));
+    appendEventLine(dir, "Claude Code", { seq: 1, kind: "rule.matched" }, { maxBytes: 60 });
+    appendEventLine(dir, "Claude Code", { seq: 2, kind: "rule.completed", reason: "line\nbreak" }, { maxBytes: 60 });
+    expect(
+      readFileSync(file, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l).seq),
+    ).toEqual([1, 2]);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
+    appendEventLine(dir, "Claude Code", { seq: 3, kind: "rule.error" }, { maxBytes: 60 });
+    expect(existsSync(`${file}.1`)).toBe(true);
+    expect(readFileSync(file, "utf8")).toBe('{"seq":3,"kind":"rule.error"}\n');
+  });
+});
+
+describe("MCP version negotiation", () => {
+  it("answers with the client's version when it speaks it, otherwise its own", async () => {
+    const handle = createMcpHandler({ callApi: async () => ({ ok: true, result: {} }) });
+    const init = async (protocolVersion) => (await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion } })).result.protocolVersion;
+    for (const v of SUPPORTED_PROTOCOL_VERSIONS) expect(await init(v)).toBe(v);
+    expect(await init("2099-01-01")).toBe(PROTOCOL_VERSION);
+    expect(await init(undefined)).toBe(PROTOCOL_VERSION);
   });
 });

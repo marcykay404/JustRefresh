@@ -30,7 +30,9 @@ function fakeChrome(host) {
     createNativeDecoder((msg) => {
       seen.push(msg);
       const agentKey = msg.method === "listRules" && !msg.client.key ? { agentKey: KEY } : {};
-      host.stdin.write(encodeNative({ id: msg.id, ok: true, result: { echo: msg.method, client: msg.client }, ...agentKey }));
+      // getEvents: as with "write events to a file" on.
+      const result = msg.method === "getEvents" ? { events: [], cursor: 0, truncated: false, file: true } : { echo: msg.method, client: msg.client };
+      host.stdin.write(encodeNative({ id: msg.id, ok: true, result, ...agentKey }));
     }),
   );
   let log = "";
@@ -81,6 +83,16 @@ describe.runIf(isWin)("bridge on Windows", () => {
       expect(readFileSync(join(dir, "agents", "win-agent.key"), "utf8")).toBe(KEY);
       send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "refresh_list_rules", arguments: {} } });
       expect((await reply(3)).result.structuredContent.client.key).toBe(KEY);
+
+      // Events: the native host writes the agent's file inside the restricted folder; the tool says where it is.
+      host.stdin.write(encodeNative({ type: "event", agent: "win-agent", event: { seq: 1, kind: "rule.matched", ruleId: "r1" } }));
+      const file = join(dir, "events", "win-agent.jsonl");
+      await wait(() => existsSync(file) && readFileSync(file, "utf8").endsWith("\n"), "events file");
+      expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ seq: 1, kind: "rule.matched", ruleId: "r1" });
+      const eventsAcl = spawnSync("icacls", [join(dir, "events")], { encoding: "utf8" }).stdout;
+      expect(eventsAcl, eventsAcl).not.toMatch(/BUILTIN\\Users|Everyone|Authenticated Users/);
+      send({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "refresh_wait_for_event", arguments: { timeoutSec: 0 } } });
+      expect((await reply(4)).result.structuredContent).toEqual({ events: [], cursor: 0, truncated: false, eventsFile: file });
     } finally {
       mcp?.kill();
       await stop(host); // always: a host left running keeps this account's pipe name

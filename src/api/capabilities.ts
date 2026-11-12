@@ -92,6 +92,7 @@ export function buildCapabilities(
       "Use testRule for a side-effect-free dry run before asking to enable. To check a CSS selector, test a throwaway rule whose stopWhen is a dom.exists condition.",
       "Conditions return matched / not_matched / unknown; unknown is never treated as false. Its code says why (invalid_selector: fix the selector).",
       "Refresh as slowly as the task allows, and set limits (maxRefreshes, maxDurationSeconds) for one-off watches.",
+      "getEvents({ since, waitSec }) says what happened to your rules and requests (approval answers, matched, completed, paused, errors); pass its cursor back as since.",
     ],
   };
 }
