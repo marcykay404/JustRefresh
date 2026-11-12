@@ -7,6 +7,8 @@
   --muted: #5f6672;
   --accent: #2563eb;
   --accent-text: #ffffff;
+  --accent-bg: #eff6ff;
+  --accent-border: #bfdbfe;
   --ok: #15803d;
   --ok-bg: #dcfce7;
   --warn: #a16207;
@@ -29,6 +31,8 @@
     --text: #e7e9ee;
     --muted: #9aa2ae;
     --accent: #4f8cff;
+    --accent-bg: #172338;
+    --accent-border: #2c4a7a;
     --ok: #4ade80;
     --ok-bg: #12301f;
     --warn: #fbbf24;
@@ -739,6 +743,12 @@ button.big {
   gap: 8px;
   border-top: 1px solid var(--border);
   padding-top: 8px;
+}
+
+/* Settings → Support JustRefresh: a tint of the accent, not a status colour (amber means a warning here). */
+.support-card {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
 }
 
 /* Templates and the welcome page */

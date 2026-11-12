@@ -984,8 +984,13 @@ await test("popup and dashboard render", async () => {
   assert.equal(await coffee.getAttribute("href"), "https://buymeacoffee.com/marcykaycod");
   assert.equal(await coffee.getAttribute("target"), "_blank");
   assert.equal(await page.getByRole("link", { name: "Source code" }).getAttribute("href"), "https://github.com/marcykay404/JustRefresh");
-  await coffee.scrollIntoViewIfNeeded();
+  // First on the page, above the settings.
+  const [support, global] = await Promise.all(["Support JustRefresh", "Global"].map((name) => page.getByRole("heading", { name, exact: true }).boundingBox()));
+  assert.ok(support.y < global.y, "Support JustRefresh comes before the settings");
   await page.screenshot({ path: join(root, "test-results", "settings-support.png") });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: join(root, "test-results", "settings-support-dark.png") });
+  await page.emulateMedia({ colorScheme: "light" });
   const opened = context.waitForEvent("page");
   await page.getByRole("button", { name: "Remove completely in Chrome's settings…" }).click();
   const chromeSettings = await opened;
