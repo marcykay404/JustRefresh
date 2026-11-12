@@ -314,7 +314,7 @@ function runMcp() {
 function runInstall(argv) {
   try {
     if (argv[0] === "uninstall") uninstall();
-    else install({ ...parseInstallArgs(argv), sourceDir: path.dirname(fileURLToPath(import.meta.url)) });
+    else install({ ...parseInstallArgs(argv), sourceDir: path.dirname(fileURLToPath(import.meta.url)), entry: fileURLToPath(import.meta.url) });
   } catch (e) {
     console.error(e.message);
     process.exit(2);

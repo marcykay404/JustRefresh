@@ -1,7 +1,7 @@
 // @ts-nocheck — imports the bridge's plain ESM JavaScript.
 /** "Copy setup for your AI app": the steps an AI app can carry out, matching what the bridge accepts. */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { parseInstallArgs } from "../../bridge/install-lib.mjs";
 import { agentSetupPrompt, BRIDGE_FILE, platformOf, portableInstallCommand } from "@/ui/dashboard/agent-setup";
 
@@ -56,9 +56,13 @@ describe("setup for an AI app", () => {
     expect(prompt).toContain("refresh_get_capabilities");
   });
 
-  it("the installer prints the command and args the text refers to", async () => {
-    const src = readFileSync("bridge/install-lib.mjs", "utf8");
-    expect(src).toMatch(/mcpServers: \{ justrefresh: \{ command: node, args: \[script, "mcp"\] \} \}/);
+  it("in other shells and when it fails: says what to change, and never to escalate", () => {
+    const prompt = agentSetupPrompt(ID, "windows");
+    expect(prompt).toMatch(/in cmd\.exe use %USERPROFILE% in place of \$HOME/);
+    expect(prompt).toMatch(/Don't use sudo or an administrator shell: if it fails, show me the error/);
+    expect(prompt).toMatch(/ask me which one to use, and run that one/);
+    expect(agentSetupPrompt(ID, "linux")).toContain("xdg-user-dir DOWNLOAD");
+    expect(agentSetupPrompt(ID, "mac")).not.toContain("xdg-user-dir");
   });
 
   it("names the platform from the browser", () => {

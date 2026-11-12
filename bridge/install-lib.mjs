@@ -110,10 +110,20 @@ export function targetBrowsers(loc, browser) {
 
 const manifestDir = (loc, browser) => path.join(loc.profileBase, loc.profiles[browser], "NativeMessagingHosts");
 
-function copyBridge(sourceDir, bin) {
+/**
+ * Copy the bridge into `bin`. `entry` is the file that is running: that one is
+ * the bridge, whatever the download was called ("justrefresh-bridge (1).mjs"
+ * for a second download, next to an older one). The downloaded bridge is one
+ * file; only a checkout's, which imports the others, brings them along.
+ */
+function copyBridge(sourceDir, bin, entry) {
   fs.mkdirSync(bin, { recursive: true, mode: 0o700 });
+  const [main, ...others] = BRIDGE_FILES;
+  if (entry && path.resolve(entry) !== path.resolve(bin, main)) fs.copyFileSync(entry, path.join(bin, main));
   if (path.resolve(sourceDir) === path.resolve(bin)) return;
-  for (const f of BRIDGE_FILES) {
+  // An import statement at the start of a line (the bundle has none, and this pattern doesn't match its own text).
+  const split = !entry || /^import .* from "\.\/install-lib\.mjs";$/m.test(fs.readFileSync(entry, "utf8"));
+  for (const f of entry ? (split ? others : []) : BRIDGE_FILES) {
     if (fs.existsSync(path.join(sourceDir, f))) fs.copyFileSync(path.join(sourceDir, f), path.join(bin, f));
   }
 }
@@ -180,14 +190,14 @@ function register(loc, browsers, manifest, run) {
   });
 }
 
-export function install({ extensionId, browser, sourceDir, node = stableNode(), loc = locations(), run = execFileSync, log = console.log }) {
+export function install({ extensionId, browser, sourceDir, entry, node = stableNode(), loc = locations(), run = execFileSync, log = console.log }) {
   if (!/^[a-p]{32}$/.test(extensionId ?? "")) {
     throw new Error("Pass --extension-id <32-letter id>. JustRefresh shows it in Dashboard → Agent Integrations, with this command ready to copy.");
   }
   const browsers = targetBrowsers(loc, browser);
   fs.mkdirSync(loc.dataDir, { recursive: true, mode: 0o700 });
   restrictToUser(loc.dataDir, { platform: loc.platform, run, log });
-  copyBridge(sourceDir, loc.bin);
+  copyBridge(sourceDir, loc.bin, entry);
   const { launcher, script } = writeLauncher(loc, node);
   const manifest = {
     name: HOST,

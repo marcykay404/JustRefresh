@@ -32,8 +32,9 @@ export const BRIDGE_FILE = "justrefresh-bridge.mjs";
 
 export const installCommand = (extensionId: string, paths: SetupPaths) => `node ${paths.download}${BRIDGE_FILE} install --extension-id ${extensionId}`;
 
+/** What the installer prints, with placeholders for the parts only it knows. */
 export const mcpSettings = (paths: SetupPaths) =>
-  JSON.stringify({ mcpServers: { justrefresh: { command: "node", args: [`${paths.fullBin}${BRIDGE_FILE}`, "mcp"] } } });
+  JSON.stringify({ mcpServers: { justrefresh: { command: "<full path to node>", args: [`${paths.fullBin}${BRIDGE_FILE}`, "mcp"] } } });
 
 /**
  * The install command for an AI app to run: the same in bash, zsh and
@@ -60,9 +61,9 @@ export function agentSetupPrompt(extensionId: string, platform: SetupPlatform): 
     "JustRefresh is a Chrome extension. Its MCP server is a small Node.js program (the bridge) that talks to the extension through Chrome Native Messaging; nothing listens on the network.",
     "",
     "1. Check that Node.js 18 or later is installed (node --version). If it isn't, stop and tell me.",
-    `2. Install the bridge. I downloaded ${BRIDGE_FILE} from the JustRefresh dashboard to my Downloads folder. Run this (it works as written in bash, zsh and PowerShell):`,
+    `2. Install the bridge. I downloaded ${BRIDGE_FILE} from the JustRefresh dashboard to my Downloads folder. Run this (it works as written in bash, zsh and PowerShell; in cmd.exe use %USERPROFILE% in place of $HOME):`,
     `   ${portableInstallCommand(extensionId)}`,
-    `   If the file isn't there, ask me where I saved it. If there are several (Chrome names a second download "justrefresh-bridge (1).mjs"), ask me which one to use. The command copies the bridge to the .justrefresh folder in my home folder, registers it with my browsers, and prints MCP settings: a "command" (the full path to Node) and "args" (the full path to the bridge, then mcp).`,
+    `   If the file isn't there, ask me where I saved it${platform === "linux" ? " (xdg-user-dir DOWNLOAD names my Downloads folder)" : ""}. If there are several (Chrome names a second download "justrefresh-bridge (1).mjs"), ask me which one to use, and run that one. The command copies the bridge to the .justrefresh folder in my home folder, registers it with my browsers, and prints MCP settings: a "command" (the full path to Node) and "args" (the full path to the bridge, then mcp). Don't use sudo or an administrator shell: if it fails, show me the error.`,
     '3. Add an MCP server named "justrefresh" to your own MCP settings, using that command and those args exactly as printed. Change only the justrefresh entry and leave everything else as it is; if a justrefresh server is already there, tell me instead of replacing it.',
     "   - Claude Code: claude mcp add --scope user justrefresh -- followed by the printed command and args, each in double quotes.",
     ...(desktop ? [`   - Claude Desktop: under "mcpServers" in ${desktop}.`] : []),

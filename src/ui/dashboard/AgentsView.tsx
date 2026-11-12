@@ -179,6 +179,9 @@ function CopyLine({ text, label }: { text: string; label: string }) {
       <button className="small" onClick={copy}>
         {copied ? "Copied" : copied === null ? "Couldn't copy" : "Copy"}
       </button>
+      <span className="sr-only" role="status">
+        {copied ? "Copied" : copied === null ? "Couldn't copy. Select the text and copy it yourself." : ""}
+      </span>
     </div>
   );
 }
@@ -240,8 +243,8 @@ function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: bool
         </li>
         <li>If this card asks you to restart JustRefresh, do that; then it shows Connected.</li>
         <li>
-          Add JustRefresh to your AI app's MCP settings: copy them from what the install command printed, which has your real path in place of{" "}
-          <code>&lt;you&gt;</code>. They look like this:
+          Add JustRefresh to your AI app's MCP settings: copy them from what the install command printed, which has the full path to Node and your real path in
+          place of <code>&lt;you&gt;</code>. They look like this:
           <pre className="copy-line" style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {mcp}
           </pre>
