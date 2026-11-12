@@ -7,7 +7,7 @@ import type { AgentRecord, AgentScope, ApprovalRequest, AuditEntry, Rule, Settin
 import { useDialog } from "../shared/dialog";
 import { describeRule, intervalLabel } from "../popup/describe";
 import { matchesAny, patternToString } from "../../core/url-pattern";
-import { agentSetupPrompt, bridgePaths, installCommand, mcpSettings, platformOf } from "./agent-setup";
+import { agentSetupPrompt, BRIDGE_FILE, bridgePaths, installCommand, mcpSettings, platformOf } from "./agent-setup";
 
 interface AgentsData {
   agents: AgentRecord[];
@@ -222,10 +222,10 @@ function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: bool
       <ol className="small col setup-steps" style={{ gap: 8, margin: "8px 0 0", paddingLeft: 20 }}>
         <li>Switch on “Allow desktop AI apps to connect” above.</li>
         <li>
-          <a className="btn small" href={chrome.runtime.getURL("bridge/justrefresh-bridge.mjs")} download="justrefresh-bridge.mjs">
+          <a className="btn small" href={chrome.runtime.getURL(`bridge/${BRIDGE_FILE}`)} download={BRIDGE_FILE}>
             Download the bridge
           </a>{" "}
-          (one file, <code>justrefresh-bridge.mjs</code>).
+          (one file, <code>{BRIDGE_FILE}</code>).
         </li>
         <li className="col" style={{ gap: 6 }}>
           <span>
@@ -252,7 +252,7 @@ function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: bool
         <li>Start the app. It appears above under Agents: choose what it may do and approve it.</li>
       </ol>
       <p className="small muted" style={{ margin: "8px 0 0" }}>
-        To remove it: <code>node {bin}justrefresh-bridge.mjs uninstall</code>.
+        To remove it: <code>{`node ${bin}${BRIDGE_FILE} uninstall`}</code>.
       </p>
     </details>
   );

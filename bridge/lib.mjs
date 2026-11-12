@@ -309,7 +309,7 @@ function checkArgs(t, args) {
  * Minimal MCP (JSON-RPC 2.0) request handler.
  * `callApi(method, params)` resolves to { ok, result } | { ok:false, error }.
  */
-export function createMcpHandler({ callApi, serverName = "justrefresh", version = "0.1.0", onInitialize, eventsFile } = {}) {
+export function createMcpHandler({ callApi, serverName = MCP_SERVER_KEY, version = "0.1.0", onInitialize, eventsFile } = {}) {
   return async function handle(msg) {
     if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") {
       return msg?.id !== undefined ? { jsonrpc: "2.0", id: msg.id, error: { code: -32600, message: "Invalid request" } } : null;
@@ -428,6 +428,16 @@ export function sanitizeClientId(name) {
       .slice(0, 48) || "mcp-client"
   );
 }
+
+/* ---------------- Names users depend on (fixed once published; tests/unit/identifiers.test.ts) ---------------- */
+/** The bridge's folder in the user's home folder. */
+export const DATA_DIR_NAME = ".justrefresh";
+/** The bridge file, as downloaded and as installed in <folder>/bin (users' MCP settings point at it). */
+export const BRIDGE_FILE = "justrefresh-bridge.mjs";
+/** The server's name in users' MCP settings ("mcpServers": { "justrefresh": … }); clients name its tools after it. */
+export const MCP_SERVER_KEY = "justrefresh";
+/** Each approved agent's key: <folder>/agents/<agent>.key. */
+export const agentKeyPath = (dir, agent) => path.join(dir, "agents", `${sanitizeClientId(agent)}.key`);
 
 /* ---------------- Events file ---------------- */
 /** One file per agent; past this size it moves to <file>.1 (replacing the older one) and starts again. */
