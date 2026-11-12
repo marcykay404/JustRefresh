@@ -53,6 +53,13 @@ AI apps → Set up), with the commands ready to copy:
    ```
 5. Start the agent; approve it in the dashboard when the pairing request appears.
 
+An AI app that can run commands (like Claude Code) can do steps 3 and 4
+itself: after downloading the bridge, click **Copy setup for your AI app** in
+the dashboard and paste it into the app. The text has the install command
+with your extension's id and how to add the server to Claude Code, Claude
+Desktop, Cursor or another app; restarting the app and approving it stay
+with you.
+
 After installing a newer bridge, turn desktop apps off and on in
 JustRefresh → Agent Integrations (or restart Chrome), so Chrome starts the
 new copy; a newer AI-app side refuses an older one with a message saying

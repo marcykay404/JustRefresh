@@ -903,6 +903,23 @@ await test("the desktop bridge is packaged as one runnable file", async () => {
   assert.match(r.stderr, /Usage: justrefresh-bridge\.mjs install/);
 });
 
+await test("Agent Integrations: setup for an AI app copies its steps with this extension's id", async () => {
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    navigator.clipboard.writeText = async (text) => {
+      window.__copied = text;
+    };
+  });
+  await page.goto(`chrome-extension://${extId}/dashboard.html#/agents`);
+  await page.getByText("Set up (about two minutes").click();
+  await page.getByRole("button", { name: "Copy setup for your AI app" }).click();
+  await page.getByRole("button", { name: "Copied: paste it into your AI app" }).waitFor();
+  const copied = await page.evaluate(() => window.__copied);
+  assert.match(copied, new RegExp(`install --extension-id ${extId}`));
+  assert.match(copied, /claude mcp add --scope user justrefresh -- node .*justrefresh-bridge\.mjs mcp/);
+  await page.close();
+});
+
 await test("a new rule shows problems only in the parts you have edited", async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 900 });

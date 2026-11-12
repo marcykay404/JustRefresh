@@ -7,6 +7,7 @@ import type { AgentRecord, AgentScope, ApprovalRequest, AuditEntry, Rule, Settin
 import { useDialog } from "../shared/dialog";
 import { describeRule, intervalLabel } from "../popup/describe";
 import { matchesAny, patternToString } from "../../core/url-pattern";
+import { agentSetupPrompt, bridgePaths, installCommand, mcpSettings, platformOf } from "./agent-setup";
 
 interface AgentsData {
   agents: AgentRecord[];
@@ -179,23 +180,29 @@ function CopyLine({ text, label }: { text: string; label: string }) {
   );
 }
 
-const onWindows = () => navigator.userAgent.includes("Windows");
-
-/** Paths as typed in the default terminal: PowerShell on Windows ($HOME), a Unix shell elsewhere (~). */
-function bridgePaths() {
-  if (onWindows()) {
-    return { download: "$HOME\\Downloads\\", bin: "$HOME\\.justrefresh\\bin\\", fullBin: "C:\\Users\\<you>\\.justrefresh\\bin\\" };
-  }
-  const home = navigator.userAgent.includes("Mac") ? "/Users/<you>" : "/home/<you>";
-  return { download: "~/Downloads/", bin: "~/.justrefresh/bin/", fullBin: `${home}/.justrefresh/bin/` };
+/** Copy a text to paste somewhere else, saying so on the button for a moment. */
+function CopyButton({ text, label, className = "small" }: { text: string; label: string; className?: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const copy = () =>
+    void navigator.clipboard.writeText(text).then(
+      () => setState("copied"),
+      () => setState("failed"),
+    );
+  return (
+    <button className={className} onClick={copy} onBlur={() => setState("idle")}>
+      {state === "copied" ? "Copied: paste it into your AI app" : state === "failed" ? "Couldn't copy" : label}
+    </button>
+  );
 }
 
 /** Step by step: allow, download, install with one command, restart if asked, add to the AI app, approve. */
 function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: boolean }) {
-  const { download, bin, fullBin } = bridgePaths();
-  const command = `node ${download}justrefresh-bridge.mjs install --extension-id ${chrome.runtime.id}`;
+  const platform = platformOf(navigator.userAgent);
+  const paths = bridgePaths(platform);
+  const { bin } = paths;
+  const command = installCommand(chrome.runtime.id, paths);
   // MCP apps don't expand ~ or $HOME: the installer prints this with the real path.
-  const mcp = JSON.stringify({ mcpServers: { justrefresh: { command: "node", args: [`${fullBin}justrefresh-bridge.mjs`, "mcp"] } } });
+  const mcp = mcpSettings(paths);
   return (
     <details open={enabled && !connected}>
       <summary className="small">Set up (about two minutes; needs Node.js 18 or later)</summary>
@@ -207,9 +214,18 @@ function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: bool
           </a>{" "}
           (one file, <code>justrefresh-bridge.mjs</code>).
         </li>
-        <li>
-          Install it: run this in a terminal (change the folder if you saved it elsewhere). It copies itself to <code>{bin}</code> and registers with your
-          browsers; you can delete the download afterwards.
+        <li className="col" style={{ gap: 6 }}>
+          <span>
+            <strong>Let your AI app do this step and step 5:</strong> if it can run commands (like Claude Code), paste these instructions into it. It installs
+            the bridge and adds JustRefresh to its own settings; you still restart it and approve it here.
+          </span>
+          <span>
+            <CopyButton text={agentSetupPrompt(chrome.runtime.id, platform)} label="Copy setup for your AI app" />
+          </span>
+          <span>
+            Or install it yourself: run this in a terminal (change the folder if you saved it elsewhere). It copies itself to <code>{bin}</code> and registers
+            with your browsers; you can delete the download afterwards.
+          </span>
           <CopyLine label="Install command" text={command} />
         </li>
         <li>If this card asks you to restart JustRefresh, do that; then it shows Connected.</li>
