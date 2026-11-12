@@ -219,7 +219,7 @@ export function SupportCard() {
       </p>
       <div className="row">
         <a className="btn primary" href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-link-note">
-          Buy me a coffee
+          <span aria-hidden="true">☕</span> Buy me a coffee
         </a>
         <span id="support-link-note" className="small muted">
           Opens buymeacoffee.com in a new tab.
