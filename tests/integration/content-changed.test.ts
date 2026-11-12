@@ -47,14 +47,42 @@ describe("dom.changed", () => {
     expect(env.browser.notifications).toHaveLength(1);
   });
 
-  it("compares the page after each refresh with the one before", async () => {
+  it("compares the reloaded page at the next check, once it has settled", async () => {
     const env = await setup(watch({ type: "dom.changed", selector: "#price" }, undefined, [{ type: "refresh" }]), `<p id="price">S$ 30</p>`);
-    env.browser.onReload = () => env.page.setHtml(1, `<p id="price">S$ 25</p>`);
+    // Right after loading, a page that renders later still shows a placeholder.
+    env.browser.onReload = () => env.page.setHtml(1, `<p id="price">Loading…</p>`);
     await env.engine.runCycle(1, "manual"); // remembers S$ 30, then refreshes
     expect(env.browser.reloads).toEqual([1]);
-    await env.completeNavigation(1); // the reloaded page shows S$ 25
+    await env.completeNavigation(1);
+    expect(await lastStatus(env)).toBe("not_matched"); // not compared just after the load
+    env.page.setHtml(1, `<p id="price">S$ 30</p>`); // rendered: the same as before
+    env.browser.onReload = () => env.page.setHtml(1, `<p id="price">S$ 25</p>`);
+    await env.engine.runCycle(1, "manual");
+    expect(await lastStatus(env)).toBe("not_matched");
+    await env.completeNavigation(1);
+    await env.engine.runCycle(1, "manual"); // the next check sees S$ 25
     expect(await lastStatus(env)).toBe("matched");
     expect(env.browser.notifications.map((n) => n.title)).toEqual(["Changed"]);
+  });
+
+  it("starting a finished run again forgets what the old run saw", async () => {
+    const env = await setup(watch({ type: "dom.changed", selector: "#price" }, [{ type: "stopRefresh" }]), `<p id="price">A</p>`);
+    await env.engine.runCycle(1, "manual");
+    env.page.setHtml(1, `<p id="price">B</p>`);
+    await env.engine.runCycle(1, "manual");
+    expect((await env.runtime.get(1))?.status).toBe("completed");
+    env.page.setHtml(1, `<p id="price">C</p>`);
+    await env.engine.setTabStatus(1, "scheduled", "Started");
+    expect((await env.runtime.get(1))?.memory).toBeUndefined();
+    await env.engine.runCycle(1, "manual");
+    expect(await lastStatus(env)).toBe("not_matched"); // the first check of the new run
+    // Run now on a finished run restarts it the same way.
+    env.page.setHtml(1, `<p id="price">D</p>`);
+    await env.engine.runCycle(1, "manual");
+    expect((await env.runtime.get(1))?.status).toBe("completed");
+    env.page.setHtml(1, `<p id="price">E</p>`);
+    await env.engine.runCycle(1, "manual");
+    expect(await lastStatus(env)).toBe("not_matched");
   });
 
   it("ignores whitespace-only differences", async () => {
@@ -105,7 +133,7 @@ describe("dom.changed", () => {
     await env.engine.runCycle(1, "manual");
     const rt = await env.runtime.get(1);
     expect(JSON.stringify(rt)).not.toContain("secret-order");
-    expect(Object.values(rt?.memory ?? {})).toEqual([fingerprint("secret-order-12345")]);
+    expect(rt?.memory).toEqual({ "0:dom.changed": fingerprint("secret-order-12345"), "@page": URL });
     const state = (await env.service.call(env.user, "getTabState", { tabId: 1 })) as { runtime: Record<string, unknown> };
     expect(state.runtime).not.toHaveProperty("memory");
   });
@@ -155,6 +183,19 @@ describe("dom.text_lost", () => {
     expect(await lastStatus(env)).toBe("matched");
     await env.engine.runCycle(1, "manual");
     expect(await lastStatus(env)).toBe("not_matched");
+  });
+
+  it("a refresh that lands on another page (a login redirect) isn't 'gone', and the watched page is compared when it's back", async () => {
+    const env = await setup(watch(lost, undefined, [{ type: "refresh" }]), `<p>Sold out</p>`);
+    await env.engine.runCycle(1, "manual"); // seen, then refreshes
+    env.browser.addTab(1, "https://shop.example.com/login?next=/item");
+    env.page.setHtml(1, `<p>Please sign in</p>`);
+    await env.completeNavigation(1);
+    await env.engine.runCycle(1, "manual");
+    expect(await lastStatus(env)).toBe("not_matched");
+    expect(env.browser.notifications).toEqual([]);
+    expect((await env.runtime.get(1))?.memory?.["@page"]).toBe(URL); // still the watched page's
+    expect((await env.runtime.get(1))?.controllerId).toBe("r1");
   });
 
   it("counts an element that was removed as the text being gone", async () => {

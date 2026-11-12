@@ -6,6 +6,7 @@ import { QueryChoice } from "../shared/QueryChoice";
 import type { Rule, Settings, TabInfo } from "../../core/types";
 import { STOP_AFTER_CHOICES } from "../../core/defaults";
 import { matchesAny } from "../../core/url-pattern";
+import { textMissing } from "../popup/actions";
 import { intervalLabel, priorityAbove, stopAfterLabel } from "../popup/describe";
 import { hostOf, normalizeAddress, pageLabel, stashBuilderDraft, TEMPLATES, type Template, type TemplateValues } from "./templates";
 
@@ -238,7 +239,13 @@ async function createFromTemplate(t: Template, values: TemplateValues, url: stri
   if (origin && !(await requestOrigins([origin]).catch(() => false))) {
     throw new Error(`JustRefresh needs access to ${hostOf(url)} to read the page. Nothing was created.`);
   }
-  const rule = (await api("createRule", { rule: t.build(values) })) as Rule;
+  const input = t.build(values);
+  // "Disappears" only counts text that has been there: on an open tab, make sure it is there now (a typo would wait forever).
+  if (pickedTab && input.stopWhen?.type === "dom.text_lost") {
+    const missing = await textMissing(pickedTab.id, pickedTab.url, values.text, values.anyQuery);
+    if (missing) throw new Error(`${missing} Nothing was created.`);
+  }
+  const rule = (await api("createRule", { rule: input })) as Rule;
   if (!pickedTab || t.scope !== "page") return { name: rule.name };
   const state = (await api("getTabState", { tabId: pickedTab.id })) as { override: { mode: string } | null };
   if (state.override?.mode === "custom") await api("clearTabOverride", { tabId: pickedTab.id });

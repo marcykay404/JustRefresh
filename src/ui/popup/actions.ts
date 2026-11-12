@@ -32,7 +32,7 @@ export async function startUntil(r: UntilRequest, run: (method: string, params?:
   // "Disappears" only counts text that has been on the page: make sure it is there now,
   // or a typo would refresh forever without saying so.
   if (r.mode === "disappears") {
-    const missing = await textMissing(r);
+    const missing = await textMissing(r.tabId, r.state.tab.url, r.text, r.anyQuery);
     if (missing) return { done: false, warning: missing };
   }
   const rule = untilRule({
@@ -60,10 +60,13 @@ export async function startUntil(r: UntilRequest, run: (method: string, params?:
   return { done: true };
 }
 
-/** Why "disappears" can't start: the text isn't on the page now (null = it is, or it couldn't be checked). */
-async function textMissing(r: UntilRequest): Promise<string | null> {
-  const probe = untilRule({ url: r.state.tab.url, site: r.site, seconds: r.seconds, text: r.text, mode: "appears", anyQuery: r.anyQuery });
-  const test = (await api("testRule", { rule: probe, tabId: r.tabId }).catch(() => null)) as { result?: { status: string } } | null;
+/**
+ * Why "disappears" can't start: the text isn't on the tab's page now. null =
+ * it is, or the page couldn't be checked (then the rule still waits to see it).
+ */
+export async function textMissing(tabId: number, url: string, text: string, anyQuery?: boolean): Promise<string | null> {
+  const probe = untilRule({ url, site: "check", seconds: 60, text, mode: "appears", anyQuery });
+  const test = (await api("testRule", { rule: probe, tabId }).catch(() => null)) as { result?: { status: string } } | null;
   if (test?.result?.status !== "not_matched") return null;
-  return `“${r.text.trim()}” isn't on this page now, so it can't disappear. Check the spelling, or start when the page shows it.`;
+  return `“${text.trim()}” isn't on this page now, so it can't disappear. Check the spelling, or start when the page shows it.`;
 }

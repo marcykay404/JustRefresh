@@ -99,8 +99,16 @@ Logic: `all` → any `not_matched` wins, else any `unknown` → `unknown`;
 
 `dom.changed` and `dom.text_lost` compare the page with what they saw at the
 previous check of the same run. A run starts again (forgetting it) when the
-rule is edited, another rule takes over the tab, or the tab goes to another
-page; a refresh by the rule keeps it.
+rule is edited, another rule takes over the tab, you go to another page, or
+a finished run is started again; a refresh by the rule keeps it.
+
+They compare only on the page they remember (its origin and path; what
+comes after "?" may differ): a refresh that lands on another page, such as a
+login redirect, is neither a change nor "gone", and the page is compared
+again when it's back. They don't compare at the check right after the
+rule's own refresh, when a page that fills itself in later may not show its
+content yet; the next check (before the next refresh) compares. So a change
+is reported one interval after the load that brought it.
 
 - **`dom.changed`** matches when the text of the first matching element (or
   the whole page) differs from the previous check, whitespace-normalized. The

@@ -27,9 +27,11 @@ export interface RuleContext {
   /**
    * For stateful conditions: what this condition (at its place in the rule)
    * remembered at the previous check of the run. `set(undefined)` forgets it.
-   * Kept only when the engine saves the check's result.
+   * Kept only when the engine saves the check's result. null: this check
+   * doesn't compare (the page has just loaded and may not have settled, or
+   * the tab is on another page than the one remembered).
    */
-  memory: { get(): string | undefined; set(value: string | undefined): void };
+  memory: { get(): string | undefined; set(value: string | undefined): void } | null;
 }
 
 export interface ConditionHandler<TConfig extends ConditionNode = ConditionNode> {

@@ -179,14 +179,43 @@ export abstract class EngineBase {
     await this.deps.browser.notify(`justrefresh:${rule.id}:${tab.id}:${this.now()}`, `Monitoring stopped: ${rule.name}`, message);
   }
 
-  protected async evaluate(rule: Rule, tab: TabInfo, rt: TabRuntime) {
-    return evaluateConditionTree(rule.stopWhen!, {
+  /**
+   * Check the rule's condition. Stateful conditions (content changed, text
+   * gone) compare with the previous check only on the page they remember (its
+   * path: a login redirect isn't a change, and "?…" may differ per load), and
+   * not right after the rule's own reload (`justLoaded`), when a page that
+   * renders its content later may not have it yet: the next check compares.
+   */
+  protected async evaluate(rule: Rule, tab: TabInfo, rt: TabRuntime, opts: { justLoaded?: boolean } = {}) {
+    const page = pagePath(tab.url);
+    const compare = !opts.justLoaded && (rt.memory === undefined || rt.memory[PAGE_KEY] === page);
+    const out = await evaluateConditionTree(rule.stopWhen!, {
       now: this.now(),
       tab: { id: tab.id, url: tab.url, status: tab.status },
       runtime: { refreshCount: rt.refreshCount, navigationCount: rt.navigationCount, startedAt: rt.startedAt },
       pageEvaluator: (leaves) => this.page.evaluate(tab.id, leaves, false),
       registries: this.registries,
-      memory: rt.memory,
+      memory: compare ? (rt.memory ?? {}) : null,
     });
+    return { ...out, memory: compare ? onPage(out.memory, page) : (rt.memory ?? {}) };
   }
+}
+
+/** Where TabRuntime.memory records the page it belongs to. */
+const PAGE_KEY = "@page";
+
+/** A page as stateful conditions tell pages apart: origin and path. */
+function pagePath(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.origin + u.pathname;
+  } catch {
+    return url;
+  }
+}
+
+/** The memory stamped with its page, or empty when no condition remembered anything. */
+function onPage(memory: Record<string, string>, page: string): Record<string, string> {
+  const { [PAGE_KEY]: _p, ...kept } = memory;
+  return Object.keys(kept).length ? { ...kept, [PAGE_KEY]: page } : {};
 }

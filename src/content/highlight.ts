@@ -19,16 +19,30 @@ interface Quiet {
   busy: boolean;
 }
 
+/** Most text the search reads, as the text conditions (dom-eval MAX_TEXT_LENGTH). */
+const MAX_TEXT = 100_000;
+/** Elements laid out as blocks: their text is apart from the text around them, as innerText puts it. */
+const BLOCKS =
+  "address,article,aside,blockquote,dd,details,dialog,div,dl,dt,fieldset,figcaption,figure,footer,form,h1,h2,h3,h4,h5,h6,header,li,main,nav,ol,p,pre,section,summary,table,tbody,td,tfoot,th,thead,tr,ul";
+
+interface Flat {
+  chars: string[];
+  /** For each character, the text node and offset it came from (a space between blocks points at the next text). */
+  from: { node: Text; offset: number }[];
+  lastWasSpace: boolean;
+}
+
 /**
  * The first place `text` appears in `root`, case-insensitive and with runs of
  * whitespace treated as one space, as the text conditions compare. It may
- * span elements ("S$ <b>3</b>").
+ * span elements ("S$ <b>3</b>"), and text in separate blocks counts as
+ * separated by a space.
  */
 export function findText(root: Element, text: string): Range | null {
-  const needle = text.replace(/\s+/g, " ").trim().toLowerCase();
+  const needle = [...text.replace(/\s+/g, " ").trim()].map(flatChar).join("");
   if (!needle) return null;
-  const { flat, from } = flatten(root);
-  const at = flat.indexOf(needle);
+  const { chars, from } = flatten(root);
+  const at = chars.join("").indexOf(needle);
   if (at < 0) return null;
   const first = from[at]!;
   const last = from[at + needle.length - 1]!;
@@ -38,23 +52,30 @@ export function findText(root: Element, text: string): Range | null {
   return range;
 }
 
-/** The text under `root`, lower case with whitespace runs as one space, and where each of its characters came from. */
-function flatten(root: Element): { flat: string; from: { node: Text; offset: number }[] } {
+/** The text under `root` as findText compares it, and where each of its characters came from. Linear in the text. */
+function flatten(root: Element): Flat {
   const walker = root.ownerDocument.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */, {
     acceptNode: (n) => (n.parentElement?.closest("script,style,noscript,template,[hidden]") ? 2 /* FILTER_REJECT */ : 1),
   });
-  let flat = "";
-  const from: { node: Text; offset: number }[] = [];
-  for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+  const flat: Flat = { chars: [], from: [], lastWasSpace: true };
+  let block: Element | null = null;
+  for (let n = walker.nextNode() as Text | null; n && flat.chars.length < MAX_TEXT; n = walker.nextNode() as Text | null) {
+    const here = n.parentElement?.closest(BLOCKS) ?? null;
+    if (here !== block) push(flat, " ", n, 0);
+    block = here;
     const value = n.nodeValue ?? "";
-    for (let i = 0; i < value.length; i++) {
-      const ch = flatChar(value[i]!);
-      if (ch === " " && (flat === "" || flat.endsWith(" "))) continue;
-      flat += ch;
-      from.push({ node: n, offset: i });
-    }
+    for (let i = 0; i < value.length; i++) push(flat, flatChar(value[i]!), n, i);
   }
-  return { flat, from };
+  return flat;
+}
+
+/** Add one character; a space only after something that isn't one. */
+function push(flat: Flat, ch: string, node: Text, offset: number) {
+  const space = ch === " ";
+  if (space && flat.lastWasSpace) return;
+  flat.chars.push(ch);
+  flat.from.push({ node, offset });
+  flat.lastWasSpace = space;
 }
 
 /** One character for one character: whitespace as a space, lower case where that stays one character. */

@@ -21,8 +21,8 @@ export interface EvaluationInput {
   runtime: RuleContext["runtime"];
   pageEvaluator: PageEvaluator;
   registries?: Registries;
-  /** What stateful conditions remembered at the previous check (TabRuntime.memory). */
-  memory?: Record<string, string>;
+  /** What stateful conditions remembered at the previous check (TabRuntime.memory); null = don't compare this time. */
+  memory?: Record<string, string> | null;
 }
 
 export interface EvaluationOutput {
@@ -77,6 +77,7 @@ export async function evaluateConditionTree(root: ConditionNode, input: Evaluati
   const places = placesOf(root, registries);
   const memory: Record<string, string> = { ...input.memory };
   const memoryOf = (node: ConditionNode): RuleContext["memory"] => {
+    if (input.memory === null) return null;
     const key = `${places.get(node) ?? "?"}:${node.type}`;
     return {
       get: () => (Object.hasOwn(memory, key) ? memory[key] : undefined),

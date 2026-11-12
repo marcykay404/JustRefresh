@@ -121,6 +121,8 @@ export const domAttribute: ConditionHandler<DomAttribute> = {
 
 const optionalSelector = (c: { selector?: string }, path: string) => (c.selector !== undefined ? checkSelector(c.selector, `${path}.selector`) : []);
 
+const NOT_COMPARED = "Not compared this time: the page has just loaded, or the tab is on another page";
+
 /** The page's result without what only the engine needs. */
 function forOthers(r: EvaluationResult, status: "matched" | "not_matched", note: string): EvaluationResult {
   const { fingerprint: _f, ...details } = r.status === "unknown" ? {} : (r.details ?? {});
@@ -147,6 +149,7 @@ export const domChanged: ConditionHandler<DomChanged> = {
     if (r.status === "unknown") return r;
     const now = r.details?.fingerprint;
     if (now === undefined) return forOthers(r, "not_matched", r.details?.note ?? "Element not found");
+    if (!ctx.memory) return forOthers(r, "not_matched", NOT_COMPARED);
     const before = ctx.memory.get();
     ctx.memory.set(now);
     if (before === undefined) return forOthers(r, "not_matched", "First check: nothing to compare with yet");
@@ -172,9 +175,10 @@ export const domTextLost: ConditionHandler<DomTextLost> = {
     const r = ctx.pageResult(config);
     if (r.status === "unknown") return r;
     if (r.status === "matched") {
-      ctx.memory.set("seen");
+      ctx.memory?.set("seen");
       return forOthers(r, "not_matched", "The text is there");
     }
+    if (!ctx.memory) return forOthers(r, "not_matched", NOT_COMPARED);
     if (ctx.memory.get() !== "seen") return forOthers(r, "not_matched", "The text hasn't been seen on this page yet");
     ctx.memory.set(undefined);
     return forOthers(r, "matched", "The text is gone");

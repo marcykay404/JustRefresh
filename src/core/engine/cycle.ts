@@ -163,7 +163,8 @@ export abstract class CycleEngine extends EngineBase {
     }
     if (isTerminal(c.rt.status)) {
       if (c.event !== "manual") return { ...c.rt, nextDueAt: null };
-      c.rt = transition(c.rt, "scheduled", { reason: undefined });
+      // Running it again starts over: what stateful conditions saw before doesn't count.
+      c.rt = transition(c.rt, "scheduled", { reason: undefined, memory: undefined });
     }
     return null;
   }

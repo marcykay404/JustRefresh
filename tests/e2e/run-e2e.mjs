@@ -743,7 +743,10 @@ await test("content changed: notices a change between loads, and highlights it",
   await waitFor(async () => (await runtime(tabId))?.navigationCount >= 1 && (await runtime(tabId))?.status === "scheduled", "reloaded once");
   assert.equal((await runtime(tabId)).lastEvaluation.status, "not_matched");
   stockText = "Only 2 left";
-  await fireAlarm(tabId);
+  await fireAlarm(tabId); // reloads to the new text; the check right after loading doesn't compare
+  await waitFor(async () => (await runtime(tabId))?.navigationCount >= 2 && (await runtime(tabId))?.status === "scheduled", "reloaded to the new text");
+  assert.equal((await runtime(tabId)).lastEvaluation.status, "not_matched");
+  await fireAlarm(tabId); // the next check, on the settled page, sees the change
   await waitFor(async () => (await runtime(tabId))?.status === "completed", "completed when the text changes");
   await waitFor(
     async () =>

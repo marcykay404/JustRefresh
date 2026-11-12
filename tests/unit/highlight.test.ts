@@ -19,6 +19,22 @@ describe("findText", () => {
     expect(findText(root, "in stock")?.startContainer.parentElement?.id).toBe("p");
   });
 
+  it("counts text in separate blocks as separated, as the text conditions do", () => {
+    expect(findText(page(`<div>Sold</div><div>out</div>`), "sold out")?.toString()).toBe("Soldout");
+    expect(findText(page(`<div>Sold</div><div>out</div>`), "soldout")).toBeNull();
+  });
+
+  it("finds text with characters whose lower case is longer", () => {
+    expect(findText(page(`<p>Welcome to İstanbul</p>`), "İstanbul")?.toString()).toBe("İstanbul");
+  });
+
+  it("stays fast on a very long page", () => {
+    const root = page(`<pre>${"word ".repeat(200_000)}</pre><p>needle</p>`);
+    const t = performance.now();
+    expect(findText(root, "zzz")).toBeNull();
+    expect(performance.now() - t).toBeLessThan(1500);
+  });
+
   it("returns null when the text isn't there or is blank", () => {
     expect(findText(page(`<p>Sold out</p>`), "In stock")).toBeNull();
     expect(findText(page(`<p>x</p>`), "   ")).toBeNull();
