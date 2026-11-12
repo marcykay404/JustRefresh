@@ -82,6 +82,14 @@ const server = http.createServer((req, res) => {
   if (path === "/panel") return res.end(`<title>Panel</title><div id="panel-state">${panelText}</div><input id="note">`);
   if (path === "/stock") return res.end(`<title>Stock</title><p>Item 42</p><div>${stockText}</div>`);
   if (path === "/status") return res.end(`<title>Status</title><div id="status">${statusText}</div>`);
+  // A form whose fields' defaults follow what's typed, as React's controlled inputs do.
+  if (path === "/react-form")
+    return res.end(
+      `<title>React-like form</title><form><input id="name"><textarea id="msg"></textarea></form><script>
+        for (const el of document.querySelectorAll("input, textarea"))
+          el.addEventListener("input", () => (el.tagName === "TEXTAREA" ? (el.defaultValue = el.value) : el.setAttribute("value", el.value)));
+      </script>`,
+    );
   if (path === "/shipping") return res.end(`<title>Shipping</title><div id="status">${shipText}</div>`);
   // A page that keeps running JS, so a debugger pause takes effect at once.
   if (path === "/stall") return res.end(`<title>Stall</title><script>setInterval(() => { window.tick = (window.tick || 0) + 1; }, 20);</script><h1>Stall</h1>`);
@@ -177,6 +185,21 @@ await test("typing protection postpones refresh; unsaved form blocks manual refr
   // Typed text never leaves the page:
   const history = JSON.stringify(await sw.evaluate(() => chrome.storage.local.get(null)));
   assert.ok(!history.includes("draft text"));
+  await page.close();
+});
+
+await test("unsaved changes in a form whose defaults follow the typing (as React does) still stop a refresh", async () => {
+  const page = await context.newPage();
+  await page.goto(`${base}/react-form`);
+  const tabId = await tabIdFor(`${base}/react-form`);
+  await call("startTab", { tabId, intervalSeconds: 30 });
+  await page.waitForTimeout(300);
+  await page.locator("#msg").pressSequentially("Two seats, please", { delay: 5 });
+  assert.equal(await page.evaluate(() => document.getElementById("msg").defaultValue), "Two seats, please", "the page keeps the default in step");
+  const manual = await call("refreshNow", { tabId });
+  assert.equal(manual.refreshed, false);
+  assert.match(manual.reason, /unsaved/);
+  assert.equal(loads.get("/react-form"), 1, "not reloaded");
   await page.close();
 });
 

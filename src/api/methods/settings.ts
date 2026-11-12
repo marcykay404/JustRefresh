@@ -162,20 +162,29 @@ export function settingsMethods(svc: ServiceInternals): Record<string, MethodDef
   };
 }
 
+type ImportOptions = { onDuplicate: "rename" | "replace" | "skip"; activate: boolean; now: number; newId: (prefix: string) => string };
+
+/** The id an imported rule is saved under, or null to skip it (a duplicate, with onDuplicate "skip"). */
+function importedId(c: Config, rule: Omit<Rule, "meta">, o: ImportOptions, report: ImportReport): string | null {
+  const id = rule.id || o.newId("rule");
+  if (!c.rules[id]) return id;
+  if (o.onDuplicate === "skip") {
+    report.skipped.push({ id, reason: "Duplicate id" });
+    return null;
+  }
+  return o.onDuplicate === "rename" ? o.newId(id.slice(0, 50)) : id;
+}
+
+/** Requests still waiting about a rule that was just replaced no longer apply (as when it's saved). */
+function settleWaiting(c: Config, ruleId: string) {
+  for (const a of c.approvals) if (a.ruleId === ruleId && a.status === "pending") a.status = "stale";
+}
+
 /** Add imported rules to the config: switched off unless `activate`, with duplicate ids renamed, replaced or skipped. */
-function importRules(
-  c: Config,
-  rules: Omit<Rule, "meta">[],
-  o: { onDuplicate: "rename" | "replace" | "skip"; activate: boolean; now: number; newId: (prefix: string) => string },
-  report: ImportReport,
-) {
+function importRules(c: Config, rules: Omit<Rule, "meta">[], o: ImportOptions, report: ImportReport) {
   for (const rule of rules) {
-    let id = rule.id || o.newId("rule");
-    if (c.rules[id] && o.onDuplicate === "skip") {
-      report.skipped.push({ id, reason: "Duplicate id" });
-      continue;
-    }
-    if (c.rules[id] && o.onDuplicate === "rename") id = o.newId(id.slice(0, 50));
+    const id = importedId(c, rule, o, report);
+    if (id === null) continue;
     const existing = c.rules[id];
     c.rules[id] = {
       ...rule,
@@ -189,6 +198,7 @@ function importRules(
         draft: !o.activate,
       },
     };
+    if (existing) settleWaiting(c, id);
     report.imported.push(id);
   }
 }

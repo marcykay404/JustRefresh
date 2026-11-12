@@ -17,7 +17,13 @@
   generation tokens cover restarts.
 - **Unsaved changes.** Detection covers native form controls the user
   actually edited (trusted input/change events) whose value differs from the
-  default, and marks edited `contenteditable` regions as `unknown`. Values set
+  default, or from what it was just before the user started editing it (some
+  frameworks, such as React, keep the default in step with what's typed; only
+  a short fingerprint of that earlier state is kept, never the text; password
+  fields get none), and marks edited `contenteditable` regions as `unknown`.
+  Still missed in such forms: fields filled by autofill that the user never
+  went into, fields the page re-creates while you type (a new element), and a
+  form half-typed before the content script started (it reads as clean). Values set
   by the page's own scripts are not the user's work and are ignored. When the
   content script was injected into an already-open page, earlier edits cannot
   be told apart from script-set values, so changed fields are `unknown` until
