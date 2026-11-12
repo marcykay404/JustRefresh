@@ -879,6 +879,12 @@ await test("popup and dashboard render", async () => {
   await page.goto(`chrome-extension://${extId}/dashboard.html#/tabs`);
   await page.getByRole("heading", { name: "Tabs" }).waitFor();
   await page.screenshot({ path: join(root, "test-results", "tabs.png") });
+  // The popup on JustRefresh's own page: named, and simply excluded.
+  const dashboardTab = await tabIdFor(`chrome-extension://${extId}/dashboard.html#/tabs`);
+  const own = await openPopupFor(dashboardTab);
+  await own.getByText("Excluded from JustRefresh").waitFor();
+  assert.equal(await own.locator(".popup-site").textContent(), "JustRefresh");
+  await own.close();
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 380, height: 600 });
   await popup.goto(`chrome-extension://${extId}/popup.html`);

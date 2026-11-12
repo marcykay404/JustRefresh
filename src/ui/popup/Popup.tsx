@@ -178,14 +178,7 @@ function TabPopup({
   const card = () => {
     if (f.blocked)
       return (
-        <BlockedCard
-          kind={f.blocked}
-          url={s.tab.url}
-          tabId={tabId}
-          controllerName={s.resolution.controllerName}
-          reason={s.resolution.reason}
-          run={(m, p) => void run(m, p)}
-        />
+        <BlockedCard kind={f.blocked} tabId={tabId} controllerName={s.resolution.controllerName} reason={s.resolution.reason} run={(m, p) => void run(m, p)} />
       );
     if (view === "until") {
       return (

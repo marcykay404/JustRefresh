@@ -12,29 +12,8 @@ export function isOwnPage(url: string, ownBase = chrome.runtime.getURL("")): boo
   return ownBase !== "" && url.startsWith(ownBase);
 }
 
-/**
- * Why JustRefresh doesn't refresh this page, in words. Chrome doesn't stop an
- * extension reloading a tab; what it blocks on its own pages and the Web Store
- * is looking inside them, and without that JustRefresh can't check conditions
- * or see you typing, so it leaves them alone. Its own pages it skips by choice.
- */
-export function restrictedMessage(url: string, ownBase = chrome.runtime.getURL("")): string {
-  if (isOwnPage(url, ownBase)) {
-    return "This is one of JustRefresh's own pages, which it doesn't refresh. Go to the website you want to refresh and open JustRefresh there.";
-  }
-  if (/^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/.test(url)) {
-    return "Chrome doesn't let extensions look inside the Chrome Web Store, so JustRefresh can't check it or see you typing there, and doesn't refresh it.";
-  }
-  if (/^(chrome|edge|brave|about|devtools|chrome-extension|view-source):/.test(url)) {
-    return "This is one of the browser's own pages (settings, extensions, new tab…). Chrome doesn't let extensions look inside those, so JustRefresh can't check them or see you typing there, and doesn't refresh them.";
-  }
-  return "JustRefresh can't look inside this page, so it doesn't refresh it.";
-}
-
 export function BlockedCard(p: {
   kind: BlockedKind;
-  /** The tab's address (to say why a restricted page can't be refreshed). */
-  url: string;
   tabId: number;
   controllerName: string | null;
   reason?: string;
@@ -44,7 +23,7 @@ export function BlockedCard(p: {
     case "restricted":
       return (
         <p className="muted" style={{ margin: 0 }}>
-          {restrictedMessage(p.url)}
+          Excluded from JustRefresh
         </p>
       );
     case "tab_excluded":
