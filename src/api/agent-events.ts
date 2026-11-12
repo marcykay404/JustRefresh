@@ -48,10 +48,10 @@ export interface EventPage {
   interrupted?: true;
 }
 
-/** Any address in free text (a scheme, then up to the next space). */
-const ADDRESS = /\b[a-z][\w+.-]*:\/\/\S+/gi;
+/** Any address in free text (a scheme with //, or one of the schemes without, then up to the next space). */
+const ADDRESS = /\b(?:[a-z][\w+.-]*:\/\/|(?:data|about|blob|javascript|mailto):)\S+/gi;
 /** Punctuation that usually ends the sentence, not the address. */
-const TRAILING = /[)\].,;:'"]+$/;
+const TRAILING = /[)\]>.,;:'"]+$/;
 
 /** Addresses in a text, with their query strings and #fragments hidden. */
 export function redactText(text: string): string {

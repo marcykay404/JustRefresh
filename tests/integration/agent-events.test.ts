@@ -119,6 +119,17 @@ describe("rule events", () => {
     expect(await kinds()).toEqual(["rule.matched", "rule.matched"]);
   });
 
+  it("a run checked in the same moment it started says matched once", async () => {
+    const { env, agent, kinds, create, tick } = await setup({ trusted: true });
+    const id = await create({ ...ORDER_RULE, actions: { onMatched: [{ type: "log", message: "still shipped" }], onNotMatched: [{ type: "refresh" }] } });
+    env.page.setHtml(TAB, `<p id="status">Shipped</p>`);
+    await env.service.call(agent, "enableRule", { id }); // starts the tab's run now
+    await env.engine.runCycle(TAB, "manual"); // and checks it in the same millisecond
+    await settle();
+    await tick();
+    expect(await kinds()).toEqual(["rule.matched"]);
+  });
+
   it("a run started again (popup Restart) says matched again", async () => {
     const { env, agent, kinds, create, tick } = await setup({ trusted: true });
     const id = await create();
@@ -243,6 +254,8 @@ describe("who hears what", () => {
       ["At https://a.test/x?token=1, retrying", "At https://a.test/x?…, retrying"],
       ["(HTTPS://A.TEST/p?q=1)", "(HTTPS://A.TEST/p?…)"],
       ["file:///Users/me/report.html?x=1 and chrome-extension://abc/page.html#secret", "file:///Users/me/report.html?… and chrome-extension://abc/page.html#…"],
+      ["Tab <https://a.test/x?y=1> at data:text/html,hi?x=1 or about:blank#z", "Tab <https://a.test/x?…> at data:text/html,hi?… or about:blank#…"],
+      ["Retry at 12:30: net::ERR_FAILED", "Retry at 12:30: net::ERR_FAILED"],
     ];
     for (const [i, [reason]] of reasons.entries()) await env.events.rule({ kind: "rule.error", rule, tabId: i, url: ORDER, reason });
     expect((await events()).events.map((e) => e.reason)).toEqual(reasons.map(([, hidden]) => hidden));

@@ -3,14 +3,15 @@ import type { Resolution } from "../rule-resolver";
 import { transition } from "../state-machine";
 import type { ExecutionStatus, Rule, TabInfo, TabRuntime } from "../types";
 
-/** Thrown by the refresh path when a refresh must not happen now; carries the state to move to. */
 /**
  * This run's last check matched, so the agent behind the rule has heard
  * about it. A check from before the run started (it was restarted since)
- * doesn't count.
+ * doesn't count; one in the same millisecond as the start is the run's own
+ * first check (a cycle that starts a run checks it at once).
  */
-export const matchedInThisRun = (rt: TabRuntime) => rt.lastEvaluation?.status === "matched" && rt.lastEvaluation.at > rt.startedAt;
+export const matchedInThisRun = (rt: TabRuntime) => rt.lastEvaluation?.status === "matched" && rt.lastEvaluation.at >= rt.startedAt;
 
+/** Thrown by the refresh path when a refresh must not happen now; carries the state to move to. */
 export class SafetyBlock extends Error {
   constructor(
     public readonly status: ExecutionStatus,
