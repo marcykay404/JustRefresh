@@ -114,7 +114,9 @@ describe("MCP self-description", () => {
       expect(hint(name).destructiveHint, name).toBe(true);
     expect(hint("refresh_create_rule").destructiveHint).toBe(false);
     // Tab titles come from web pages; enabled rules act on them.
-    for (const name of ["refresh_list_tabs", "refresh_test_rule", "refresh_enable_rule"]) expect(hint(name).openWorldHint, name).toBe(true);
+    for (const name of ["refresh_list_tabs", "refresh_test_rule", "refresh_enable_rule", "refresh_get_status", "refresh_get_history"]) {
+      expect(hint(name).openWorldHint, name).toBe(true);
+    }
     expect(hint("refresh_enable_rule").idempotentHint).toBe(false);
   });
 
@@ -138,6 +140,8 @@ describe("MCP self-description", () => {
     expect(desc("refresh_test_rule")).toMatch(/invalid_selector/);
     expect(desc("refresh_enable_rule")).toMatch(/trusts you/);
     expect(desc("refresh_create_rule")).toMatch(/unless they trust you/);
+    expect(desc("refresh_delete_rule")).toMatch(/trusts you/);
+    expect(desc("refresh_disable_rule")).toMatch(/withdraws/);
   });
 
   it("names dashboard places, result codes and limits that exist", async () => {
@@ -146,7 +150,7 @@ describe("MCP self-description", () => {
     const types = readFileSync("src/core/types.ts", "utf8");
     const text = TOOLS.map((t) => t.description).join(" ") + INSTRUCTIONS;
     for (const place of text.match(/Agent Integrations|Waiting for your OK/g)) expect(ui).toContain(place);
-    for (const code of ["invalid_selector", "missing_permission", "page_not_ready", "timeout"]) {
+    for (const code of ["invalid_selector", "missing_permission", "restricted_url", "page_not_ready", "timeout"]) {
       expect(text).toContain(code);
       expect(types).toContain(`"${code}"`);
     }
@@ -186,7 +190,7 @@ describe("MCP self-description", () => {
     expect(large.structuredContent).toBeUndefined();
     // The limit is in bytes: short in characters, long in UTF-8.
     result = { s: "ü".repeat(STRUCTURED_MAX_BYTES / 2) };
-    expect(JSON.stringify(result).length).toBeLessThan(STRUCTURED_MAX_BYTES + 10);
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(STRUCTURED_MAX_BYTES);
     expect((await call()).result.structuredContent).toBeUndefined();
     // Nothing at all: text and structuredContent agree.
     result = undefined;
@@ -195,24 +199,33 @@ describe("MCP self-description", () => {
     expect(none.structuredContent).toEqual({ result: null });
   });
 
-  it("enabling or disabling a rule that is already so changes nothing (a waiting approval stays valid)", async () => {
+  it("disable withdraws a waiting enable request; enable or disable of a rule already so changes nothing", async () => {
     const env = createApiEnv();
     const agent = env.agent();
     await env.pairAgent();
     const created = await env.service.call(agent, "createRule", { rule: SPEC_EXAMPLE });
-    const pending = await env.service.call(agent, "enableRule", { id: created.id });
-    expect(pending.status).toBe("pending_approval");
     const revision = async () => (await env.config.get()).rules[created.id].meta.revision;
+    const waiting = async () => (await env.service.call(agent, "getRuleStatus", { id: created.id })).pendingApprovals;
+
+    // Asked, then taken back: nothing is left for the user to approve by mistake.
+    const first = await env.service.call(agent, "enableRule", { id: created.id });
+    expect(first.status).toBe("pending_approval");
     const before = await revision();
     await env.service.call(agent, "disableRule", { id: created.id });
     await env.service.call(agent, "disableRule", { id: created.id });
     expect(await revision()).toBe(before);
-    await env.service.call(env.user, "resolveApproval", { id: pending.approvalId, approve: true });
-    const rule = (await env.config.get()).rules[created.id];
-    expect(rule.enabled).toBe(true);
-    const enabledAt = rule.meta.revision;
-    await env.service.call(env.user, "enableRule", { id: created.id });
-    expect(await revision()).toBe(enabledAt);
+    expect(await waiting()).toEqual([]);
+    await expect(env.service.call(env.user, "resolveApproval", { id: first.approvalId, approve: true })).rejects.toMatchObject({ code: "not_found" });
+    expect((await env.config.get()).rules[created.id].enabled).toBe(false);
+
+    // Asked again and approved: it runs. Asking again while it runs changes nothing.
+    const second = await env.service.call(agent, "enableRule", { id: created.id });
+    await env.service.call(env.user, "resolveApproval", { id: second.approvalId, approve: true });
+    const running = await revision();
+    expect(await env.service.call(agent, "enableRule", { id: created.id })).toEqual({ status: "enabled" });
+    expect(await env.service.call(env.user, "enableRule", { id: created.id })).toEqual({ status: "enabled" });
+    expect(await waiting()).toEqual([]);
+    expect(await revision()).toBe(running);
   });
 
   it("errors are compact too", async () => {

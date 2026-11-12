@@ -94,7 +94,7 @@ const revision = { type: "integer", description: "meta.revision from refresh_get
 /*
  * MCP tool annotations: hints for the client's permission prompts and for how
  * far to trust a result. openWorldHint is true where a tool returns text web
- * pages control (tab titles) or makes a rule act on websites.
+ * pages control (tab titles, URLs, page errors) or makes a rule act on websites.
  */
 const READ = { readOnlyHint: true, openWorldHint: false };
 const READ_WEB = { ...READ, openWorldHint: true };
@@ -138,8 +138,8 @@ export const TOOLS = [
     "Test rule (dry run)",
     READ_WEB,
     "Dry-run a rule's stopWhen conditions against an open tab: no refresh, no actions. Also says whether the rule targets the tab and whether site access is granted. " +
-      "To check a CSS selector, test a throwaway rule whose stopWhen is a dom.exists condition. An unknown result is not false: read result.code " +
-      "(invalid_selector: fix the selector; missing_permission: no site access; page_not_ready or timeout: try again later).",
+      "To check a CSS selector, test a throwaway rule whose stopWhen is a dom.exists condition. An unknown result is not false: read result.code, for example " +
+      "invalid_selector (fix the selector), missing_permission (no site access), restricted_url (a browser page JustRefresh can't read), page_not_ready or timeout (try again later).",
     { rule: ruleObject, tabId: { type: "integer", description: "Tab id from refresh_list_tabs" } },
     ["rule", "tabId"],
   ),
@@ -167,7 +167,7 @@ export const TOOLS = [
     "deleteRule",
     "Delete rule",
     { ...DESTRUCTIVE, idempotentHint: true },
-    "Delete a rule you created. A draft or disabled rule is deleted at once; deleting an enabled one returns pending_approval until the user approves.",
+    "Delete a rule you created. A draft or disabled rule is deleted at once; deleting an enabled one returns pending_approval until the user approves (at once if the user trusts you).",
     { id, expectedRevision: revision },
     ["id"],
   ),
@@ -177,7 +177,7 @@ export const TOOLS = [
     "Ask to enable rule",
     // It can switch a rule on at once (trusted agents), and a live rule reloads and clicks on websites.
     { ...WRITE, destructiveHint: true, openWorldHint: true },
-    "Ask to switch on a rule you created. Usually returns pending_approval: tell the user to approve it in the JustRefresh dashboard → Agent Integrations → Waiting for your OK, " +
+    "Ask to switch on a rule you created (one already on just returns enabled). Usually returns pending_approval: tell the user to approve it in the JustRefresh dashboard → Agent Integrations → Waiting for your OK, " +
       "then check refresh_get_status: enabled means approved; not enabled with nothing in pendingApprovals means the user declined it or the rule changed since you asked. Check every 30 s or more slowly. If the user trusts you, the rule is switched on at once, with no approval step.",
     { id },
     ["id"],
@@ -187,7 +187,7 @@ export const TOOLS = [
     "disableRule",
     "Disable rule",
     { ...DESTRUCTIVE, idempotentHint: true },
-    "Switch a rule off. Works on any rule, including the user's own; only disable a user's rule when they asked you to.",
+    "Switch a rule off; this also withdraws a request waiting to switch it on. Works on any rule, including the user's own; only disable a user's rule when they asked you to.",
     { id },
     ["id"],
   ),
@@ -195,7 +195,7 @@ export const TOOLS = [
     "refresh_get_status",
     "getRuleStatus",
     "Get rule status",
-    READ,
+    READ_WEB,
     "Whether a rule is enabled, its waiting approvals, and how it runs on each tab (status, next refresh, counts, last evaluation, last error).",
     { id },
     ["id"],
@@ -204,7 +204,7 @@ export const TOOLS = [
     "refresh_get_history",
     "getHistory",
     "Get history",
-    READ,
+    READ_WEB,
     "Recent activity (refreshes, matches, actions, errors), newest first; 100 entries unless you set limit. Filter by ruleId to follow one rule.",
     { limit: { type: "integer", minimum: 1, maximum: 500 }, ruleId: { type: "string", description: "Only this rule's entries" } },
   ),
@@ -215,7 +215,7 @@ export const INSTRUCTIONS =
   "Controls the JustRefresh Chrome extension, which refreshes the user's tabs on a schedule and can stop, notify or click when something appears on the page. " +
   "Workflow: refresh_get_capabilities (once) → refresh_list_tabs → refresh_validate_rule → refresh_test_rule (dry run on a tab) → refresh_create_rule (saves a disabled draft) → " +
   "refresh_enable_rule (the user approves in the extension) → refresh_get_status. " +
-  "Your rules run only once the user approves them (unless the user marked you as trusted: then refresh_enable_rule switches a rule on at once, so only enable what the user asked for). " +
+  "Your rules run only once the user approves them (unless the user marked you as trusted: then refresh_enable_rule and refresh_delete_rule act at once, so only do what the user asked for). " +
   "Any refresh_update_rule turns a running rule off until it is enabled again, so ask before changing a rule the user relies on. " +
   "Conditions return matched, not_matched or unknown; unknown means it couldn't be checked, not false: its code says why (invalid_selector means fix the selector; missing_permission means no site access). " +
   "To check a CSS selector, refresh_test_rule a throwaway rule whose stopWhen is a dom.exists condition. " +
