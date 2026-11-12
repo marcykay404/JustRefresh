@@ -132,13 +132,16 @@ export abstract class EngineBase {
   }
 
   /**
-   * Forget every tab's run (Reset to defaults). Each waits for work already
-   * running on that tab, so nothing it was doing is written back afterwards.
+   * Forget every tab's run (Reset to defaults): tabs with a stored run, and
+   * tabs with work running now (a first check may not have stored one yet).
+   * Each waits for that work, so nothing it was doing is written back
+   * afterwards; the tabs are waited for together, not one after another.
    */
   async forgetAllTabs() {
-    for (const rt of await this.deps.stores.runtime.getAll()) {
-      await this.withLock(rt.tabId, () => this.forgetTab(rt.tabId)).catch((e) => console.warn(`JustRefresh: could not forget tab ${rt.tabId}`, e));
-    }
+    const tabs = new Set([...(await this.deps.stores.runtime.getAll()).map((rt) => rt.tabId), ...this.locks.keys()]);
+    await Promise.all(
+      [...tabs].map((tabId) => this.withLock(tabId, () => this.forgetTab(tabId)).catch((e) => console.warn(`JustRefresh: could not forget tab ${tabId}`, e))),
+    );
   }
 
   /* ---------------- resolution sync ---------------- */

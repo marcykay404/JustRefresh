@@ -57,6 +57,37 @@ describe("Reset to defaults", () => {
     expect([...env.alarms.alarms.keys()]).toEqual([]);
   });
 
+  it("waits for a check already running, even a tab's first, so nothing is written back after it", async () => {
+    const env = createApiEnv();
+    await env.service.call(env.user, "createRule", { rule: SPEC_EXAMPLE });
+    env.browser.addTab(9, "https://example.com/products/42");
+    env.page.setHtml(9, `<p id="status">Available</p>`);
+    // As if the page had just loaded: no run stored for it yet.
+    await env.runtime.delete(9);
+    // Hold the check after it has read the old rules but before it has stored anything.
+    const getTab = env.browser.getTab.bind(env.browser);
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let holding = true;
+    env.browser.getTab = async (id) => {
+      if (id === 9 && holding) {
+        holding = false;
+        await held;
+      }
+      return getTab(id);
+    };
+    const cycle = env.engine.runCycle(9, "manual");
+    await new Promise((r) => setTimeout(r, 10));
+    const reset = env.service.call(env.user, "resetConfig", { confirm: true });
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    await Promise.all([cycle, reset]);
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(await env.history.list()).toEqual([]);
+    expect(await env.runtime.getAll()).toEqual([]);
+    expect([...env.alarms.alarms.keys()]).toEqual([]);
+  });
+
   it("any other change still keeps the previous configuration as the backup", async () => {
     const env = createApiEnv();
     await env.service.call(env.user, "createRule", { rule: SPEC_EXAMPLE });
