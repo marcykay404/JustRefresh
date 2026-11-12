@@ -38,7 +38,7 @@ export const safetyInputSchema = z.strictObject({
 });
 
 export const limitsSchema = z.strictObject({
-  maxRefreshes: z.optional(z.int().check(z.gte(1), z.lte(1_000_000))),
+  maxRefreshes: z.optional(z.int().check(z.gte(1), z.lte(1_000_000))).check(z.describe("Stop after this many refreshes; the rule's clicks count too")),
   maxDurationSeconds: z.optional(z.int().check(z.gte(30), z.lte(365 * 24 * 3600))),
   stopAt: z.optional(z.iso.datetime({ offset: true })),
 });

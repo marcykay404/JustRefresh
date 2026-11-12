@@ -25,14 +25,19 @@
   Application-level state (e.g. editors with custom models, unsent chat
   drafts kept in JS) may not be detectable. Forms removed from the DOM or
   submitted are treated as saved.
-- **Frames.** Frames are read only from sites JustRefresh has access to:
-  a dashboard embedded from another site needs access to that site too
-  (Settings → Site access), and only on a page that itself has access.
-  Without it, typing in that frame isn't noticed and conditions don't see
-  inside it. Frames from `about:blank` or `srcdoc` aren't read. A frame that
-  is still loading is left out of a check, so "missing" can match before a
-  slow frame shows the element. Picker, click, highlight and "keep scroll
-  position" work in the top frame only.
+- **Frames.** Conditions read frames from the page's own site only (a
+  dashboard on `grafana.example.com` inside `erp.example.com`, not an ad or a
+  widget from elsewhere), and only where JustRefresh has access to that
+  site too. "Own site" is worked out without a public-suffix list: the last
+  two parts of the address, or three under a country's second level
+  (`example.com.sg`), so some hosting domains count as one site. Typing and
+  unsaved changes count in every frame with access, whatever its site. A
+  frame that can't be read yet (still loading) never makes "missing",
+  "doesn't contain", "text gone" or "content changed" match; they wait for
+  the next check. Frames are taken in the order Chrome numbers them, not
+  their order on the page, for "the first frame where the selector
+  matches". Picker, click, highlight and "keep scroll position" work in the
+  top frame only.
 - **Activity before monitoring.** On pages loaded before site access was
   granted, typing history is unknown; the monitor is conservative while
   focus is in an editable field during the first grace period.

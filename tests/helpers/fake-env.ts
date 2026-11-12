@@ -102,18 +102,18 @@ export class FakePage implements PagePort {
   stalled = new Set<number>();
   evaluateCalls = 0;
 
-  /** The tab's frames (granted sites), after its top document, as Chrome reports them. */
-  frames = new Map<number, Document[]>();
+  /** The tab's frames (same site), after its top document, as Chrome reports them; null = a frame that can't be read yet. */
+  frames = new Map<number, (Document | null)[]>();
   /** Activity in the tab's frames (merged with the top frame's, as chromePage does). */
   frameActivity = new Map<number, ActivitySnapshot[]>();
 
   setHtml(tabId: number, html: string) {
     this.docs.set(tabId, new JSDOM(html).window.document);
   }
-  setFrames(tabId: number, ...html: string[]) {
+  setFrames(tabId: number, ...html: (string | null)[]) {
     this.frames.set(
       tabId,
-      html.map((h) => new JSDOM(h).window.document),
+      html.map((h) => (h === null ? null : new JSDOM(h).window.document)),
     );
   }
   async evaluate(tabId: number, leaves: ConditionNode[], includeText: boolean): Promise<EvaluationResult[]> {
@@ -125,7 +125,7 @@ export class FakePage implements PagePort {
     const all = [doc, ...(this.frames.get(tabId) ?? [])];
     return mergeFrames(
       leaves,
-      all.map((d) => leaves.map((l) => evaluateDomCondition(l, d, { includeText }))),
+      all.map((d) => (d ? leaves.map((l) => evaluateDomCondition(l, d, { includeText })) : null)),
     );
   }
   clicks: { tabId: number; selector: string }[] = [];

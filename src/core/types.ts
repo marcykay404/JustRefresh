@@ -42,6 +42,8 @@ export interface MatchDetails {
    * element's text. The condition's handler removes it from its result.
    */
   fingerprint?: string;
+  /** From the engine's frame merge to the condition: a frame couldn't be read, so "absent" isn't known. */
+  partial?: boolean;
 }
 
 export interface ElementSummary {

@@ -353,7 +353,7 @@ export function Summary({ draft }: { draft: Draft }) {
       <div>
         <strong>THEN</strong> {then}
       </div>
-      {draft.limits?.maxRefreshes && <div className="muted">At most {draft.limits.maxRefreshes} refreshes</div>}
+      {draft.limits?.maxRefreshes && <div className="muted">At most {draft.limits.maxRefreshes} refreshes and clicks</div>}
     </div>
   );
 }

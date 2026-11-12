@@ -53,6 +53,10 @@ AI apps → Set up), with the commands ready to copy:
    ```
 5. Start the agent; approve it in the dashboard when the pairing request appears.
 
+After installing a newer bridge, restart your AI app as well: its running
+copy of the bridge speaks the old handshake, and calls fail with "Bridge
+disconnected" until it restarts.
+
 From a checkout of this repository, `node bridge/justrefresh-bridge.mjs install --extension-id <id>`
 (or `node bridge/install.mjs --extension-id <id>`) does the same.
 

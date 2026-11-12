@@ -82,9 +82,11 @@ export async function injectIntoOpenTabs(): Promise<void> {
     try {
       await withTimeout(chrome.scripting.executeScript({ target: { tabId: t.id, frameIds: [0] }, files: ["content.js"] }), 5000, "Content script injection");
       // Then its frames, where we may (one we can't access mustn't stop the page's own).
-      await withTimeout(chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ["content.js"] }), 5000, "Frames").catch(
-        () => undefined,
-      );
+      await withTimeout(
+        chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ["content.js"], injectImmediately: true }),
+        5000,
+        "Frames",
+      ).catch(() => undefined);
     } catch {
       /* tab may be discarded or restricted */
     }

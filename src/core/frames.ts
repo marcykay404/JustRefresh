@@ -1,7 +1,7 @@
 /**
- * A page and its frames, read as one page (frames from sites the user granted
- * access to; see content/index.ts). Results come per frame, the top frame
- * first, then the others in the order Chrome numbered them.
+ * A page and its frames, read as one page (frames from the page's own site
+ * that the user granted access to; see content/index.ts and
+ * background/chrome-ports.ts). Results come per frame, the top frame first.
  *
  * - A selector is looked up in the top frame, then in each frame: the first
  *   frame where it matches is the one compared. Counts (exists / missing) add
@@ -10,8 +10,12 @@
  *   any frame does, "doesn't contain" only when no frame does, and "content
  *   changed" watches every frame. Other comparisons (equals, starts with, …)
  *   read the top frame only, as one text can't be put together from frames.
- * - A frame that can't be read right now (still loading) is left out; the top
- *   frame's problems are the result's.
+ * - A frame that can't be read yet (still loading, not set up) never makes a
+ *   condition match by what it might lack: "missing", "doesn't contain", "text
+ *   gone" and "content changed" need every frame read, else they don't match
+ *   this time (and stateful conditions keep what they remembered). Something
+ *   found in a frame that was read still counts. The top frame's own problems
+ *   are the result's.
  */
 import { fingerprint } from "../conditions/dom-eval";
 import type { ActivitySnapshot } from "../shared/messaging-types";
@@ -19,55 +23,110 @@ import type { ConditionNode, EvaluationResult } from "./types";
 
 const countOf = (r: EvaluationResult) => (r.status === "unknown" ? 0 : (r.details?.count ?? 0));
 const hasSelector = (n: ConditionNode) => typeof n.selector === "string" && n.selector !== "";
+const UNREAD = "A frame on the page couldn't be read yet";
+
+/** Not matched for now, because a frame couldn't be read (`partial`: stateful conditions keep their memory). */
+const notYet = (from: EvaluationResult): EvaluationResult => ({
+  status: "not_matched",
+  details: { ...(from.status === "unknown" ? {} : from.details), fingerprint: undefined, note: UNREAD, partial: true },
+});
 
 /** One condition's results, one per frame (top first), as one page's. */
 export function mergeLeaf(leaf: ConditionNode, perFrame: EvaluationResult[]): EvaluationResult {
   const [top, ...rest] = perFrame;
   if (!top) return { status: "unknown", code: "evaluation_error", reason: "No frame answered" };
-  const frames = rest.filter((r) => r.status !== "unknown");
-  if (top.status === "unknown" || frames.length === 0) return top;
-  const all = [top, ...frames];
-  if (leaf.type === "dom.exists" || leaf.type === "dom.missing") return existence(leaf, all);
-  if (hasSelector(leaf)) return all.find((r) => countOf(r) > 0) ?? top;
-  return wholePage(leaf, all) ?? top;
+  if (top.status === "unknown") return top;
+  const read = [top, ...rest.filter((r) => r.status !== "unknown")];
+  const unread = read.length < perFrame.length;
+  if (leaf.type === "dom.exists" || leaf.type === "dom.missing") return existence(leaf, read, unread);
+  if (hasSelector(leaf)) {
+    // Found in the page itself: frames don't matter. Elsewhere, an unread frame might come first.
+    if (countOf(top) > 0) return top;
+    const found = read.find((r) => countOf(r) > 0);
+    if (unread) return found?.status === "matched" && isPositive(leaf) ? found : notYet(top);
+    return found ?? top;
+  }
+  return wholePage(leaf, read, unread) ?? top;
 }
 
-function existence(leaf: ConditionNode, all: EvaluationResult[]): EvaluationResult {
-  const count = all.reduce((n, r) => n + countOf(r), 0);
-  const min = typeof leaf.minCount === "number" ? leaf.minCount : 1;
-  const exists = leaf.type === "dom.exists" ? count >= min : count === 0;
-  const first = all.find((r) => countOf(r) > 0) ?? all[0]!;
-  const details = { ...(first.status === "unknown" ? {} : first.details), count };
-  return exists ? { status: "matched", details } : { status: "not_matched", details };
+/** Conditions whose match is something found, not something absent: an unread frame can't undo it. */
+function isPositive(leaf: ConditionNode): boolean {
+  if (leaf.type === "dom.text") return ["contains", "equals", "starts_with", "ends_with", "matches"].includes(String(leaf.operator));
+  if (leaf.type === "dom.attribute") return ["exists", "equals", "contains", "matches"].includes(String(leaf.operator));
+  return false;
 }
+
+function existence(leaf: ConditionNode, read: EvaluationResult[], unread: boolean): EvaluationResult {
+  const count = read.reduce((n, r) => n + countOf(r), 0);
+  const min = typeof leaf.minCount === "number" ? leaf.minCount : 1;
+  const first = read.find((r) => countOf(r) > 0) ?? read[0]!;
+  const details = { ...(first.status === "unknown" ? {} : first.details), count };
+  const exists = count >= min;
+  // Enough found is enough; "too few" or "missing" needs every frame read.
+  if (leaf.type === "dom.exists") return exists ? { status: "matched", details } : unread ? notYet(first) : { status: "not_matched", details };
+  if (count > 0) return { status: "not_matched", details };
+  return unread ? notYet(first) : { status: "matched", details };
+}
+
+/** What was found, else (nothing found) the top frame's answer, or "not yet" while a frame is unread. */
+const foundOr = (found: EvaluationResult | undefined, top: EvaluationResult, unread: boolean) => found ?? (unread ? notYet(top) : top);
 
 /** Text conditions without a selector, over every frame's text. null: the top frame decides. */
-function wholePage(leaf: ConditionNode, all: EvaluationResult[]): EvaluationResult | null {
-  const anyMatched = () => all.find((r) => r.status === "matched") ?? all[0]!;
-  if (leaf.type === "dom.text_lost") return anyMatched(); // the page reports "the text is there"
-  if (leaf.type === "dom.changed") {
-    const prints = all.map((r) => (r.status === "unknown" ? "" : (r.details?.fingerprint ?? "")));
-    const top = all[0]!;
-    if (top.status === "unknown") return top;
-    return { ...top, details: { ...top.details, fingerprint: fingerprint(prints.join("|")) } };
-  }
+function wholePage(leaf: ConditionNode, read: EvaluationResult[], unread: boolean): EvaluationResult | null {
+  const top = read[0]!;
+  const matched = read.find((r) => r.status === "matched");
+  if (leaf.type === "dom.changed") return wholePageChanged(read, unread);
+  // "Text gone": the page reports "the text is there" as matched.
+  if (leaf.type === "dom.text_lost") return foundOr(matched, top, unread);
   if (leaf.type !== "dom.text") return null;
-  if (leaf.operator === "contains" || leaf.operator === "matches") return anyMatched();
-  if (leaf.operator === "not_contains") return all.find((r) => r.status === "not_matched") ?? all[0]!;
+  if (leaf.operator === "contains" || leaf.operator === "matches") return foundOr(matched, top, unread);
+  // "Doesn't contain" is not_matched in a frame that contains it.
+  if (leaf.operator === "not_contains")
+    return foundOr(
+      read.find((r) => r.status === "not_matched"),
+      top,
+      unread,
+    );
   return null;
 }
 
-/** Results per frame (each an array over `leaves`), top first, as one page's. */
-export function mergeFrames(leaves: ConditionNode[], frames: EvaluationResult[][]): EvaluationResult[] {
+/** "Content changed" on the whole page: one fingerprint over every frame's, the same way however many there are. */
+function wholePageChanged(read: EvaluationResult[], unread: boolean): EvaluationResult {
+  const top = read[0]!;
+  if (top.status === "unknown") return top;
+  if (unread) return notYet(top);
+  const prints = read.map((r) => (r.status === "unknown" ? "" : (r.details?.fingerprint ?? "")));
+  return { ...top, details: { ...top.details, fingerprint: fingerprint(prints.join("|")) } };
+}
+
+/** Results per frame (each an array over `leaves`, or null for a frame that couldn't answer), top first, as one page's. */
+export function mergeFrames(leaves: ConditionNode[], frames: (EvaluationResult[] | null)[]): EvaluationResult[] {
+  const unreadable: EvaluationResult = { status: "unknown", code: "page_not_ready", reason: UNREAD };
   return leaves.map((leaf, i) =>
     mergeLeaf(
       leaf,
-      frames.map((f) => f[i] ?? { status: "unknown", code: "evaluation_error", reason: "Missing result" }),
+      frames.map((f) => (f ? (f[i] ?? unreadable) : unreadable)),
     ),
   );
 }
 
-/** You're using the page if you're using any of its frames. Form results are the top frame's. */
+/**
+ * The top frame's results alone, when the frames couldn't be asked. Whole-page
+ * "content changed" then can't compare (its fingerprint covers every frame).
+ */
+export function topFrameOnly(leaves: ConditionNode[], results: EvaluationResult[]): EvaluationResult[] {
+  return results.map((r, i) => {
+    const leaf = leaves[i];
+    if (!leaf || leaf.type !== "dom.changed" || hasSelector(leaf) || r.status === "unknown") return r;
+    return { status: "not_matched", details: { ...r.details, fingerprint: undefined, note: "The page's frames couldn't be read" } };
+  });
+}
+
+/**
+ * You're using the page if you're using any of its frames. Form results are
+ * the top frame's. "Monitoring for" is the shortest among frames you're
+ * editing in (a frame given access just now has no typing history yet).
+ */
 export function mergeActivity(frames: ActivitySnapshot[]): ActivitySnapshot | null {
   const [top, ...rest] = frames;
   if (!top) return null;
@@ -77,14 +136,16 @@ export function mergeActivity(frames: ActivitySnapshot[]): ActivitySnapshot | nu
     return known.length ? Math.min(...known) : null;
   };
   const dirty = all.some((s) => s.dirty === "dirty") ? "dirty" : all.some((s) => s.dirty === "unknown") ? "unknown" : "clean";
+  const editing = all.filter((s) => s.editing);
   return {
     ...top,
+    monitoringForMs: editing.length ? Math.min(...editing.map((s) => s.monitoringForMs)) : top.monitoringForMs,
     sinceKeyMs: since("sinceKeyMs"),
     sinceInputMs: since("sinceInputMs"),
     sincePointerMs: since("sincePointerMs"),
     sinceScrollMs: since("sinceScrollMs"),
     composing: all.some((s) => s.composing),
-    editing: all.some((s) => s.editing),
+    editing: editing.length > 0,
     dirty,
   };
 }
@@ -95,4 +156,17 @@ export function mergeSelectorTests<T extends { ok: true; count: number; samples:
   if (!top || !top.ok) return top!;
   const ok = [top, ...rest].filter((r): r is T & { ok: true } => r.ok);
   return { ...top, count: ok.reduce((n, r) => n + r.count, 0), samples: ok.flatMap((r) => r.samples).slice(0, 5) };
+}
+
+/**
+ * The site a host belongs to, roughly (no public-suffix list): its last two
+ * labels, or three under a country's second level ("example.com.sg",
+ * "example.co.uk"). Addresses and single-label hosts are their own site.
+ */
+export function siteOf(host: string): string {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  if (/^[\d.]+$/.test(h) || h.includes(":") || !h.includes(".")) return h;
+  const labels = h.split(".");
+  const countrySecondLevel = labels.at(-1)!.length === 2 && /^(co|com|net|org|gov|edu|ac|or|ne|go|mil)$/.test(labels.at(-2)!);
+  return labels.slice(countrySecondLevel ? -3 : -2).join(".");
 }

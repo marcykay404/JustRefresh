@@ -1,13 +1,14 @@
 // @ts-nocheck — drives the real bridge on Windows: the named pipe, icacls, reg and the .bat launcher.
-// Runs only on Windows (in CI: .github/workflows/ci.yml). It writes the native host's
-// registry entry under HKCU and removes it again.
+// Runs only on Windows CI (.github/workflows/ci.yml), or with JUSTREFRESH_WINDOWS_TESTS=1:
+// it writes the native host's registry entries under HKCU and removes them again,
+// and uses this account's bridge pipe, so it would replace a real install.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLineDecoder, createNativeDecoder, encodeNative } from "../../bridge/lib.mjs";
 
-const isWin = process.platform === "win32";
+const isWin = process.platform === "win32" && (process.env.CI === "true" || process.env.JUSTREFRESH_WINDOWS_TESTS === "1");
 const BRIDGE = "bridge/justrefresh-bridge.mjs";
 const ID = "abcdefghijklmnopabcdefghijklmnop";
 const KEY_PATH = "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.justrefresh.bridge";
@@ -50,10 +51,16 @@ describe.runIf(isWin)("bridge on Windows", () => {
     const chrome = fakeChrome(host);
     await wait(chrome.listening, "pipe listening");
 
-    // icacls: inheritance removed, only this account has access.
+    // icacls: inheritance removed, and only this account has access (full control, inherited by what's inside).
     const acl = spawnSync("icacls", [dir], { encoding: "utf8" }).stdout;
-    expect(acl).toContain(process.env.USERNAME);
-    expect(acl).not.toMatch(/BUILTIN\\Users|Everyone|Authenticated Users/i);
+    const entries = acl
+      .replace(dir, "")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.includes(":("));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatch(new RegExp(`\\\\${process.env.USERNAME}:\\(OI\\)\\(CI\\)\\(F\\)$`, "i"));
+    expect(acl).not.toMatch(/\(I\)|SYSTEM|Administrators|BUILTIN\\Users|Everyone/);
 
     const mcp = spawn(process.execPath, [BRIDGE, "mcp"], { env: { ...env, JUSTREFRESH_AGENT_ID: "win-agent" } });
     const replies = [];

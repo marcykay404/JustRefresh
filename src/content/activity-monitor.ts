@@ -1,5 +1,6 @@
 /**
- * Activity & unsaved-change monitor (content script, top frame only).
+ * Activity & unsaved-change monitor (content script, in the page and in its
+ * frames from granted sites; the extension merges them, see core/frames.ts).
  *
  * Privacy: only timestamps and booleans are kept. Input values and
  * keystrokes are never read into variables that leave this module, never

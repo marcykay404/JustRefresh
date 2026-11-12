@@ -88,8 +88,9 @@ function runNativeHost() {
   const server = net.createServer((socket) => {
     const challenge = newNonce();
     let proven = false;
+    let closed = false;
     let client = null;
-    // A client that doesn't finish the handshake in time is dropped.
+    // A client that doesn't finish the handshake (through identify) in time is dropped.
     const unproven = setTimeout(() => socket.destroy(), HANDSHAKE_MS);
     socket.write(line({ type: "challenge", nonce: challenge }));
     socket.on(
@@ -97,14 +98,18 @@ function runNativeHost() {
       createLineDecoder(
         (msg) => {
           if (client) return relay(socket, client, msg);
+          if (closed) return; // lines after a refusal in the same chunk
           if (proven) {
             client = identified(msg);
-            if (!client) socket.end(line({ type: "error", error: "Expected the client's identity" }));
-            return;
+            if (client) return void clearTimeout(unproven);
+            closed = true;
+            return void socket.end(line({ type: "error", error: "Expected the client's identity" }));
           }
-          if (!admit(msg, token, challenge)) return void socket.end(line({ type: "error", error: "Invalid token" }));
+          if (!admit(msg, token, challenge)) {
+            closed = true;
+            return void socket.end(line({ type: "error", error: "Invalid token" }));
+          }
           proven = true;
-          clearTimeout(unproven);
           socket.write(line({ type: "ready", proof: proofOf(token, "server", msg.nonce) }));
         },
         undefined,

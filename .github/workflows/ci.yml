@@ -26,30 +26,40 @@ jobs:
       - run: npm run bundle:report
 
   # The bridge's Windows parts (named pipe, icacls, the HKCU registry entry,
-  # the .bat launcher) can only be tested on Windows. Only when the bridge
-  # changes: Windows minutes cost double on private repositories.
-  bridge-windows:
-    name: Bridge (Windows)
-    runs-on: windows-latest
+  # the .bat launcher) can only be tested on Windows. Decided on Linux first,
+  # so a Windows runner starts only when the bridge (or what tests it) changed:
+  # Windows minutes cost double on private repositories.
+  bridge-changed:
+    name: Bridge changed?
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.changed.outputs.run }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Changed the bridge?
-        id: changed
-        shell: bash
+      - id: changed
         run: |
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || ! git cat-file -e "$base" 2>/dev/null \
-            || git diff --name-only "$base" HEAD | grep -qE '^(bridge/|tests/integration/bridge-|tests/unit/(bridge|install-lib)\.test\.ts|\.github/workflows/ci\.yml)'; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$base" HEAD > changed.txt
+          if grep -E '^(bridge/|tests/integration/bridge-|tests/unit/(bridge|install-lib)\.test\.ts|\.github/workflows/ci\.yml|package(-lock)?\.json|vitest\.config\.ts)' changed.txt > /dev/null; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
-      - if: steps.changed.outputs.run == 'true'
-        uses: actions/setup-node@v4
+
+  bridge-windows:
+    name: Bridge (Windows)
+    needs: bridge-changed
+    if: needs.bridge-changed.outputs.run == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - if: steps.changed.outputs.run == 'true'
-        run: npm ci
-      - if: steps.changed.outputs.run == 'true'
-        run: npx vitest run tests/integration/bridge-windows.test.ts tests/unit/bridge.test.ts tests/unit/install-lib.test.ts
+      - run: npm ci
+      - run: npx vitest run tests/integration/bridge-windows.test.ts tests/unit/bridge.test.ts tests/unit/install-lib.test.ts

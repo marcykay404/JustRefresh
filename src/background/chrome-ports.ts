@@ -15,7 +15,7 @@ import {
   type OffscreenMessage,
 } from "../shared/messaging-types";
 import { hasHostAccess } from "./host-access";
-import { mergeActivity, mergeFrames, mergeSelectorTests } from "../core/frames";
+import { mergeActivity, mergeFrames, mergeSelectorTests, siteOf, topFrameOnly } from "../core/frames";
 import { withTimeout } from "../core/timeout";
 import { isLocalWebhookUrl } from "../actions/page";
 
@@ -222,38 +222,62 @@ type FrameCall =
   | { kind: "evaluate"; conditions: ConditionNode[]; includeText: boolean }
   | { kind: "testSelector"; selector: string; includeText: boolean };
 
+/** One frame's answer: its host, and what its content script returned (null: no content script of ours there yet). */
+type FrameAnswer<T> = { host: string; value: T | null };
+
 /**
  * Ask every frame's content script at once (scripting.executeScript runs the
- * function in this extension's isolated world in each frame we may access).
- * Answers come top frame first, then by frame id. Frames without our content
- * script (no site access, or not set up) don't answer.
+ * function in this extension's isolated world in each frame we may access;
+ * frames without site access don't answer at all). Answers come top frame
+ * first, then by frame id. `injectImmediately`: don't wait for slow frames
+ * to finish loading (a frame still loading says so itself).
  */
-async function inFrames<T>(tabId: number, call: FrameCall): Promise<T[]> {
+async function inFrames<T>(tabId: number, call: FrameCall): Promise<FrameAnswer<T>[]> {
   const results = await withTimeout(
     chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
+      injectImmediately: true,
       args: [FRAME_API, call] as [string, FrameCall],
       func: (key: string, c: FrameCall) => {
-        const api = (globalThis as unknown as Record<string, FrameApi | undefined>)[key];
-        if (!api || api.version !== chrome.runtime.getManifest().version) return null;
-        if (c.kind === "activity") return api.activity();
-        if (c.kind === "evaluate") return api.evaluate(c.conditions, c.includeText);
-        return api.testSelector(c.selector, c.includeText);
+        const g = globalThis as unknown as Record<string, FrameApi | undefined>;
+        // Own property only: a page element with that id is reachable on the global too.
+        const api = Object.hasOwn(g, key) ? g[key] : undefined;
+        const ours = !!api && typeof api.evaluate === "function" && api.version === chrome.runtime.getManifest().version;
+        const value = !ours
+          ? null
+          : c.kind === "activity"
+            ? api.activity()
+            : c.kind === "evaluate"
+              ? api.evaluate(c.conditions, c.includeText)
+              : api.testSelector(c.selector, c.includeText);
+        return { host: location.hostname, value };
       },
     }),
     MESSAGE_TIMEOUT_MS,
     "Content scripts",
   );
-  const answered = results.filter((r) => r.result !== null && r.result !== undefined);
-  if (!answered.some((r) => r.frameId === 0)) throw new Error("The page's own frame didn't answer");
-  return answered.sort((a, b) => (a.frameId === 0 ? -1 : b.frameId === 0 ? 1 : a.frameId - b.frameId)).map((r) => r.result as T);
+  const answers = results
+    .filter((r) => r.result)
+    .sort((a, b) => (a.frameId === 0 ? -1 : b.frameId === 0 ? 1 : a.frameId - b.frameId))
+    .map((r) => r.result as FrameAnswer<T>);
+  if (results.find((r) => r.frameId === 0)?.result?.value == null) throw new Error("The page's own frame didn't answer");
+  return answers;
 }
+
+/**
+ * Conditions read the page's frames from its own site only: an ad or a
+ * widget from elsewhere (with "All websites" access) mustn't make a rule
+ * match. Typing protection uses every frame.
+ */
+const ownSite = <T>(answers: FrameAnswer<T>[]) => answers.filter((a) => siteOf(a.host) === siteOf(answers[0]!.host));
 
 /** Best effort: the content script in the page's frames too (a copy already there does nothing). */
 export async function injectFrames(tabId: number) {
-  await withTimeout(chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ["content.js"] }), INJECT_TIMEOUT_MS, "Frames").catch(
-    () => undefined,
-  );
+  await withTimeout(
+    chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ["content.js"], injectImmediately: true }),
+    INJECT_TIMEOUT_MS,
+    "Frames",
+  ).catch(() => undefined);
 }
 
 const done = async (tabId: number, kind: "saveScroll" | "cancelPick") => {
@@ -270,13 +294,17 @@ export const chromePage: PagePort & {
     if (!ok.ok) return leaves.map(() => ({ status: "unknown", code: ok.code, reason: ok.reason }));
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        return mergeFrames(leaves, await inFrames<EvaluationResult[]>(tabId, { kind: "evaluate", conditions: leaves, includeText }));
+        const answers = ownSite(await inFrames<EvaluationResult[]>(tabId, { kind: "evaluate", conditions: leaves, includeText }));
+        return mergeFrames(
+          leaves,
+          answers.map((a) => a.value),
+        );
       } catch {
         /* frames couldn't be asked: the top frame alone */
       }
       try {
         const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "evaluate", conditions: leaves, includeText }, "evaluate");
-        return res.results;
+        return topFrameOnly(leaves, res.results);
       } catch (e) {
         if (attempt === 2) {
           return leaves.map(() => ({ status: "unknown", code: "timeout", reason: (e as Error).message }));
@@ -292,8 +320,8 @@ export const chromePage: PagePort & {
     try {
       const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "activity" }, "activity");
       // Typing in a frame counts too; the top frame's answer stands if the frames can't be asked.
-      const frames = await inFrames<ActivitySnapshot>(tabId, { kind: "activity" }).catch(() => []);
-      return { activity: frames.length > 1 ? mergeActivity([res.activity, ...frames.slice(1)]) : res.activity };
+      const frames = (await inFrames<ActivitySnapshot>(tabId, { kind: "activity" }).catch(() => [])).slice(1).flatMap((a) => (a.value ? [a.value] : []));
+      return { activity: frames.length ? mergeActivity([res.activity, ...frames]) : res.activity };
     } catch (e) {
       return { activity: null, reason: (e as Error).message };
     }
@@ -330,7 +358,9 @@ export const chromePage: PagePort & {
     if (!ok.ok) return { ok: false, error: ok.reason };
     const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "testSelector", selector, includeText }, "testSelector");
     type Tested = typeof res.result;
-    const frames = await inFrames<Tested>(tabId, { kind: "testSelector", selector, includeText }).catch(() => []);
-    return frames.length > 1 ? mergeSelectorTests([res.result, ...frames.slice(1)]) : res.result;
+    const frames = ownSite(await inFrames<Tested>(tabId, { kind: "testSelector", selector, includeText }).catch(() => []))
+      .slice(1)
+      .flatMap((a) => (a.value ? [a.value] : []));
+    return frames.length ? mergeSelectorTests([res.result, ...frames]) : res.result;
   },
 };
