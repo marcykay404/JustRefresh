@@ -26,6 +26,8 @@ const SOCKET = isWin ? `\\\\.\\pipe\\justrefresh-${os.userInfo().username}` : pa
 const TOKEN_FILE = path.join(DIR, "token");
 const log = (...a) => process.stderr.write(`[justrefresh-bridge] ${a.join(" ")}\n`);
 const line = (msg) => JSON.stringify(msg) + "\n";
+/** Handshake version: 2 = the client identifies itself only after the bridge's proof. */
+const PROTOCOL = 2;
 /** Both ends must finish the handshake within this time. */
 const HANDSHAKE_MS = 10_000;
 
@@ -110,7 +112,10 @@ function runNativeHost() {
             return void socket.end(line({ type: "error", error: "Invalid token" }));
           }
           proven = true;
-          socket.write(line({ type: "ready", proof: proofOf(token, "server", msg.nonce) }));
+          // A client from before identify (it named itself in hello) still works.
+          if (msg.client) client = identified({ type: "identify", client: msg.client });
+          if (client) clearTimeout(unproven);
+          socket.write(line({ type: "ready", v: PROTOCOL, proof: proofOf(token, "server", msg.nonce) }));
         },
         undefined,
         () => socket.destroy(), // garbage on the socket: drop that client
@@ -203,6 +208,12 @@ function runMcp() {
           return socket.write(line({ type: "hello", proof: proofOf(token, "client", msg.nonce), nonce: ours }));
         }
         clearTimeout(timer);
+        if (msg.type === "ready" && sameSecret(msg.proof, proofOf(token, "server", ours)) && !(msg.v >= PROTOCOL)) {
+          // An older bridge, still running in Chrome after an update: it doesn't know identify.
+          return fail(
+            "The JustRefresh bridge running in Chrome is older than this one. Turn desktop apps off and on in JustRefresh → Agent Integrations, or restart Chrome.",
+          );
+        }
         if (msg.type === "ready" && sameSecret(msg.proof, proofOf(token, "server", ours))) {
           proven = true;
           // Only now, talking to JustRefresh's own bridge, say which agent this is.

@@ -27,14 +27,18 @@
   submitted are treated as saved.
 - **Frames.** Conditions read frames from the page's own site only (a
   dashboard on `grafana.example.com` inside `erp.example.com`, not an ad or a
-  widget from elsewhere), and only where JustRefresh has access to that
-  site too. "Own site" is worked out without a public-suffix list: the last
-  two parts of the address, or three under a country's second level
-  (`example.com.sg`), so some hosting domains count as one site. Typing and
-  unsaved changes count in every frame with access, whatever its site. A
-  frame that can't be read yet (still loading) never makes "missing",
-  "doesn't contain", "text gone" or "content changed" match; they wait for
-  the next check. Frames are taken in the order Chrome numbers them, not
+  widget from elsewhere, nor a page of the site that such a frame embeds),
+  and only where JustRefresh has access to that site too. "Own site" is
+  worked out without a public-suffix list: the last two parts of the
+  address, or three under a country's second level (`example.com.sg`), so
+  shared hosting domains (`github.io`, `cloudfront.net`, …) count as one
+  site. Typing counts in every frame with access, unsaved changes only in
+  frames of the page's own site. A frame that can't be read yet (still
+  loading) leaves conditions that depend on it "unknown: a frame couldn't be
+  read yet": the rule neither matches nor pauses, and tries again at the
+  next check. Hidden frames and empty `about:blank` / `srcdoc` frames are
+  left out; `about:blank` and `srcdoc` frames with content (rich-text
+  editors) are read. Frames are taken in the order Chrome numbers them, not
   their order on the page, for "the first frame where the selector
   matches". Picker, click, highlight and "keep scroll position" work in the
   top frame only.

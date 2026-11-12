@@ -125,7 +125,7 @@ const NOT_COMPARED = "Not compared this time: the page has just loaded, or the t
 
 /** The page's result without what only the engine needs. */
 function forOthers(r: EvaluationResult, status: "matched" | "not_matched", note: string): EvaluationResult {
-  const { fingerprint: _f, partial: _p, ...details } = r.status === "unknown" ? {} : (r.details ?? {});
+  const { fingerprint: _f, ...details } = r.status === "unknown" ? {} : (r.details ?? {});
   return { status, details: { ...details, note } };
 }
 
@@ -179,8 +179,6 @@ export const domTextLost: ConditionHandler<DomTextLost> = {
       return forOthers(r, "not_matched", "The text is there");
     }
     if (!ctx.memory) return forOthers(r, "not_matched", NOT_COMPARED);
-    // Not found, but a frame couldn't be read: it may be there. Neither gone nor forgotten.
-    if (r.details?.partial) return forOthers(r, "not_matched", r.details.note ?? "Part of the page couldn't be read");
     if (ctx.memory.get() !== "seen") return forOthers(r, "not_matched", "The text hasn't been seen on this page yet");
     ctx.memory.set(undefined);
     return forOthers(r, "matched", "The text is gone");

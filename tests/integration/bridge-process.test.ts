@@ -93,6 +93,58 @@ describe.skipIf(isWin)("bridge processes", () => {
     host.stdin.end();
   });
 
+  it("tells the user when the bridge running in Chrome is older than this one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
+    writeFileSync(join(dir, "token"), "tok", { mode: 0o600 });
+    // An older native host: its ready has no protocol version.
+    const old = net.createServer((s) => {
+      s.write(JSON.stringify({ type: "challenge", nonce: newNonce() }) + "\n");
+      s.on(
+        "data",
+        createLineDecoder((m) => s.write(JSON.stringify({ type: "ready", proof: proofOf("tok", "server", m.nonce) }) + "\n")),
+      );
+    });
+    await new Promise<void>((r) => old.listen(join(dir, "bridge.sock"), r));
+    const mcp = startMcp({ ...process.env, JUSTREFRESH_BRIDGE_DIR: dir });
+    mcp.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: "A" } } });
+    await mcp.reply(1);
+    mcp.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "refresh_list_rules", arguments: {} } });
+    expect(JSON.stringify(await mcp.reply(2))).toMatch(/older than this one/);
+    mcp.proc.kill();
+    old.close();
+  }, 15_000);
+
+  it("still serves an older client that names itself in its hello", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
+    const host = spawn(process.execPath, [BRIDGE, "native-host"], { env: { ...process.env, JUSTREFRESH_BRIDGE_DIR: dir } });
+    const seen: any[] = [];
+    host.stdout.on(
+      "data",
+      createNativeDecoder((msg) => {
+        seen.push(msg);
+        host.stdin.write(encodeNative({ id: msg.id, ok: true, result: [] }));
+      }),
+    );
+    await wait(() => existsSync(join(dir, "bridge.sock")) && existsSync(join(dir, "token")), "socket");
+    const token = readFileSync(join(dir, "token"), "utf8").trim();
+    const sock = net.createConnection(join(dir, "bridge.sock"));
+    const msgs: any[] = [];
+    sock.on(
+      "data",
+      createLineDecoder((m) => msgs.push(m)),
+    );
+    await wait(() => msgs.length, "challenge");
+    sock.write(
+      JSON.stringify({ type: "hello", proof: proofOf(token, "client", msgs[0].nonce), nonce: newNonce(), client: { id: "old-agent", name: "Old" } }) + "\n",
+    );
+    await wait(() => msgs.length > 1, "ready");
+    sock.write(JSON.stringify({ id: 1, method: "listRules" }) + "\n");
+    await wait(() => msgs.find((m) => m.id === 1), "reply");
+    expect(seen[0].client).toEqual({ id: "old-agent", name: "Old" });
+    sock.destroy();
+    host.stdin.end();
+  }, 15_000);
+
   it("a proven client must say who it is before its first request", async () => {
     const dir = mkdtempSync(join(tmpdir(), "justrefresh-bridge-"));
     const host = spawn(process.execPath, [BRIDGE, "native-host"], { env: { ...process.env, JUSTREFRESH_BRIDGE_DIR: dir }, stdio: ["pipe", "pipe", "pipe"] });

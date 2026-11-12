@@ -15,7 +15,7 @@ import {
   type OffscreenMessage,
 } from "../shared/messaging-types";
 import { hasHostAccess } from "./host-access";
-import { mergeActivity, mergeFrames, mergeSelectorTests, siteOf, topFrameOnly } from "../core/frames";
+import { mergeActivity, mergeFrames, mergeSelectorTests, siteOf } from "../core/frames";
 import { withTimeout } from "../core/timeout";
 import { isLocalWebhookUrl } from "../actions/page";
 
@@ -222,8 +222,13 @@ type FrameCall =
   | { kind: "evaluate"; conditions: ConditionNode[]; includeText: boolean }
   | { kind: "testSelector"; selector: string; includeText: boolean };
 
-/** One frame's answer: its host, and what its content script returned (null: no content script of ours there yet). */
-type FrameAnswer<T> = { host: string; value: T | null };
+/**
+ * One frame's answer: its site's host (from its origin, which about:blank and
+ * srcdoc frames inherit), the hosts of the frames it is nested in, whether to
+ * leave it out (a hidden helper frame, or an empty about:blank one), and what
+ * its content script returned (null: none of ours there yet, e.g. loading).
+ */
+type FrameAnswer<T> = { host: string; ancestors: string[]; skip: boolean; value: T | null };
 
 /**
  * Ask every frame's content script at once (scripting.executeScript runs the
@@ -238,19 +243,42 @@ async function inFrames<T>(tabId: number, call: FrameCall): Promise<FrameAnswer<
       target: { tabId, allFrames: true },
       injectImmediately: true,
       args: [FRAME_API, call] as [string, FrameCall],
+      // Runs in each frame, so everything it uses is inside it.
       func: (key: string, c: FrameCall) => {
-        const g = globalThis as unknown as Record<string, FrameApi | undefined>;
-        // Own property only: a page element with that id is reachable on the global too.
-        const api = Object.hasOwn(g, key) ? g[key] : undefined;
-        const ours = !!api && typeof api.evaluate === "function" && api.version === chrome.runtime.getManifest().version;
-        const value = !ours
-          ? null
-          : c.kind === "activity"
+        const hostOf = (origin: string) => {
+          try {
+            return new URL(origin).hostname;
+          } catch {
+            return "";
+          }
+        };
+        /** Our content script's API in this frame (own property: a page element with that id is reachable on the global too). */
+        const ownApi = () => {
+          const g = globalThis as unknown as Record<string, FrameApi | undefined>;
+          const api = Object.hasOwn(g, key) ? g[key] : undefined;
+          return api && typeof api.evaluate === "function" && api.version === chrome.runtime.getManifest().version ? api : null;
+        };
+        /** Without our content script: a frame on its way to a page is "not read yet"; an empty about:blank or srcdoc one is nothing. */
+        const emptyBlank = () => {
+          let pending = false;
+          try {
+            pending = location.href === "about:blank" && !!window.frameElement?.getAttribute("src");
+          } catch {
+            /* cross-origin parent */
+          }
+          return (location.href === "about:blank" || location.href === "about:srcdoc") && !pending;
+        };
+        const call = (api: FrameApi) =>
+          c.kind === "activity"
             ? api.activity()
             : c.kind === "evaluate"
               ? api.evaluate(c.conditions, c.includeText)
               : api.testSelector(c.selector, c.includeText);
-        return { host: location.hostname, value };
+        const host = hostOf(self.origin && self.origin !== "null" ? self.origin : location.origin);
+        const ancestors = [...(location.ancestorOrigins ?? [])].map(hostOf);
+        const hidden = window !== window.top && (innerWidth === 0 || innerHeight === 0);
+        const api = ownApi();
+        return { host, ancestors, skip: hidden || (!api && emptyBlank()), value: api ? call(api) : null };
       },
     }),
     MESSAGE_TIMEOUT_MS,
@@ -265,11 +293,15 @@ async function inFrames<T>(tabId: number, call: FrameCall): Promise<FrameAnswer<
 }
 
 /**
- * Conditions read the page's frames from its own site only: an ad or a
- * widget from elsewhere (with "All websites" access) mustn't make a rule
- * match. Typing protection uses every frame.
+ * Conditions read the page's frames from its own site only, and only where
+ * every frame they sit in is of that site too: an ad or a widget from
+ * elsewhere (with "All websites" access), or a page of the site that such a
+ * frame embeds, mustn't make a rule match. Typing protection uses every frame.
  */
-const ownSite = <T>(answers: FrameAnswer<T>[]) => answers.filter((a) => siteOf(a.host) === siteOf(answers[0]!.host));
+function ownSite<T>(answers: FrameAnswer<T>[]): FrameAnswer<T>[] {
+  const site = siteOf(answers[0]!.host);
+  return answers.filter((a, i) => i === 0 || (!a.skip && a.host !== "" && siteOf(a.host) === site && a.ancestors.every((h) => siteOf(h) === site)));
+}
 
 /** Best effort: the content script in the page's frames too (a copy already there does nothing). */
 export async function injectFrames(tabId: number) {
@@ -304,7 +336,8 @@ export const chromePage: PagePort & {
       }
       try {
         const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "evaluate", conditions: leaves, includeText }, "evaluate");
-        return topFrameOnly(leaves, res.results);
+        // The page has frames we couldn't ask: they count as not read yet.
+        return mergeFrames(leaves, res.frames ? [res.results, null] : [res.results]);
       } catch (e) {
         if (attempt === 2) {
           return leaves.map(() => ({ status: "unknown", code: "timeout", reason: (e as Error).message }));
@@ -319,8 +352,11 @@ export const chromePage: PagePort & {
     if (!ok.ok) return { activity: null, reason: ok.reason };
     try {
       const res = await send(tabId, { protocol: CONTENT_PROTOCOL, requestId: requestId(), kind: "activity" }, "activity");
-      // Typing in a frame counts too; the top frame's answer stands if the frames can't be asked.
-      const frames = (await inFrames<ActivitySnapshot>(tabId, { kind: "activity" }).catch(() => [])).slice(1).flatMap((a) => (a.value ? [a.value] : []));
+      // Typing in any frame counts too; unsaved changes only in frames of the page's own site (a script
+      // filling in an ad's form isn't yours). The top frame's answer stands if the frames can't be asked.
+      const answers = await inFrames<ActivitySnapshot>(tabId, { kind: "activity" }).catch(() => []);
+      const own = new Set(ownSite(answers));
+      const frames = answers.slice(1).flatMap((a) => (a.value ? [own.has(a) ? a.value : { ...a.value, dirty: "clean" as const }] : []));
       return { activity: frames.length ? mergeActivity([res.activity, ...frames]) : res.activity };
     } catch (e) {
       return { activity: null, reason: (e as Error).message };

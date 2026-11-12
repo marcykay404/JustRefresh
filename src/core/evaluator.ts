@@ -120,6 +120,20 @@ export async function evaluateConditionTree(root: ConditionNode, input: Evaluati
   return { result, trace: traces.get(root)!, memory };
 }
 
+/**
+ * Unknown only because frames of the page couldn't be read yet (every unknown
+ * leaf says "frame_not_ready"): nothing is wrong with the page, so the engine
+ * treats it as "not this time" rather than applying the onUnknown policy.
+ */
+export function onlyFramesNotReady(trace: EvaluationTrace): boolean {
+  if (trace.result.status !== "unknown") return false;
+  const leaves: EvaluationTrace[] = [];
+  const walk = (t: EvaluationTrace) => (t.children?.length ? t.children.forEach(walk) : leaves.push(t));
+  walk(trace);
+  const unknown = leaves.filter((l) => l.result.status === "unknown");
+  return unknown.length > 0 && unknown.every((l) => l.result.status === "unknown" && l.result.code === "frame_not_ready");
+}
+
 /** Human-readable one-line explanation of a trace (for status & history). */
 export function explainTrace(trace: EvaluationTrace): string {
   const r = trace.result;

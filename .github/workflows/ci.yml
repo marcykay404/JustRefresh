@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR or branch replaces a run still going.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   checks:
     name: Checks (Linux)
@@ -21,7 +26,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      - run: npx eslint src tests bridge scripts
+      - run: npm test # includes the Prettier and complexity checks
       - run: npm run build
       - run: npm run bundle:report
 
@@ -46,7 +52,7 @@ jobs:
             exit 0
           fi
           git diff --name-only "$base" HEAD > changed.txt
-          if grep -E '^(bridge/|tests/integration/bridge-|tests/unit/(bridge|install-lib)\.test\.ts|\.github/workflows/ci\.yml|package(-lock)?\.json|vitest\.config\.ts)' changed.txt > /dev/null; then
+          if grep -E '^(bridge/|tests/integration/bridge-|tests/unit/(bridge|install-lib)\.test\.ts|\.github/workflows/ci\.yml|package(-lock)?\.json|vitest\.config\.ts|scripts/build\.mjs)' changed.txt > /dev/null; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 

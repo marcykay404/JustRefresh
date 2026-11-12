@@ -48,7 +48,9 @@ When a monitor ends without its condition matching (`onUnknown: "pause"`
 gives up after `maxUnknownRetries`, or `onUnknown: "stop"`), a
 "Monitoring stopped" notification is shown (if notifications are enabled),
 so an unattended "refresh until" never ends silently.
-`limits.maxRefreshes` counts the rule's clicks as well as its refreshes.
+`limits.maxRefreshes` counts the rule's clicks as well as its refreshes; a
+click or refresh that would go over it isn't made, and a page a click opens
+(within 15 seconds) stays in the same run, so its counts go on.
 `safety.maxRefreshes` is accepted for compatibility and normalized into
 `limits.maxRefreshes`. The API adds a read-only `meta` object
 (`createdAt`, `updatedAt`, `revision`, `origin`, `draft`).
@@ -105,9 +107,11 @@ matches in every frame. Text conditions without a selector read every
 frame: `contains` and `matches` match when any frame does, `not_contains`
 only when none does, and `dom.changed` watches every frame. Other
 comparisons without a selector (`equals`, `starts_with`, …) read the page
-itself only. While a frame can't be read yet, conditions that match on
-something being absent or changed (`dom.missing`, `not_contains`,
-`dom.text_lost`, `dom.changed`) don't match. Typing and unsaved changes in
+itself only. While a frame can't be read yet, conditions that depend on it
+(`dom.missing`, `not_contains`, `dom.text_lost`, `dom.changed`, or a selector
+not found in the page itself) are `unknown` with code `frame_not_ready`, so
+`not` can't turn them into a match. A check that is unknown only for that
+reason counts as "not this time": the `onUnknown` policy isn't applied. Typing and unsaved changes in
 any frame with access protect the page like its own.
 
 ### Conditions that remember the previous check

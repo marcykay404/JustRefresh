@@ -14,7 +14,7 @@
 import { isLocalWebhookUrl } from "../../actions/page";
 import type { ActionContext, TriggerEvent, TriggerHandler } from "../../registries/contracts";
 import type { ActivitySnapshot } from "../../shared/messaging-types";
-import { explainTrace } from "../evaluator";
+import { explainTrace, onlyFramesNotReady } from "../evaluator";
 import { resolveTab } from "../rule-resolver";
 import { decideSafety, FORM_RESULT_REASON } from "../safety";
 import { checkLimits, inActiveWindow, limitDeadline, MIN_ALARM_DELAY_MS, nextWindowStart } from "../schedule";
@@ -224,8 +224,15 @@ export abstract class CycleEngine extends EngineBase {
     }
     c.rt = out ? { ...latest, lastEvaluation: { at: now, status, reason: explainTrace(out.trace) }, ...withMemory(out.memory) } : latest;
 
-    const result = status === "matched" ? await this.onMatched(c) : status === "unknown" ? await this.onUnknown(c, trace) : null;
-    return { ...(result ?? (await this.onNotMatched(c, status))), evaluation: trace };
+    return { ...(await this.act(c, status, trace)), evaluation: trace };
+  }
+
+  /** The actions for what the check found. A frame still loading isn't a problem with the page: "not this time", keeping the unknown streak. */
+  private async act(c: Cycle, status: Outcome, trace: EvaluationTrace | undefined): Promise<CycleResult> {
+    if (status === "matched") return this.onMatched(c);
+    const framesLoading = status === "unknown" && !!trace && onlyFramesNotReady(trace);
+    const result = status === "unknown" && !framesLoading ? await this.onUnknown(c, trace) : null;
+    return result ?? this.onNotMatched(c, framesLoading ? "not_matched" : status, framesLoading);
   }
 
   private async onMatched(c: Cycle): Promise<CycleResult> {
@@ -271,8 +278,8 @@ export abstract class CycleEngine extends EngineBase {
     return null; // "refresh": carry on as if not matched
   }
 
-  private async onNotMatched(c: Cycle, status: Outcome): Promise<CycleResult> {
-    const start = { ...c.rt, unknownStreak: status === "unknown" ? c.rt.unknownStreak + 1 : 0 };
+  private async onNotMatched(c: Cycle, status: Outcome, keepStreak = false): Promise<CycleResult> {
+    const start = { ...c.rt, unknownStreak: keepStreak ? c.rt.unknownStreak : status === "unknown" ? c.rt.unknownStreak + 1 : 0 };
     c.rt = await this.runActions(c, start, c.rule.actions.onNotMatched, status, { allowRefresh: true });
     if (c.rt.status === "evaluating") {
       const nextDueAt = this.nextDue(c.rule, c.now);
@@ -332,15 +339,19 @@ export abstract class CycleEngine extends EngineBase {
       now: this.now(),
       reload: async ({ bypassCache, keepScroll }) => {
         if (!allowRefresh) throw new Error("Refresh is not allowed in this phase");
+        // A click earlier in this list may have used the last of the limit: the next check ends the run.
+        if (checkLimits(rule.limits, run.rt, this.now()).reached) return;
         run.rt = await this.performReload(rule, tab, run.rt, bypassCache, config, keepScroll === true);
       },
       // Like a refresh: not where it could loop, and not while you type or have unsaved changes.
       click: async (selector) => {
         if (!allowRefresh) throw new Error("Clicking is not allowed in this phase");
+        const limit = checkLimits(rule.limits, run.rt, this.now());
+        if (limit.reached) return { ok: false as const, error: `Not clicked: ${limit.reason}` };
         const { activity, reason } = await this.page.activity(tab.id);
         this.checkSafety(rule, tab, run.rt, activity, reason, this.now());
         const result = await this.page.click(tab.id, selector);
-        if (result.ok) run.rt = { ...run.rt, clickCount: (run.rt.clickCount ?? 0) + 1 };
+        if (result.ok) run.rt = { ...run.rt, clickCount: (run.rt.clickCount ?? 0) + 1, clickedAt: this.now() };
         // The rule's later actions (often "stop") still run: say so, rather than only in History.
         if (!result.ok && config.settings.notificationsEnabled) {
           await this.deps.browser.notify(`justrefresh:click:${tab.id}:${this.now()}`, `${rule.name}: couldn't click`, result.error);

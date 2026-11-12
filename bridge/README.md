@@ -53,9 +53,10 @@ AI apps → Set up), with the commands ready to copy:
    ```
 5. Start the agent; approve it in the dashboard when the pairing request appears.
 
-After installing a newer bridge, restart your AI app as well: its running
-copy of the bridge speaks the old handshake, and calls fail with "Bridge
-disconnected" until it restarts.
+After installing a newer bridge, turn desktop apps off and on in
+JustRefresh → Agent Integrations (or restart Chrome), so Chrome starts the
+new copy; a newer AI-app side refuses an older one with a message saying
+so. Restarting your AI app as well picks up the new copy on its side.
 
 From a checkout of this repository, `node bridge/justrefresh-bridge.mjs install --extension-id <id>`
 (or `node bridge/install.mjs --extension-id <id>`) does the same.

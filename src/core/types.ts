@@ -28,7 +28,9 @@ export type UnknownCode =
   | "invalid_selector"
   | "cross_origin"
   | "tab_unavailable"
-  | "evaluation_error";
+  | "evaluation_error"
+  /** A frame of the page couldn't be read yet (loading): the engine treats this as "not this time", not as a problem. */
+  | "frame_not_ready";
 
 export interface MatchDetails {
   /** Number of elements matched by the selector (DOM conditions). */
@@ -42,8 +44,6 @@ export interface MatchDetails {
    * element's text. The condition's handler removes it from its result.
    */
   fingerprint?: string;
-  /** From the engine's frame merge to the condition: a frame couldn't be read, so "absent" isn't known. */
-  partial?: boolean;
 }
 
 export interface ElementSummary {
@@ -367,6 +367,8 @@ export interface TabRuntime {
   refreshCount: number;
   /** Clicks by the rule's click action in this run; they count toward `limits.maxRefreshes` too. */
   clickCount?: number;
+  /** When the rule last clicked: a page that click opens shortly after is the rule's own doing (the run goes on). */
+  clickedAt?: number;
   navigationCount: number;
   unknownStreak: number;
   pendingReload: { startedAt: number; generation: number } | null;

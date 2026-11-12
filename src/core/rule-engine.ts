@@ -266,7 +266,15 @@ export class RuleEngine extends CycleEngine {
           nextDueAt: this.nextDue(res.controller, this.now()),
           // A new run: what stateful conditions saw in the old one doesn't count.
           ...(restart
-            ? { refreshCount: 0, clickCount: undefined, navigationCount: 0, startedAt: this.now(), generation: rt.generation + 1, memory: undefined }
+            ? {
+                refreshCount: 0,
+                clickCount: undefined,
+                clickedAt: undefined,
+                navigationCount: 0,
+                startedAt: this.now(),
+                generation: rt.generation + 1,
+                memory: undefined,
+              }
             : {}),
         });
       } else {

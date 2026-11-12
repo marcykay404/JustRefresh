@@ -10,12 +10,14 @@
  *   any frame does, "doesn't contain" only when no frame does, and "content
  *   changed" watches every frame. Other comparisons (equals, starts with, …)
  *   read the top frame only, as one text can't be put together from frames.
- * - A frame that can't be read yet (still loading, not set up) never makes a
- *   condition match by what it might lack: "missing", "doesn't contain", "text
- *   gone" and "content changed" need every frame read, else they don't match
- *   this time (and stateful conditions keep what they remembered). Something
- *   found in a frame that was read still counts. The top frame's own problems
- *   are the result's.
+ * - A frame that can't be read yet (still loading, not set up) leaves a
+ *   condition that depends on it `unknown` with code "frame_not_ready" (so
+ *   `not` can't turn it into a match): "missing", "doesn't contain", "text
+ *   gone" and "content changed" need every frame read. Something found in a
+ *   frame that was read still counts. The engine treats an evaluation that is
+ *   unknown only because of frames as "not this time" (see
+ *   onlyFramesNotReady), and stateful conditions keep what they remembered.
+ *   The top frame's own problems are the result's.
  */
 import { fingerprint } from "../conditions/dom-eval";
 import type { ActivitySnapshot } from "../shared/messaging-types";
@@ -25,11 +27,8 @@ const countOf = (r: EvaluationResult) => (r.status === "unknown" ? 0 : (r.detail
 const hasSelector = (n: ConditionNode) => typeof n.selector === "string" && n.selector !== "";
 const UNREAD = "A frame on the page couldn't be read yet";
 
-/** Not matched for now, because a frame couldn't be read (`partial`: stateful conditions keep their memory). */
-const notYet = (from: EvaluationResult): EvaluationResult => ({
-  status: "not_matched",
-  details: { ...(from.status === "unknown" ? {} : from.details), fingerprint: undefined, note: UNREAD, partial: true },
-});
+/** Can't tell yet, because a frame couldn't be read. */
+const notYet = (_from?: EvaluationResult): EvaluationResult => ({ status: "unknown", code: "frame_not_ready", reason: UNREAD });
 
 /** One condition's results, one per frame (top first), as one page's. */
 export function mergeLeaf(leaf: ConditionNode, perFrame: EvaluationResult[]): EvaluationResult {
@@ -53,7 +52,8 @@ export function mergeLeaf(leaf: ConditionNode, perFrame: EvaluationResult[]): Ev
 function isPositive(leaf: ConditionNode): boolean {
   if (leaf.type === "dom.text") return ["contains", "equals", "starts_with", "ends_with", "matches"].includes(String(leaf.operator));
   if (leaf.type === "dom.attribute") return ["exists", "equals", "contains", "matches"].includes(String(leaf.operator));
-  return false;
+  // "Text gone": the page reports "the text is there" as matched, which a frame not read can't undo.
+  return leaf.type === "dom.text_lost";
 }
 
 function existence(leaf: ConditionNode, read: EvaluationResult[], unread: boolean): EvaluationResult {
@@ -80,10 +80,10 @@ function wholePage(leaf: ConditionNode, read: EvaluationResult[], unread: boolea
   if (leaf.type === "dom.text_lost") return foundOr(matched, top, unread);
   if (leaf.type !== "dom.text") return null;
   if (leaf.operator === "contains" || leaf.operator === "matches") return foundOr(matched, top, unread);
-  // "Doesn't contain" is not_matched in a frame that contains it.
+  // "Doesn't contain" is not_matched in a frame that contains it (one without a body has nothing to contain).
   if (leaf.operator === "not_contains")
     return foundOr(
-      read.find((r) => r.status === "not_matched"),
+      read.find((r) => r.status === "not_matched" && countOf(r) > 0),
       top,
       unread,
     );
@@ -95,8 +95,13 @@ function wholePageChanged(read: EvaluationResult[], unread: boolean): Evaluation
   const top = read[0]!;
   if (top.status === "unknown") return top;
   if (unread) return notYet(top);
-  const prints = read.map((r) => (r.status === "unknown" ? "" : (r.details?.fingerprint ?? "")));
-  return { ...top, details: { ...top.details, fingerprint: fingerprint(prints.join("|")) } };
+  // Frames with no text don't count: an empty or helper frame coming and going isn't a change.
+  const empty = fingerprint("");
+  const prints = read
+    .slice(1)
+    .map((r) => (r.status === "unknown" ? "" : (r.details?.fingerprint ?? "")))
+    .filter((f) => f !== "" && f !== empty);
+  return { ...top, details: { ...top.details, fingerprint: fingerprint([top.details?.fingerprint ?? "", ...prints].join("|")) } };
 }
 
 /** Results per frame (each an array over `leaves`, or null for a frame that couldn't answer), top first, as one page's. */
@@ -108,18 +113,6 @@ export function mergeFrames(leaves: ConditionNode[], frames: (EvaluationResult[]
       frames.map((f) => (f ? (f[i] ?? unreadable) : unreadable)),
     ),
   );
-}
-
-/**
- * The top frame's results alone, when the frames couldn't be asked. Whole-page
- * "content changed" then can't compare (its fingerprint covers every frame).
- */
-export function topFrameOnly(leaves: ConditionNode[], results: EvaluationResult[]): EvaluationResult[] {
-  return results.map((r, i) => {
-    const leaf = leaves[i];
-    if (!leaf || leaf.type !== "dom.changed" || hasSelector(leaf) || r.status === "unknown") return r;
-    return { status: "not_matched", details: { ...r.details, fingerprint: undefined, note: "The page's frames couldn't be read" } };
-  });
 }
 
 /**

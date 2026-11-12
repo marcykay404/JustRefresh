@@ -68,6 +68,8 @@ async function syncOnce(): Promise<void> {
     runAt: "document_start",
     // Frames from granted sites too: typing in them is protected, and conditions read them (core/frames.ts).
     allFrames: true,
+    // about:blank and srcdoc frames of a granted site (rich-text editors): typing there is protected too.
+    matchOriginAsFallback: true,
     persistAcrossSessions: true,
   };
   if (existing.length) await chrome.scripting.updateContentScripts([script]);

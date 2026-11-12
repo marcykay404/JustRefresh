@@ -71,7 +71,8 @@ export type ContentRequest =
 export type ContentResponse =
   | { requestId: string; kind: "pong"; readyState: DocumentReadyState }
   | { requestId: string; kind: "activity"; activity: ActivitySnapshot }
-  | { requestId: string; kind: "evaluate"; results: EvaluationResult[] }
+  /** `frames`: how many frames the page has (when they can't be asked, they count as not read yet). */
+  | { requestId: string; kind: "evaluate"; results: EvaluationResult[]; frames?: number }
   | {
       requestId: string;
       kind: "testSelector";

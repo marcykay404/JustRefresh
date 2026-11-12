@@ -1,8 +1,9 @@
 /** A page and its frames read as one page: conditions and typing protection (core/frames.ts). */
 import { createEnv, quietActivity } from "../helpers/fake-env";
 import { makeRule } from "../helpers/fixtures";
-import { mergeActivity, mergeFrames, mergeLeaf, mergeSelectorTests, siteOf, topFrameOnly } from "@/core/frames";
+import { mergeActivity, mergeFrames, mergeLeaf, mergeSelectorTests, siteOf } from "@/core/frames";
 import type { ConditionNode, EvaluationResult, Rule } from "@/core/types";
+import { fingerprint } from "@/conditions/dom-eval";
 
 const URL = "https://erp.example.com/home";
 
@@ -67,16 +68,58 @@ describe("conditions over a page and its frames", () => {
 });
 
 describe("a frame that can't be read yet (still loading) never makes a condition match by what it might lack", () => {
-  it("'missing' and 'doesn't contain' wait for every frame", async () => {
-    expect(await check({ type: "dom.missing", selector: "#state" }, `<h1>ERP</h1>`, null)).toBe("not_matched");
-    expect(await check({ type: "dom.text", operator: "not_contains", value: "Build running" }, `<h1>ERP</h1>`, null)).toBe("not_matched");
-    expect(await check({ type: "dom.exists", selector: "li", minCount: 2 }, `<li>a</li>`, null)).toBe("not_matched");
+  /** Checked once: did it match, and did the rule carry on without treating the page as broken? */
+  const once = async (stopWhen: ConditionNode, top: string, ...frames: (string | null)[]) => {
+    const env = await setup(stopWhen, top, ...frames);
+    await env.engine.runCycle(1, "manual");
+    const rt = (await env.runtime.get(1))!;
+    return { matched: rt.lastEvaluation?.status === "matched", status: rt.status, streak: rt.unknownStreak, reason: rt.lastEvaluation?.reason ?? "" };
+  };
+  const notYet = { matched: false, status: "refreshing", streak: 0 };
+
+  it("'missing', 'doesn't contain' and 'too few' wait for every frame, without pausing the rule", async () => {
+    for (const stopWhen of [
+      { type: "dom.missing", selector: "#state" },
+      { type: "dom.text", operator: "not_contains", value: "Build running" },
+      { type: "dom.exists", selector: "li", minCount: 2 },
+    ] as ConditionNode[]) {
+      const r = await once(stopWhen, `<li>a</li>`, null);
+      expect(r).toMatchObject(notYet);
+      expect(r.reason).toMatch(/frame on the page couldn't be read yet/);
+    }
+  });
+
+  it("NOT around any of them doesn't match either", async () => {
+    for (const inner of [
+      { type: "dom.missing", selector: "#state" },
+      { type: "dom.exists", selector: "#state" },
+      { type: "dom.text", operator: "contains", value: "Sold out" },
+      { type: "dom.text", operator: "not_contains", value: "Sold out" },
+    ] as ConditionNode[]) {
+      expect(await once({ type: "not", condition: inner } as ConditionNode, `<h1>ERP</h1>`, null)).toMatchObject(notYet);
+      expect(await once({ type: "not", condition: { type: "any", conditions: [inner] } } as ConditionNode, `<h1>ERP</h1>`, null)).toMatchObject(notYet);
+    }
   });
 
   it("but what was found in a frame that was read still counts", async () => {
-    expect(await check({ type: "dom.exists", selector: "#state" }, `<h1>ERP</h1>`, PANEL, null)).toBe("matched");
-    expect(await check({ type: "dom.text", operator: "contains", value: "build failed" }, `<h1>ERP</h1>`, null, PANEL)).toBe("matched");
-    expect(await check({ type: "dom.missing", selector: "#state" }, `<h1>ERP</h1>`, PANEL, null)).toBe("not_matched");
+    expect((await once({ type: "dom.exists", selector: "#state" }, `<h1>ERP</h1>`, PANEL, null)).matched).toBe(true);
+    expect((await once({ type: "dom.text", operator: "contains", value: "build failed" }, `<h1>ERP</h1>`, null, PANEL)).matched).toBe(true);
+    expect((await once({ type: "dom.missing", selector: "#state" }, `<h1>ERP</h1>`, PANEL, null)).matched).toBe(false);
+  });
+
+  it("a real problem with the page alongside still gets the rule's unknown policy", async () => {
+    const r = await once(
+      {
+        type: "all",
+        conditions: [
+          { type: "dom.missing", selector: "#state" },
+          { type: "dom.exists", selector: "[" },
+        ],
+      } as ConditionNode,
+      `<h1>ERP</h1>`,
+      null,
+    );
+    expect(r.status).toBe("paused_unknown");
   });
 
   it("'text gone' isn't gone while the frame that showed it reloads, and still is once it's really gone", async () => {
@@ -89,7 +132,7 @@ describe("a frame that can't be read yet (still loading) never makes a condition
     };
     expect(await status()).toBe("not_matched"); // seen
     env.page.setFrames(1, null); // the panel reloads itself
-    expect(await status()).toBe("not_matched");
+    expect(await status()).toBe("unknown");
     env.page.setFrames(1, `<p>Build passed</p>`);
     expect(await status()).toBe("matched");
   });
@@ -101,11 +144,34 @@ describe("a frame that can't be read yet (still loading) never makes a condition
     const remembered = (await env.runtime.get(1))?.memory;
     env.page.setFrames(1, null);
     await env.engine.runCycle(1, "manual");
-    expect((await env.runtime.get(1))?.lastEvaluation?.status).toBe("not_matched");
+    expect((await env.runtime.get(1))?.lastEvaluation?.status).toBe("unknown");
     expect((await env.runtime.get(1))?.memory).toEqual(remembered);
     env.page.setFrames(1, `<p>Queue: 3</p>`);
+    await env.completeNavigation(1); // that check still refreshed
     await env.engine.runCycle(1, "manual");
     expect((await env.runtime.get(1))?.lastEvaluation?.status).toBe("not_matched"); // as before: no change
+  });
+
+  it("'content changed' ignores an empty frame coming and going", async () => {
+    const env = await setup({ type: "dom.changed" }, `<h1>ERP</h1>`, `<p>Queue: 3</p>`);
+    await env.engine.runCycle(1, "manual");
+    await env.completeNavigation(1);
+    env.page.setFrames(1, `<p>Queue: 3</p>`, ``);
+    await env.engine.runCycle(1, "manual");
+    expect((await env.runtime.get(1))?.lastEvaluation?.status).toBe("not_matched");
+  });
+
+  it("'doesn't contain' isn't blocked by a frame with no body (an SVG)", () => {
+    const leaf = { type: "dom.text", operator: "not_contains", value: "Sold out" } as ConditionNode;
+    const noBody: EvaluationResult = { status: "not_matched", details: { count: 0, note: "Element not found" } };
+    expect(mergeLeaf(leaf, [{ status: "matched", details: { count: 1 } }, noBody]).status).toBe("matched");
+  });
+
+  it("frames that couldn't be asked at all count as not read, when the page has frames", () => {
+    const leaves = [{ type: "dom.missing", selector: "#state" }] as ConditionNode[];
+    const top: EvaluationResult[] = [{ status: "matched", details: { count: 0 } }];
+    expect(mergeFrames(leaves, [top, null])[0]).toMatchObject({ status: "unknown", code: "frame_not_ready" });
+    expect(mergeFrames(leaves, [top])[0]!.status).toBe("matched");
   });
 });
 
@@ -141,9 +207,9 @@ describe("merging rules", () => {
     expect(alone.status !== "unknown" && alone.details?.fingerprint).not.toBe("abc");
     const withFrame = mergeFrames([leaf], page(["abc", "def"]))[0]!;
     expect(withFrame).not.toEqual(alone);
-    // The top frame alone (frames couldn't be asked): no fingerprint, so no comparison.
-    const fallback = topFrameOnly([leaf], [{ status: "not_matched", details: { count: 1, fingerprint: "abc" } }])[0]!;
-    expect(fallback.status !== "unknown" && fallback.details?.fingerprint).toBeUndefined();
+    // An empty frame (a helper) coming or going isn't a change.
+    const withEmpty = mergeFrames([leaf], [...page(["abc"]), [{ status: "not_matched", details: { count: 1, fingerprint: fingerprint("") } }]])[0]!;
+    expect(withEmpty).toEqual(alone);
   });
 
   it("tells sites apart roughly, without a suffix list", () => {

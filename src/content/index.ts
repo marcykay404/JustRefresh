@@ -80,6 +80,7 @@ function setUpTopFrame(monitor: ActivityMonitor) {
       requestId: msg.requestId,
       kind: "evaluate",
       results: msg.conditions.slice(0, 100).map((c) => evaluateDomCondition(c, document, { includeText: msg.includeText })),
+      frames: window.frames.length,
     }),
     testSelector: (msg) => ({ requestId: msg.requestId, kind: "testSelector", result: testSelector(document, msg.selector, msg.includeText) }),
     click: (msg) => ({ requestId: msg.requestId, kind: "click", result: clickElement(document, msg.selector) }),
