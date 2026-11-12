@@ -16,6 +16,10 @@ export const HOST = "com.justrefresh.bridge";
 /** What the bridge is made of: the bundled download is one file, the repo version three. */
 const BRIDGE_FILES = ["justrefresh-bridge.mjs", "lib.mjs", "install-lib.mjs"];
 
+/* global __JUSTREFRESH_BUNDLED__ */
+/** Set by scripts/build.mjs in the downloadable bridge, which is one file with everything inlined. */
+const BUNDLED = typeof __JUSTREFRESH_BUNDLED__ !== "undefined" && __JUSTREFRESH_BUNDLED__ === true;
+
 /**
  * Each browser's profile folder (relative to home on macOS, to
  * $XDG_CONFIG_HOME on Linux, to %LOCALAPPDATA% on Windows), where it looks
@@ -116,14 +120,13 @@ const manifestDir = (loc, browser) => path.join(loc.profileBase, loc.profiles[br
  * for a second download, next to an older one). The downloaded bridge is one
  * file; only a checkout's, which imports the others, brings them along.
  */
-function copyBridge(sourceDir, bin, entry) {
+function copyBridge(sourceDir, bin, entry, bundled) {
   fs.mkdirSync(bin, { recursive: true, mode: 0o700 });
   const [main, ...others] = BRIDGE_FILES;
   if (entry && path.resolve(entry) !== path.resolve(bin, main)) fs.copyFileSync(entry, path.join(bin, main));
   if (path.resolve(sourceDir) === path.resolve(bin)) return;
-  // An import statement at the start of a line (the bundle has none, and this pattern doesn't match its own text).
-  const split = !entry || /^import .* from "\.\/install-lib\.mjs";$/m.test(fs.readFileSync(entry, "utf8"));
-  for (const f of entry ? (split ? others : []) : BRIDGE_FILES) {
+  const files = !entry ? BRIDGE_FILES : bundled ? [] : others;
+  for (const f of files) {
     if (fs.existsSync(path.join(sourceDir, f))) fs.copyFileSync(path.join(sourceDir, f), path.join(bin, f));
   }
 }
@@ -190,14 +193,24 @@ function register(loc, browsers, manifest, run) {
   });
 }
 
-export function install({ extensionId, browser, sourceDir, entry, node = stableNode(), loc = locations(), run = execFileSync, log = console.log }) {
+export function install({
+  extensionId,
+  browser,
+  sourceDir,
+  entry,
+  bundled = BUNDLED,
+  node = stableNode(),
+  loc = locations(),
+  run = execFileSync,
+  log = console.log,
+}) {
   if (!/^[a-p]{32}$/.test(extensionId ?? "")) {
     throw new Error("Pass --extension-id <32-letter id>. JustRefresh shows it in Dashboard → Agent Integrations, with this command ready to copy.");
   }
   const browsers = targetBrowsers(loc, browser);
   fs.mkdirSync(loc.dataDir, { recursive: true, mode: 0o700 });
   restrictToUser(loc.dataDir, { platform: loc.platform, run, log });
-  copyBridge(sourceDir, loc.bin, entry);
+  copyBridge(sourceDir, loc.bin, entry, bundled);
   const { launcher, script } = writeLauncher(loc, node);
   const manifest = {
     name: HOST,

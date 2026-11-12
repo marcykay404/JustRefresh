@@ -236,8 +236,8 @@ function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: bool
             <CopyButton text={agentSetupPrompt(chrome.runtime.id, platform)} label="Copy setup for your AI app" />
           </span>
           <span>
-            Or install it yourself: run this in a terminal (change the folder if you saved it elsewhere). It copies itself to <code>{bin}</code> and registers
-            with your browsers; you can delete the download afterwards.
+            Or install it yourself: run this in a terminal (change the folder or file name if yours differ). It copies itself to <code>{bin}</code> and
+            registers with your browsers; you can delete the download afterwards.
           </span>
           <CopyLine label="Install command" text={command} />
         </li>

@@ -65,8 +65,7 @@ describe("installing the downloaded file", () => {
     mkdirSync(downloads);
     // An older download, a newer one Chrome renamed, and an unrelated file with a bridge name.
     writeFileSync(join(downloads, "justrefresh-bridge.mjs"), "// old\n");
-    // The real download is one file; it mentions the import text (in the installer's own check) but doesn't import it.
-    const bundle = `// new, one file\nconst check = 'from "./install-lib.mjs"';\n`;
+    const bundle = "// new, one file\n";
     writeFileSync(join(downloads, "justrefresh-bridge (1).mjs"), bundle);
     writeFileSync(join(downloads, "lib.mjs"), "// someone else's\n");
     writeFileSync(join(downloads, "install-lib.mjs"), "// someone else's\n");
@@ -76,6 +75,7 @@ describe("installing the downloaded file", () => {
       extensionId: ID,
       sourceDir: downloads,
       entry: join(downloads, "justrefresh-bridge (1).mjs"),
+      bundled: true, // as the build marks the downloadable file
       node: "/opt/homebrew/bin/node",
       loc,
       run: () => undefined,

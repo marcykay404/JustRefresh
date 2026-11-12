@@ -901,6 +901,26 @@ await test("the desktop bridge is packaged as one runnable file", async () => {
   const r = spawnSync(process.execPath, [join(root, "dist", "bridge", "justrefresh-bridge.mjs")], { encoding: "utf8" });
   assert.equal(r.status, 2);
   assert.match(r.stderr, /Usage: justrefresh-bridge\.mjs install/);
+  // A second download, next to an older one and unrelated files: the file that runs is installed, nothing else.
+  const { mkdirSync, copyFileSync, readdirSync } = await import("node:fs");
+  const home = mkdtempSync(join(tmpdir(), "justrefresh-home-"));
+  const downloads = join(home, "Downloads");
+  mkdirSync(downloads);
+  for (const f of ["justrefresh-bridge.mjs", "lib.mjs", "install-lib.mjs"]) writeFileSync(join(downloads, f), "// old or unrelated\n");
+  copyFileSync(join(root, "dist", "bridge", "justrefresh-bridge.mjs"), join(downloads, "justrefresh-bridge (1).mjs"));
+  const env = { ...process.env, HOME: home, JUSTREFRESH_BRIDGE_DIR: join(home, ".justrefresh") };
+  const inst = spawnSync(
+    process.execPath,
+    [join(downloads, "justrefresh-bridge (1).mjs"), "install", "--extension-id", "abcdefghijklmnopabcdefghijklmnop", "--browser", "chrome"],
+    { encoding: "utf8", env },
+  );
+  assert.equal(inst.status, 0, inst.stderr);
+  const bin = join(home, ".justrefresh", "bin");
+  assert.equal(readFileSync(join(bin, "justrefresh-bridge.mjs"), "utf8"), readFileSync(join(root, "dist", "bridge", "justrefresh-bridge.mjs"), "utf8"));
+  assert.deepEqual(
+    readdirSync(bin).filter((f) => f.endsWith(".mjs")),
+    ["justrefresh-bridge.mjs"],
+  );
 });
 
 await test("Agent Integrations: setup for an AI app copies its steps with this extension's id", async () => {
