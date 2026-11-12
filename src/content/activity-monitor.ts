@@ -12,6 +12,12 @@
  * user's work. When the monitor started after the page loaded (injected into
  * an already-open tab) earlier edits cannot be told apart from script-set
  * values, so such changes are reported as "unknown", never "clean".
+ *
+ * Some frameworks (React) keep a field's default in step with what is typed,
+ * so "differs from its default" misses those edits. A field the user is about
+ * to edit (focus, beforeinput, pointer or key down) also has a fingerprint of
+ * its state noted first; an edited field whose state differs from it counts
+ * as changed. Only the fingerprint (a short hash) is kept, never the value.
  */
 import type { ActivitySnapshot } from "../shared/messaging-types";
 
@@ -37,6 +43,21 @@ function selectChanged(el: HTMLSelectElement): boolean {
   // No explicit default: a drop-down shows its first enabled option.
   const first = options.find((o) => !o.disabled);
   return options.some((o) => o.selected !== (o === first));
+}
+
+/** A short, non-reversible fingerprint of a control's state (null = not a tracked control). */
+function stateFingerprint(el: Element): string | null {
+  let state: string;
+  if (el instanceof HTMLInputElement) {
+    if (el.type === "hidden") return null;
+    state = el.type === "checkbox" || el.type === "radio" ? String(el.checked) : el.type === "file" ? String(el.files?.length ?? 0) : el.value;
+  } else if (el instanceof HTMLTextAreaElement) state = el.value;
+  else if (el instanceof HTMLSelectElement) state = Array.from(el.options, (o) => (o.selected ? "1" : "0")).join("");
+  else return null;
+  // FNV-1a, 32 bits: enough to tell "changed" from "the same", and the text can't be read back.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < state.length; i++) h = Math.imul(h ^ state.charCodeAt(i), 0x01000193);
+  return `${state.length}:${(h >>> 0).toString(36)}`;
 }
 
 /** Whether a form control's state differs from its default (null = not a tracked control). */
@@ -73,6 +94,8 @@ export class ActivityMonitor {
   private readonly submittedForms = new WeakSet<HTMLFormElement>();
   /** Controls the user edited. Elements only — never their values. */
   private readonly edited = new WeakSet<Element>();
+  /** Each control's state just before the user first went to edit it, as a fingerprint (stateFingerprint). */
+  private readonly before = new WeakMap<Element, string>();
   private readonly isUserEvent: (e: Event) => boolean;
   private lateStart = false;
 
@@ -103,6 +126,13 @@ export class ActivityMonitor {
       },
       listen,
     );
+    // Before the first edit of a field: note its state, to compare with later.
+    const aboutToEdit = (e: Event) => {
+      if (!this.isUserEvent(e) || !(e.target instanceof Element) || this.before.has(e.target)) return;
+      const print = stateFingerprint(e.target);
+      if (print !== null) this.before.set(e.target, print);
+    };
+    for (const type of ["focusin", "beforeinput", "pointerdown", "keydown"]) this.doc.addEventListener(type, aboutToEdit, listen);
     this.doc.addEventListener("input", userEdit, listen);
     this.doc.addEventListener("change", userEdit, listen);
     this.doc.addEventListener("compositionstart", () => (this.composing = true), listen);
@@ -141,12 +171,19 @@ export class ActivityMonitor {
       if (++checked > MAX_CONTROLS) return "unknown";
       const form = (el as HTMLInputElement).form;
       if (form && this.submittedForms.has(form)) continue;
-      if (!controlChanged(el)) continue;
+      const changed = controlChanged(el);
+      if (changed === null || (!changed && !this.changedSinceFocus(el))) continue;
       if (this.edited.has(el)) return "dirty";
       if (this.lateStart) ambiguous = true;
     }
     // contenteditable edits cannot be compared to a saved state.
     return ambiguous || this.editableTouched ? "unknown" : "clean";
+  }
+
+  /** An edited control that no longer matches its state from before the edit (its default may have followed the typing). */
+  private changedSinceFocus(el: Element): boolean {
+    const before = this.before.get(el);
+    return before !== undefined && this.edited.has(el) && stateFingerprint(el) !== before;
   }
 
   snapshot(): ActivitySnapshot {

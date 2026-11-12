@@ -354,3 +354,17 @@ describe("getEvents", () => {
     await expect(events({ waitSec: MAX_WAIT_SECONDS + 1 })).rejects.toMatchObject({ code: "invalid_params" });
   });
 });
+
+describe("importing over an agent's rule", () => {
+  it("settles its waiting request (no lingering badge) and tells the agent", async () => {
+    const { env, agent, kinds, create } = await setup();
+    const id = await create();
+    await env.service.call(agent, "enableRule", { id });
+    const bundle = JSON.stringify([{ ...ORDER_RULE, id, name: "Imported version" }]);
+    await env.service.call(env.user, "importConfig", { json: bundle, onDuplicate: "replace", activate: true });
+    const config = await env.config.get();
+    expect(config.approvals.filter((a) => a.status === "pending")).toEqual([]);
+    expect(((await env.service.call(env.user, "getOverview", undefined)) as { pendingApprovals: number }).pendingApprovals).toBe(0);
+    expect(await kinds()).toEqual(["approval.stale"]);
+  });
+});

@@ -83,6 +83,63 @@ describe("ActivityMonitor", () => {
     expect(m.snapshot().sinceInputMs).toBeNull();
   });
 
+  it("a field whose default follows what's typed (React) still counts as changed, and as clean once typed back", () => {
+    document.body.innerHTML = `<input id="r">`;
+    const m = new ActivityMonitor(document, asUser);
+    m.start();
+    const input = document.getElementById("r") as HTMLInputElement;
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    // What React does for a controlled input: the value attribute (the default) follows the value.
+    const type = (text: string) => {
+      input.value = text;
+      input.setAttribute("value", text);
+      userInput(input);
+    };
+    type("half a message");
+    expect(input.defaultValue).toBe("half a message");
+    expect(m.snapshot().dirty).toBe("dirty");
+    expect(JSON.stringify(m.snapshot())).not.toContain("half a message");
+    type("");
+    expect(m.snapshot().dirty).toBe("clean");
+  });
+
+  it("with real React: a half-filled controlled input and textarea are unsaved changes", async () => {
+    const { act, createElement, useState } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    function Form() {
+      const [name, setName] = useState("");
+      const [msg, setMsg] = useState("");
+      return createElement(
+        "form",
+        null,
+        createElement("input", { id: "name", value: name, onChange: (e: { target: HTMLInputElement }) => setName(e.target.value) }),
+        createElement("textarea", { id: "msg", value: msg, onChange: (e: { target: HTMLTextAreaElement }) => setMsg(e.target.value) }),
+      );
+    }
+    document.body.innerHTML = `<div id="app"></div>`;
+    await act(async () => createRoot(document.getElementById("app")!).render(createElement(Form)));
+    const m = new ActivityMonitor(document, asUser);
+    m.start();
+    for (const [id, proto] of [
+      ["name", HTMLInputElement.prototype],
+      ["msg", HTMLTextAreaElement.prototype],
+    ] as const) {
+      const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement;
+      el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, "Hello, two seats please");
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      expect(el.defaultValue, `${id}: React keeps the default in step`).toBe("Hello, two seats please");
+      expect(m.snapshot().dirty, id).toBe("dirty");
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, "");
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+  });
+
   it("a drop-down the user changed is dirty", () => {
     document.body.innerHTML = `<select id="s"><option>a</option><option>b</option></select>`;
     const m = new ActivityMonitor(document, asUser);
