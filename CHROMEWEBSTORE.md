@@ -19,9 +19,9 @@ in the description, or the UI in the screenshots changes.
 **Description:**
 
 ```
-Refresh tabs on a timer, or until the thing you're waiting for appears, without ever losing what you're typing.
+Refresh tabs on a timer, or until the thing you're waiting for appears, without refreshing over what you're typing.
 
-NEVER LOSE YOUR WORK
+PROTECTS WHAT YOU'RE TYPING
 • Waits while you're typing, and won't refresh a form you've started filling in (you can switch this off).
 • Won't refresh a page you reached by submitting a form, so Chrome doesn't send it again (on sites you've given it access to).
 • Optionally waits while you move the mouse or scroll.
@@ -40,8 +40,8 @@ RULES AND TEMPLATES
 • A visual rule builder with a dry run before anything is saved, and JSON import/export.
 
 PRIVATE BY DESIGN
-• No account, no servers, no ads, no tracking. Everything stays in your browser, unless you switch on local webhooks or AI apps.
-• Asks for access to a site only when you turn it on there.
+• No account, no servers, no ads, no tracking. Everything stays in your browser, unless you switch on local webhooks, AI apps or allow an extension.
+• Asks for access to a site only when you ask: by turning refreshing on there, or with "Allow access to all sites".
 • Never records what you type or what's in forms.
 
 FOR AI AGENTS (OPTIONAL)
@@ -63,7 +63,7 @@ All generated from the real built extension: `npm run build && npm run store:ass
 | `store/icon-128.png`     | Store icon                                    | 128×128 (96×96 artwork, 16 px transparent padding) |
 | `store/screenshot-1.jpg` | Screenshot: refresh any tab in one tap        | 1280×800                                           |
 | `store/screenshot-2.jpg` | Screenshot: refresh until something appears   | 1280×800                                           |
-| `store/screenshot-3.jpg` | Screenshot: never lose what you're typing     | 1280×800                                           |
+| `store/screenshot-3.jpg` | Screenshot: waits while you're typing         | 1280×800                                           |
 | `store/screenshot-4.jpg` | Screenshot: start from a template             | 1280×800                                           |
 | `store/screenshot-5.jpg` | Screenshot: your AI app proposes, you approve | 1280×800                                           |
 | `store/promo-small.png`  | Small promo tile (optional)                   | 440×280, no text                                   |
@@ -79,7 +79,7 @@ All generated from the real built extension: `npm run build && npm run store:ass
 | Permission                                                       | Why it's needed                                                                                                                                                                                                                                                                                                                                          |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tabs`                                                           | Reads the address and title of open tabs to show them in the popup and dashboard and to decide which rule applies to which tab, and reloads tabs.                                                                                                                                                                                                        |
-| `storage`                                                        | Keeps the user's rules, settings, run state and a local history in the browser. Nothing leaves the browser.                                                                                                                                                                                                                                              |
+| `storage`                                                        | Keeps the user's rules, settings, run state and a local history, stored only in the browser and never sent to the developer.                                                                                                                                                                                                                             |
 | `alarms`                                                         | Schedules refreshes so they happen on time even while the background worker is asleep.                                                                                                                                                                                                                                                                   |
 | `notifications`                                                  | Tells the user when what they were waiting for appears, or when a watch stops.                                                                                                                                                                                                                                                                           |
 | `scripting`                                                      | Runs JustRefresh's own content script on sites the user allowed: to check whether they are typing or have unsaved form changes before a refresh, to check the page for the text or element a rule waits for, and, when a rule or the user asks, to highlight what it found, click an element, keep the scroll position, or let the user pick an element. |
@@ -96,9 +96,9 @@ All generated from the real built extension: `npm run build && npm run store:ass
 - it does not use or transfer user data for purposes unrelated to its single purpose;
 - it does not use or transfer user data to determine creditworthiness or for lending.
 
-Page content (for conditions) and activity (typing, unsaved forms) are read on the user's device to decide whether to refresh, and never sent anywhere. The optional webhook action sends a short message only to `localhost`, and only when the user switches webhooks on.
+Page content (for conditions) and activity (typing, unsaved forms) are read on the user's device to decide whether to refresh, and never sent to the developer. The optional webhook action sends a short message only to `localhost`, and only when the user switches webhooks on.
 
-A judgement call to make before submitting: AI apps (through the optional local bridge) or extensions the user approves can read the titles and addresses of open tabs, the user's rules and their history. That happens on the user's own computer, at the user's direction, and never reaches the developer, which is why "none" fits the form's idea of collection. To be more conservative, tick "Web history" and describe it as above. Either way, PRIVACY.md says so.
+A judgement call to make before submitting: AI apps (through the optional local bridge) or extensions the user approves can read the titles and addresses of open tabs, the user's rules and their history. That happens on the user's own computer, at the user's direction, and never reaches the developer, so "none" is arguable; but the store's User Data policy also covers passing data to third parties, which an AI app can be, so ticking "Web history" is the safer choice. Either way, PRIVACY.md says so.
 
 **Privacy policy URL:** https://github.com/marcykay404/JustRefresh/blob/main/PRIVACY.md
 

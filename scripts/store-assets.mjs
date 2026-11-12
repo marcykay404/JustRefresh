@@ -147,7 +147,7 @@ async function pageShot(p, name) {
   });
 }
 
-/* 3. Never lose what you're typing. */
+/* 3. Waits while you're typing. */
 {
   const { page: p, tabId } = await site("/contact");
   await call("startTab", { tabId, intervalSeconds: 60 });
@@ -210,7 +210,7 @@ const SCENES = [
     popup: "s2-popup.png",
   },
   {
-    title: "Never lose what you're typing",
+    title: "Waits while you're typing",
     text: "A form you've started isn't refreshed away: it waits until you're done.",
     address: `${HOST}/contact`,
     page: "s3-page.png",
@@ -218,7 +218,7 @@ const SCENES = [
   },
   {
     title: "Start from a template",
-    text: "Back in stock, status changes, failed builds, staying signed in, and your own rules.",
+    text: "Back in stock, status changes, a work-hours dashboard, failed builds, and your own rules.",
     address: "JustRefresh · Dashboard",
     dashboard: "s4-dashboard.png",
     // Down to the end of the second row of templates, so no card is cut off.
