@@ -309,7 +309,11 @@ function checkArgs(t, args) {
  * Minimal MCP (JSON-RPC 2.0) request handler.
  * `callApi(method, params)` resolves to { ok, result } | { ok:false, error }.
  */
-export function createMcpHandler({ callApi, serverName = MCP_SERVER_KEY, version = "0.1.0", onInitialize, eventsFile } = {}) {
+/* global __JUSTREFRESH_VERSION__ */
+/** The version this bridge was built as (scripts/build.mjs); "dev" when run from a checkout. */
+export const BRIDGE_VERSION = typeof __JUSTREFRESH_VERSION__ === "string" ? __JUSTREFRESH_VERSION__ : "dev";
+
+export function createMcpHandler({ callApi, serverName = MCP_SERVER_KEY, version = BRIDGE_VERSION, onInitialize, eventsFile } = {}) {
   return async function handle(msg) {
     if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") {
       return msg?.id !== undefined ? { jsonrpc: "2.0", id: msg.id, error: { code: -32600, message: "Invalid request" } } : null;

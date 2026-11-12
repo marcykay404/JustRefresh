@@ -4,6 +4,11 @@
  * the like), to paste into it. The steps only the user can do stay with the
  * user: allowing desktop apps (Chrome's prompt), downloading the bridge,
  * restarting the app, and approving the agent.
+ *
+ * JustRefresh from the Chrome Web Store gets the bridge from npm, at its own
+ * version (`npx -y justrefresh@<version> install`: nothing to download, no id
+ * to pass). Any other copy (unpacked, another store) downloads it from the
+ * dashboard and passes its id.
  */
 
 export type SetupPlatform = "mac" | "windows" | "linux";
@@ -30,6 +35,15 @@ export function bridgePaths(platform: SetupPlatform): SetupPaths {
 
 export const BRIDGE_FILE = "justrefresh-bridge.mjs";
 
+/** JustRefresh from the Chrome Web Store (the same id as bridge/install-lib.mjs, which installs for it by default). */
+export const STORE_EXTENSION_ID = "hgdoldonldledoimnhlpkmipchjfgolf";
+
+/** Where this copy of JustRefresh gets its bridge from: npm for the store build, the dashboard's download otherwise. */
+export const bridgeFromNpm = (extensionId: string) => extensionId === STORE_EXTENSION_ID;
+
+/** Installs the bridge of this exact version from npm (the same in every shell). */
+export const npxInstallCommand = (version: string) => `npx -y justrefresh@${version} install`;
+
 export const installCommand = (extensionId: string, paths: SetupPaths) => `node ${paths.download}${BRIDGE_FILE} install --extension-id ${extensionId}`;
 
 /** What the installer prints, with placeholders for the parts only it knows. */
@@ -54,16 +68,15 @@ const CLAUDE_DESKTOP_CONFIG: Partial<Record<SetupPlatform, string>> = {
  * paths to fill in: the app runs one command, then uses the MCP settings the
  * installer prints, which have the full paths to Node and the bridge.
  */
-export function agentSetupPrompt(extensionId: string, platform: SetupPlatform): string {
+export function agentSetupPrompt(extensionId: string, platform: SetupPlatform, version: string): string {
   const desktop = CLAUDE_DESKTOP_CONFIG[platform];
+  const install = bridgeFromNpm(extensionId) ? installFromNpm(extensionId, platform, version) : installFromDownload(extensionId, platform);
   return [
     "Please set up the JustRefresh MCP server on this computer, so you can manage auto-refresh rules in my Chrome.",
     "JustRefresh is a Chrome extension. Its MCP server is a small Node.js program (the bridge) that talks to the extension through Chrome Native Messaging; nothing listens on the network.",
     "",
     "1. Check that Node.js 18 or later is installed (node --version). If it isn't, stop and tell me.",
-    `2. Install the bridge. I downloaded ${BRIDGE_FILE} from the JustRefresh dashboard to my Downloads folder. Run this (it works as written in bash, zsh and PowerShell; in cmd.exe use %USERPROFILE% in place of $HOME):`,
-    `   ${portableInstallCommand(extensionId)}`,
-    `   If the file isn't there, ask me where I saved it${platform === "linux" ? " (xdg-user-dir DOWNLOAD names my Downloads folder)" : ""}. If there are several (Chrome names a second download "justrefresh-bridge (1).mjs"), ask me which one to use, and run that one. The command copies the bridge to the .justrefresh folder in my home folder, registers it with my browsers, and prints MCP settings: a "command" (the full path to Node) and "args" (the full path to the bridge, then mcp). Don't use sudo or an administrator shell: if it fails, show me the error.`,
+    ...install,
     '3. Add an MCP server named "justrefresh" to your own MCP settings, using that command and those args exactly as printed. Change only the justrefresh entry and leave everything else as it is; if a justrefresh server is already there, tell me instead of replacing it.',
     "   - Claude Code: claude mcp add --scope user justrefresh -- followed by the printed command and args, each in double quotes.",
     ...(desktop ? [`   - Claude Desktop: under "mcpServers" in ${desktop}.`] : []),
@@ -73,4 +86,25 @@ export function agentSetupPrompt(extensionId: string, platform: SetupPlatform): 
     "",
     "Once you're connected and approved, start with the refresh_get_capabilities tool.",
   ].join("\n");
+}
+
+const AFTER_INSTALL =
+  'It copies the bridge to the .justrefresh folder in my home folder, registers it with my browsers, and prints MCP settings: a "command" (the full path to Node) and "args" (the full path to the bridge, then mcp). Don\'t use sudo or an administrator shell: if it fails, show me the error.';
+
+/** Step 2 for the store build: the bridge of this version, from npm. */
+function installFromNpm(extensionId: string, platform: SetupPlatform, version: string): string[] {
+  return [
+    "2. Install the bridge from npm (this exact version, to match my JustRefresh). Run:",
+    `   ${npxInstallCommand(version)}`,
+    `   ${AFTER_INSTALL} If npx isn't available or can't reach npm, ask me to click "Download the bridge" in JustRefresh → Agent Integrations, then run: ${portableInstallCommand(extensionId)}${platform === "windows" ? " (in cmd.exe, %USERPROFILE% in place of $HOME)" : ""}`,
+  ];
+}
+
+/** Step 2 for any other copy: the bridge I downloaded from its dashboard. */
+function installFromDownload(extensionId: string, platform: SetupPlatform): string[] {
+  return [
+    `2. Install the bridge. I downloaded ${BRIDGE_FILE} from the JustRefresh dashboard to my Downloads folder. Run this (it works as written in bash, zsh and PowerShell; in cmd.exe use %USERPROFILE% in place of $HOME):`,
+    `   ${portableInstallCommand(extensionId)}`,
+    `   If the file isn't there, ask me where I saved it${platform === "linux" ? " (xdg-user-dir DOWNLOAD names my Downloads folder)" : ""}. If there are several (Chrome names a second download "justrefresh-bridge (1).mjs"), ask me which one to use, and run that one. ${AFTER_INSTALL}`,
+  ];
 }

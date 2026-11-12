@@ -127,7 +127,8 @@ exports or agents users have set up; `tests/unit/identifiers.test.ts` pins them.
 
 ## Before each upload
 
-- Bump `version` in `package.json` (the build copies it into the manifest), then `npm run check`.
+- Bump `version` in `package.json` (the build copies it into the manifest), then `npm run check`, and tag the release.
+- **Publish the bridge to npm at the same version first**: `npm run build:npm`, then `cd dist-npm && npm publish`. The store build's dashboard tells users to run `npx -y justrefresh@<its version> install`, so that version must be on npm before the update reaches them.
 - Regenerate the images if the popup or dashboard changed: `npm run build && npm run store:assets`.
 - Upload a zip of `dist/` (not the repo).
 - Check this file still matches the manifest's permissions.

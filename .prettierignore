@@ -1,5 +1,6 @@
 # Build output and dependencies
 dist/
+dist-npm/
 node_modules/
 package-lock.json
 # Written by scripts (npm run gen:schema, npm run complexity:update)

@@ -9,6 +9,7 @@ import { onwarn, root, scriptConfig } from "./script-build.mjs";
 
 const out = resolve(root, "dist");
 const alias = { "@": resolve(root, "src") };
+const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 const common = { configFile: false, logLevel: "warn", resolve: { alias }, define: { "process.env.NODE_ENV": '"production"' } };
 
 rmSync(out, { recursive: true, force: true });
@@ -52,7 +53,7 @@ await build({
   logLevel: "warn",
   publicDir: false,
   // The installer knows it is the downloaded single file (no lib.mjs or install-lib.mjs to copy).
-  define: { __JUSTREFRESH_BUNDLED__: "true" },
+  define: { __JUSTREFRESH_BUNDLED__: "true", __JUSTREFRESH_VERSION__: JSON.stringify(pkg.version) },
   build: {
     outDir: resolve(out, "bridge"),
     emptyOutDir: false,
@@ -64,7 +65,6 @@ await build({
 });
 
 // Manifest (version synced from package.json).
-const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 const manifest = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
 manifest.version = pkg.version;
 writeFileSync(resolve(out, "manifest.json"), JSON.stringify(manifest, null, 2));

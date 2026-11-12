@@ -17,6 +17,7 @@
     "complexity:update": "node scripts/complexity.mjs --update",
     "bundle:report": "node scripts/bundle-report.mjs --max-kb 170",
     "store:assets": "node scripts/store-assets.mjs",
+    "build:npm": "npm run build && node scripts/build-npm.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

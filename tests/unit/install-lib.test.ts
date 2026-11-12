@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error plain ESM without types
-import { BROWSERS, install, locations, targetBrowsers, uninstall } from "../../bridge/install-lib.mjs";
+import { BROWSERS, install, locations, STORE_EXTENSION_ID, targetBrowsers, uninstall } from "../../bridge/install-lib.mjs";
 
 const ID = "abcdefghijklmnopabcdefghijklmnop";
 const home = () => mkdtempSync(join(tmpdir(), "jr-install-"));
@@ -104,5 +104,28 @@ describe("installing the downloaded file", () => {
       log: () => undefined,
     });
     for (const f of ["justrefresh-bridge.mjs", "lib.mjs", "install-lib.mjs"]) expect(existsSync(join(loc.bin, f)), f).toBe(true);
+  });
+});
+
+describe("installing for JustRefresh from the Chrome Web Store", () => {
+  it.skipIf(process.platform === "win32")("needs no extension id, and prints a ready-made claude mcp add line", () => {
+    const h = home();
+    const loc = locations({ home: h, platform: "darwin", env: { JUSTREFRESH_BRIDGE_DIR: join(h, ".justrefresh") } });
+    const src = join(__dirname, "../../bridge");
+    const lines: string[] = [];
+    install({
+      sourceDir: src,
+      entry: join(src, "justrefresh-bridge.mjs"),
+      node: "/usr/local/bin/node",
+      loc,
+      run: () => undefined,
+      log: (l: string) => lines.push(l),
+    });
+    const manifest = JSON.parse(readFileSync(join(h, "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.justrefresh.bridge.json"), "utf8"));
+    expect(manifest.allowed_origins).toEqual([`chrome-extension://${STORE_EXTENSION_ID}/`]);
+    expect(lines.join("\n")).toContain("for JustRefresh from the Chrome Web Store");
+    expect(lines).toContain(`\nClaude Code: claude mcp add --scope user justrefresh -- "/usr/local/bin/node" "${join(loc.bin, "justrefresh-bridge.mjs")}" mcp`);
+    // Another copy still names its own id.
+    expect(() => install({ extensionId: "not-an-id", sourceDir: src, loc, run: () => undefined, log: () => undefined })).toThrow(/32-letter id/);
   });
 });

@@ -237,7 +237,7 @@ describe.skipIf(isWin)("bridge processes", () => {
     // XDG_CONFIG_HOME too (CI runners set it): Linux browsers' folders are under it.
     const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"), JUSTREFRESH_BRIDGE_DIR: join(home, ".justrefresh") };
     const run = (...args: string[]) => spawnSync(process.execPath, args, { env, encoding: "utf8" });
-    expect(run(BRIDGE, "install").status).toBe(2); // needs the extension id
+    expect(run(BRIDGE, "install", "--extension-id", "not-an-id").status).toBe(2); // an id must be one
     const out = run(BRIDGE, "install", "--extension-id", "abcdefghijklmnopabcdefghijklmnop");
     expect(out.status, out.stderr).toBe(0);
     const bin = join(home, ".justrefresh", "bin");

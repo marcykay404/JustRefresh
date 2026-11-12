@@ -14,6 +14,8 @@ import { execFileSync } from "node:child_process";
 import { BRIDGE_FILE, DATA_DIR_NAME, MCP_SERVER_KEY } from "./lib.mjs";
 
 export const HOST = "com.justrefresh.bridge";
+/** JustRefresh from the Chrome Web Store: the extension the bridge is for unless --extension-id names another copy. */
+export const STORE_EXTENSION_ID = "hgdoldonldledoimnhlpkmipchjfgolf";
 /** What the bridge is made of: the bundled download is one file, the repo version three. */
 const BRIDGE_FILES = [BRIDGE_FILE, "lib.mjs", "install-lib.mjs"];
 
@@ -195,7 +197,7 @@ function register(loc, browsers, manifest, run) {
 }
 
 export function install({
-  extensionId,
+  extensionId = STORE_EXTENSION_ID,
   browser,
   sourceDir,
   entry,
@@ -206,7 +208,9 @@ export function install({
   log = console.log,
 }) {
   if (!/^[a-p]{32}$/.test(extensionId ?? "")) {
-    throw new Error("Pass --extension-id <32-letter id>. JustRefresh shows it in Dashboard → Agent Integrations, with this command ready to copy.");
+    throw new Error(
+      "--extension-id must be a 32-letter id. JustRefresh shows it in Dashboard → Agent Integrations, with this command ready to copy; leave it out for JustRefresh from the Chrome Web Store.",
+    );
   }
   const browsers = targetBrowsers(loc, browser);
   fs.mkdirSync(loc.dataDir, { recursive: true, mode: 0o700 });
@@ -222,9 +226,15 @@ export function install({
   };
   const registered = register(loc, browsers, manifest, run);
   log(`Installed the JustRefresh bridge in ${loc.bin}`);
+  log(
+    extensionId === STORE_EXTENSION_ID
+      ? `  for JustRefresh from the Chrome Web Store (${extensionId}); for another copy, run again with --extension-id <its id>`
+      : `  for the JustRefresh extension ${extensionId}`,
+  );
   for (const r of registered) log(`  registered with ${r}`);
   log("\nNext: restart JustRefresh if the dashboard asks, then add this to your AI app's MCP settings:");
   log(JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: { command: node, args: [script, "mcp"] } } }, null, 2));
+  log(`\nClaude Code: claude mcp add --scope user ${MCP_SERVER_KEY} -- "${node}" "${script}" mcp`);
   log("\nWhen the app first connects, approve it in JustRefresh → Dashboard → Agent Integrations.");
   log("If you switch Node versions (nvm, a new Homebrew Node), run this install again.");
   return { browsers, launcher, script };
