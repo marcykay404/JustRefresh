@@ -72,15 +72,17 @@ function inTriangle(x, y, [p, q, s]) {
   return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
 }
 
-function icon(size) {
+/** `pad`: transparent pixels around the artwork on each side (the store icon is 96 px of art in 128). */
+function icon(size, pad = 0) {
   const S = 4; // supersampling
+  const art = size - 2 * pad;
   return png(size, (px, py) => {
     let cover = 0,
       ring = 0;
     for (let sy = 0; sy < S; sy++)
       for (let sx = 0; sx < S; sx++) {
-        const x = ((px + (sx + 0.5) / S) / size) * 2 - 1;
-        const y = ((py + (sy + 0.5) / S) / size) * 2 - 1;
+        const x = ((px - pad + (sx + 0.5) / S) / art) * 2 - 1;
+        const y = ((py - pad + (sy + 0.5) / S) / art) * 2 - 1;
         // rounded square background
         const q = Math.max(Math.abs(x), Math.abs(y));
         const rr = 0.35,
@@ -105,4 +107,7 @@ function icon(size) {
 }
 mkdirSync("public/icons", { recursive: true });
 for (const s of [16, 32, 48, 128]) writeFileSync(`public/icons/icon${s}.png`, icon(s));
+// Chrome Web Store icon: 128×128 with the artwork at 96×96 and 16 px of transparent padding.
+mkdirSync("store", { recursive: true });
+writeFileSync("store/icon-128.png", icon(128, 16));
 console.log("icons written");
