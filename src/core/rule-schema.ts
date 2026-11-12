@@ -53,7 +53,7 @@ export const scheduleSchema = z.strictObject({
 export const ruleInputSchema = z.strictObject({
   schemaVersion: z.optional(z.literal(RULE_SCHEMA_VERSION)),
   id: z.optional(z.string().check(z.regex(RULE_ID_PATTERN, "IDs may contain letters, digits, '.', '_' and '-' (max 64)"))),
-  name: z.string().check(z.trim(), z.minLength(1), z.maxLength(100)),
+  name: z.string().check(z.trim(), z.minLength(1, "Give the rule a name"), z.maxLength(100)),
   description: z.optional(z.string().check(z.maxLength(500))),
   enabled: z.optional(z.boolean()),
   priority: z.optional(z.int().check(z.gte(-1000), z.lte(1000))),
@@ -223,6 +223,9 @@ function checkAction(a: ActionConfig, p: string, registries: Registries, trigger
   }
   if (a.type === "click" && trigger && !trigger.allowsRefresh) {
     out.push(diag(p, "click_loop", `The "${trigger.type}" trigger cannot use the click action (a click that loads a page would run it again, in a loop)`));
+  }
+  if (a.type === "highlight" && !a.selector && !a.text) {
+    out.push(diag(p, "highlight_target", "Say what to highlight: an element (selector), a text, or both"));
   }
   return out;
 }

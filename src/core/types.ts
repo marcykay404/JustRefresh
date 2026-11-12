@@ -37,6 +37,11 @@ export interface MatchDetails {
   element?: ElementSummary;
   /** Free-form explanation for humans/agents. */
   note?: string;
+  /**
+   * dom.changed only, from the page to the engine: a fingerprint of the
+   * element's text. The condition's handler removes it from its result.
+   */
+  fingerprint?: string;
 }
 
 export interface ElementSummary {
@@ -367,6 +372,12 @@ export interface TabRuntime {
   ignoreUnsavedOnce?: boolean;
   lastEvaluation: { at: number; status: EvaluationStatus; reason?: string } | null;
   lastError: string | null;
+  /**
+   * What stateful conditions (dom.changed, dom.text_lost) saw at the previous
+   * check of this run, by the condition's place in the rule. A new run starts
+   * without it. Kept out of what the API shows.
+   */
+  memory?: Record<string, string>;
 }
 
 /* ------------------------------------------------------------------ */

@@ -6,6 +6,7 @@ import { evaluateDomCondition, testSelector } from "../conditions/dom-eval";
 import { CONTENT_PROTOCOL, PICK_CHANNEL, type ContentRequest, type ContentResponse, type PickMessage } from "../shared/messaging-types";
 import { ActivityMonitor } from "./activity-monitor";
 import { currentNavigation, detectFormResult, watchFormPosts } from "./form-post";
+import { highlight, isBusy } from "./highlight";
 import { clickElement, restoreScroll, saveScroll } from "./page-actions";
 import { cancelPicker, startPicker } from "./picker";
 
@@ -56,6 +57,11 @@ if (g[FLAG] !== version) {
     }),
     testSelector: (msg) => ({ requestId: msg.requestId, kind: "testSelector", result: testSelector(document, msg.selector, msg.includeText) }),
     click: (msg) => ({ requestId: msg.requestId, kind: "click", result: clickElement(document, msg.selector) }),
+    highlight: (msg) => ({
+      requestId: msg.requestId,
+      kind: "highlight",
+      result: highlight(window, { selector: msg.selector, text: msg.text }, { busy: isBusy(monitor.snapshot()) }),
+    }),
     saveScroll: (msg) => {
       if (store) saveScroll(window, store);
       return { requestId: msg.requestId, kind: "done" };

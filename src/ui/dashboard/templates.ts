@@ -111,7 +111,11 @@ export const TEMPLATES: Template[] = [
     fills: "the status page, the text shown while waiting · Every 5 min",
     warning: "Only for pages you just look at. Never use it on payment or checkout pages: refreshing those can send an order twice.",
     scope: "page",
-    text: { label: "Keep refreshing while this text is on the page", hint: "When it's gone, refreshing stops and you're notified.", initial: "Pending" },
+    text: {
+      label: "Keep refreshing while this text is on the page",
+      hint: "When it's gone, refreshing stops and you're notified. A page that never showed it (a login page, a typo) doesn't count.",
+      initial: "Pending",
+    },
     intervals: [60, 300, 900, 1800],
     initialSeconds: 300,
     until: true,

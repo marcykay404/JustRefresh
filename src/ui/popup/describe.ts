@@ -32,37 +32,36 @@ export function intervalChips(fastAllowed: boolean): number[] {
 
 const quote = (v: unknown) => `“${String(v)}”`;
 
+type Node = { type: string; [k: string]: unknown };
+const whereOf = (n: Node) => (typeof n.selector === "string" && n.selector ? ` in ${n.selector}` : "");
+
+const TEXT_WORDS: Record<string, (n: Node) => string> = {
+  contains: (n) => `${quote(n.value)} appears${whereOf(n)}`,
+  not_contains: (n) => `${quote(n.value)} isn't on the page${whereOf(n)}`,
+  equals: (n) => `the text${whereOf(n)} is ${quote(n.value)}`,
+};
+
+const group = (n: Node) => {
+  const items = (n.conditions as ConditionNode[] | undefined) ?? [];
+  if (items.length === 1) return describeCondition(items[0]!);
+  return `${n.type === "all" ? "all" : "any"} of ${items.length} conditions match`;
+};
+
+const CONDITION_WORDS: Record<string, (n: Node) => string> = {
+  "dom.text": (n) => (Object.hasOwn(TEXT_WORDS, String(n.operator)) ? TEXT_WORDS[String(n.operator)]!(n) : `the text${whereOf(n)} matches ${quote(n.value)}`),
+  "dom.text_lost": (n) => `${quote(n.value)} disappears${whereOf(n)}`,
+  "dom.changed": (n) => (whereOf(n) ? `the content${whereOf(n)} changes` : "the page changes"),
+  "dom.exists": (n) => `${String(n.selector)} appears on the page`,
+  "dom.missing": (n) => `${String(n.selector)} is gone from the page`,
+  all: group,
+  any: group,
+  not: () => "a condition stops matching",
+};
+
 /** "“In stock” appears", "an element matching .buy appears", … */
 export function describeCondition(c: ConditionNode): string {
-  const n = c as { type: string; [k: string]: unknown };
-  const where = typeof n.selector === "string" && n.selector ? ` in ${n.selector}` : "";
-  switch (n.type) {
-    case "dom.text":
-      switch (n.operator) {
-        case "contains":
-          return `${quote(n.value)} appears${where}`;
-        case "not_contains":
-          return `${quote(n.value)} disappears${where}`;
-        case "equals":
-          return `the text${where} is ${quote(n.value)}`;
-        default:
-          return `the text${where} matches ${quote(n.value)}`;
-      }
-    case "dom.exists":
-      return `${String(n.selector)} appears on the page`;
-    case "dom.missing":
-      return `${String(n.selector)} is gone from the page`;
-    case "all":
-    case "any": {
-      const items = (n.conditions as ConditionNode[] | undefined) ?? [];
-      if (items.length === 1) return describeCondition(items[0]!);
-      return `${n.type === "all" ? "all" : "any"} of ${items.length} conditions match`;
-    }
-    case "not":
-      return "a condition stops matching";
-    default:
-      return "its condition matches";
-  }
+  const n = c as Node;
+  return Object.hasOwn(CONDITION_WORDS, n.type) ? CONDITION_WORDS[n.type]!(n) : "its condition matches";
 }
 
 /**
@@ -116,7 +115,7 @@ function withCondition(when: string, cond: string, { onMatched, onNotMatched }: 
   return `${cap(when)}: when ${cond}, ${actionsPhrase(onMatched)}; otherwise ${actionsPhrase(onNotMatched)}`;
 }
 
-type ActionWords = ActionConfig & { minutes?: number; selector?: string; keepScroll?: boolean; url?: string; includePageUrl?: boolean };
+type ActionWords = ActionConfig & { minutes?: number; selector?: string; text?: string; keepScroll?: boolean; url?: string; includePageUrl?: boolean };
 
 const ACTION_WORDS: Record<string, (a: ActionWords) => string> = {
   refresh: (a) => (a.keepScroll ? "refresh (keeping the scroll position)" : "refresh"),
@@ -126,6 +125,7 @@ const ACTION_WORDS: Record<string, (a: ActionWords) => string> = {
   notify: () => "notify me",
   log: () => "note it in History",
   click: (a) => `click ${a.selector}`,
+  highlight: (a) => `highlight ${a.text ? quote(a.text) : a.selector}${a.text && a.selector ? ` in ${a.selector}` : ""}`,
   // Shown when approving agents' rules: say exactly where it goes and what it sends.
   webhook: (a) => `send a message to ${a.url}${a.includePageUrl ? " (with the page address)" : ""}`,
 };
@@ -199,8 +199,10 @@ export function pagePatterns(url: string, anyQuery = false): UrlPatternInput[] {
 
 /**
  * "Refresh until something appears": refresh this exact page every
- * `seconds` until `text` appears (or disappears) anywhere on it, then stop
- * and notify with a sound.
+ * `seconds` until `text` appears anywhere on it (then highlight it), or
+ * disappears after having been there, then stop and notify with a sound.
+ * "Disappears" never counts a page that didn't show the text in the first
+ * place (a login or error page); the popup checks the text is there first.
  */
 export function untilRule(o: {
   url: string;
@@ -223,10 +225,14 @@ export function untilRule(o: {
     ...(o.stopAfterSeconds ? { limits: { maxDurationSeconds: o.stopAfterSeconds } } : {}),
     target: { type: "url", patterns: pagePatterns(o.url, o.anyQuery), exclusions: [] },
     trigger: { type: "interval", seconds: o.seconds },
-    stopWhen: { type: "dom.text", operator: o.mode === "appears" ? "contains" : "not_contains", value: text, caseSensitive: false },
+    stopWhen:
+      o.mode === "appears"
+        ? { type: "dom.text", operator: "contains", value: text, caseSensitive: false }
+        : { type: "dom.text_lost", value: text, caseSensitive: false },
     actions: {
       onMatched: [
         { type: "stopRefresh" },
+        ...(o.mode === "appears" ? [{ type: "highlight", text }] : []),
         { type: "notify", title: o.mode === "appears" ? `Found ${quote(text)}` : `${quote(text)} is gone`, message: o.site, sound: true },
       ],
       onNotMatched: [{ type: "refresh" }],

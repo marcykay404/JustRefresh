@@ -24,6 +24,14 @@ export interface RuleContext {
   evaluateChild(node: ConditionNode): Promise<EvaluationResult>;
   /** Result of a page-side evaluation computed in a batched round-trip. */
   pageResult(node: ConditionNode): EvaluationResult;
+  /**
+   * For stateful conditions: what this condition (at its place in the rule)
+   * remembered at the previous check of the run. `set(undefined)` forgets it.
+   * Kept only when the engine saves the check's result. null: this check
+   * doesn't compare (the page has just loaded and may not have settled, or
+   * the tab is on another page than the one remembered).
+   */
+  memory: { get(): string | undefined; set(value: string | undefined): void } | null;
 }
 
 export interface ConditionHandler<TConfig extends ConditionNode = ConditionNode> {
@@ -82,6 +90,8 @@ export interface ActionContext {
   reload(opts: { bypassCache: boolean; keepScroll?: boolean }): Promise<void>;
   /** Click an element on the page. Waits like a refresh while you type or have unsaved changes (throws to postpone). */
   click(selector: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Highlight an element or text on the page and scroll to it (not while the page is in use). */
+  highlight(target: { selector?: string; text?: string }): Promise<{ ok: true; scrolled: boolean } | { ok: false; error: string }>;
   /** POST JSON to a local webhook, when webhooks are switched on in Settings. */
   webhook(url: string, payload: Record<string, unknown>): Promise<{ ok: true } | { ok: false; error: string }>;
   setStatus(status: ExecutionStatus, reason: string, resumeAt?: number): void;

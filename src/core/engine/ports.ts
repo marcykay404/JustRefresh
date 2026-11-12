@@ -32,6 +32,7 @@ export type PageAvailability =
   { available: true } | { available: false; reason: string; code: "missing_permission" | "content_script_unavailable" | "restricted_url" };
 
 export type ClickOutcome = { ok: true } | { ok: false; error: string };
+export type HighlightOutcome = { ok: true; scrolled: boolean } | { ok: false; error: string };
 
 export interface PagePort {
   evaluate(tabId: number, leaves: ConditionNode[], includeText: boolean): Promise<EvaluationResult[]>;
@@ -39,6 +40,8 @@ export interface PagePort {
   activity(tabId: number): Promise<{ activity: ActivitySnapshot | null; reason?: string }>;
   /** Click the first element matching `selector`; never one that submits a form. */
   click(tabId: number, selector: string): Promise<ClickOutcome>;
+  /** Highlight the first element matching `selector` (or `text` in it, or on the page) and scroll to it. */
+  highlight(tabId: number, target: { selector?: string; text?: string }): Promise<HighlightOutcome>;
   /** Best effort: remember the scroll position, so the refresh that follows can restore it. */
   saveScroll(tabId: number): Promise<void>;
 }

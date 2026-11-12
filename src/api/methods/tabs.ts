@@ -1,5 +1,6 @@
 /** Tabs: what runs where, per-tab timers and protection, refresh controls, pause/resume all. */
 import { detectRuleConflicts, resolveTab, type Resolution } from "../../core/rule-resolver";
+import { publicRuntime } from "../../core/state-machine";
 import type { TabInfo, TabRuntime } from "../../core/types";
 import { z } from "../../core/zod";
 import { FAST_MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS } from "../../triggers/interval";
@@ -198,7 +199,7 @@ function overviewRow(tab: TabInfo, res: Resolution, rt: TabRuntime | null) {
   const resting = res.kind === "restricted" || res.kind.endsWith("excluded") ? "excluded" : "idle";
   return {
     tab,
-    runtime: rt,
+    runtime: publicRuntime(rt),
     status: rt?.status ?? resting,
     reason: rt?.reason ?? ("reason" in res ? res.reason : undefined),
     controllerId: controller?.id ?? rt?.controllerId ?? null,

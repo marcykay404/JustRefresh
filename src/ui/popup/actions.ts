@@ -29,6 +29,12 @@ export async function startUntil(r: UntilRequest, run: (method: string, params?:
   if (!r.state.hostAccess && r.origin && !(await requestOrigins([r.origin]).catch(() => false))) {
     return { done: false, warning: `JustRefresh needs access to ${r.site} to read the page. Nothing was set up.` };
   }
+  // "Disappears" only counts text that has been on the page: make sure it is there now,
+  // or a typo would refresh forever without saying so.
+  if (r.mode === "disappears") {
+    const missing = await textMissing(r.tabId, r.state.tab.url, r.text, r.anyQuery);
+    if (missing) return { done: false, warning: missing };
+  }
   const rule = untilRule({
     url: r.state.tab.url,
     site: r.site,
@@ -52,4 +58,15 @@ export async function startUntil(r: UntilRequest, run: (method: string, params?:
   }
   await run("runNow", { tabId: r.tabId });
   return { done: true };
+}
+
+/**
+ * Why "disappears" can't start: the text isn't on the tab's page now. null =
+ * it is, or the page couldn't be checked (then the rule still waits to see it).
+ */
+export async function textMissing(tabId: number, url: string, text: string, anyQuery?: boolean): Promise<string | null> {
+  const probe = untilRule({ url, site: "check", seconds: 60, text, mode: "appears", anyQuery });
+  const test = (await api("testRule", { rule: probe, tabId }).catch(() => null)) as { result?: { status: string } } | null;
+  if (test?.result?.status !== "not_matched") return null;
+  return `“${text.trim()}” isn't on this page now, so it can't disappear. Check the spelling, or start when the page shows it.`;
 }

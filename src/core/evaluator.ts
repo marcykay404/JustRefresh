@@ -21,11 +21,26 @@ export interface EvaluationInput {
   runtime: RuleContext["runtime"];
   pageEvaluator: PageEvaluator;
   registries?: Registries;
+  /** What stateful conditions remembered at the previous check (TabRuntime.memory); null = don't compare this time. */
+  memory?: Record<string, string> | null;
 }
 
 export interface EvaluationOutput {
   result: EvaluationResult;
   trace: EvaluationTrace;
+  /** The memory to keep for the next check. */
+  memory: Record<string, string>;
+}
+
+/** Each node's place in the tree ("0", "0.1", …): the key stateful conditions remember under. */
+function placesOf(root: ConditionNode, registries: Registries): Map<ConditionNode, string> {
+  const out = new Map<ConditionNode, string>();
+  const visit = (n: ConditionNode, place: string) => {
+    out.set(n, place);
+    (registries.conditions.get(n.type)?.children?.(n) ?? []).forEach((c, i) => visit(c, `${place}.${i}`));
+  };
+  visit(root, "0");
+  return out;
 }
 
 export function collectPageLeaves(root: ConditionNode, registries: Registries): ConditionNode[] {
@@ -59,6 +74,19 @@ export async function evaluateConditionTree(root: ConditionNode, input: Evaluati
   }
 
   const traces = new Map<ConditionNode, EvaluationTrace>();
+  const places = placesOf(root, registries);
+  const memory: Record<string, string> = { ...input.memory };
+  const memoryOf = (node: ConditionNode): RuleContext["memory"] => {
+    if (input.memory === null) return null;
+    const key = `${places.get(node) ?? "?"}:${node.type}`;
+    return {
+      get: () => (Object.hasOwn(memory, key) ? memory[key] : undefined),
+      set: (v) => {
+        if (v === undefined) delete memory[key];
+        else memory[key] = v;
+      },
+    };
+  };
 
   const evaluate = async (node: ConditionNode): Promise<EvaluationResult> => {
     const handler = registries.conditions.get(node.type);
@@ -72,6 +100,7 @@ export async function evaluateConditionTree(root: ConditionNode, input: Evaluati
         runtime: input.runtime,
         evaluateChild: evaluate,
         pageResult: (n) => pageResults.get(n) ?? { status: "unknown", code: "evaluation_error", reason: "Page condition was not evaluated" },
+        memory: memoryOf(node),
       };
       try {
         result = await handler.evaluate(node, ctx);
@@ -88,7 +117,7 @@ export async function evaluateConditionTree(root: ConditionNode, input: Evaluati
   };
 
   const result = await evaluate(root);
-  return { result, trace: traces.get(root)! };
+  return { result, trace: traces.get(root)!, memory };
 }
 
 /** Human-readable one-line explanation of a trace (for status & history). */

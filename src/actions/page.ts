@@ -1,6 +1,7 @@
 /**
- * Actions beyond the tab's own lifecycle: click an element on the page, and
- * tell a local program (webhook). See docs/rule-schema.md.
+ * Actions beyond the tab's own lifecycle: click an element on the page,
+ * highlight what was found, and tell a local program (webhook). See
+ * docs/rule-schema.md.
  */
 import { z } from "../core/zod";
 import type { ActionHandler } from "../registries/contracts";
@@ -12,6 +13,12 @@ export const isLocalWebhookUrl = (url: string) => LOCAL_WEBHOOK_PATTERN.test(url
 export const clickSchema = z.strictObject({
   type: z.literal("click"),
   selector: z.string().check(z.minLength(1), z.maxLength(500), z.describe("CSS selector of the element to click (the first match)")),
+});
+
+export const highlightSchema = z.strictObject({
+  type: z.literal("highlight"),
+  selector: z.optional(z.string().check(z.minLength(1), z.maxLength(500), z.describe("CSS selector of the element (the first match); the page when left out"))),
+  text: z.optional(z.string().check(z.minLength(1), z.maxLength(1000), z.describe("Text to highlight in it (the first place it appears)"))),
 });
 
 export const webhookSchema = z.strictObject({
@@ -37,6 +44,24 @@ export const clickAction: ActionHandler<z.infer<typeof clickSchema>> = {
   execute: async (c, ctx) => {
     const r = await ctx.click(c.selector);
     return r.ok ? { ok: true, message: `Clicked ${c.selector}` } : { ok: false, message: r.error };
+  },
+};
+
+export const highlightAction: ActionHandler<z.infer<typeof highlightSchema>> = {
+  type: "highlight",
+  title: "Highlight on the page",
+  description: "Marks the element or text it found and scrolls to it, so it's easy to spot. Doesn't scroll while you're using the page.",
+  schema: highlightSchema,
+  permissions: ["host"],
+  // Only marks the page, like a notification: also runs after the rule stops.
+  disruptive: false,
+  execute: async (c, ctx) => {
+    const r = await ctx.highlight({ selector: c.selector, text: c.text });
+    if (!r.ok) return { ok: false, message: r.error };
+    return {
+      ok: true,
+      message: `Highlighted ${c.text ? `“${c.text}”` : (c.selector ?? "the page")}${r.scrolled ? "" : " (not scrolled: the page was in use)"}`,
+    };
   },
 };
 

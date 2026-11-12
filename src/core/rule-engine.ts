@@ -20,7 +20,7 @@ import type { Actor, Config, EvaluationResult, Rule, TabInfo, TabRuntime } from 
 import { CycleEngine } from "./engine/cycle";
 import { FAST_WAIT_REASON } from "./engine/fast-site-limit";
 import { alarmName, tabIdFromAlarm, type CycleResult } from "./engine/ports";
-import { resolutionKey, waitingReason, withoutHash } from "./engine/support";
+import { resolutionKey, waitingReason, withMemory, withoutHash } from "./engine/support";
 
 export * from "./engine/ports";
 export { FORM_RESULT_REASON } from "./safety";
@@ -213,10 +213,10 @@ export class RuleEngine extends CycleEngine {
       if (rule.stopWhen && cur.status === "refreshing") {
         cur = transition(cur, "evaluating");
         await this.deps.stores.runtime.put(cur);
-        const evalOut = await this.evaluate(rule, tab, cur);
+        const evalOut = await this.evaluate(rule, tab, cur, { justLoaded: true });
         const latest = await this.deps.stores.runtime.get(tabId);
         if (!latest || latest.generation !== cur.generation) return true; // stale
-        cur = { ...latest, lastEvaluation: { at: now, status: evalOut.result.status, reason: explainTrace(evalOut.trace) } };
+        cur = { ...latest, lastEvaluation: { at: now, status: evalOut.result.status, reason: explainTrace(evalOut.trace) }, ...withMemory(evalOut.memory) };
         if (evalOut.result.status === "matched") {
           cur = await this.runActions({ rule, tab, event: "navigation" }, cur, rule.actions.onMatched, evalOut.result.status, { allowRefresh: false });
         } else {
@@ -264,7 +264,8 @@ export class RuleEngine extends CycleEngine {
           resumeAt: null,
           unknownStreak: 0,
           nextDueAt: this.nextDue(res.controller, this.now()),
-          ...(restart ? { refreshCount: 0, navigationCount: 0, startedAt: this.now(), generation: rt.generation + 1 } : {}),
+          // A new run: what stateful conditions saw in the old one doesn't count.
+          ...(restart ? { refreshCount: 0, navigationCount: 0, startedAt: this.now(), generation: rt.generation + 1, memory: undefined } : {}),
         });
       } else {
         rt = transition(rt, status, { reason, nextDueAt: null, resumeAt: null, generation: rt.generation + 1 });

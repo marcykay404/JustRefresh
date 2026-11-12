@@ -9,6 +9,7 @@
 import type { BrowserPort, ClockPort, RuleEngine } from "../core/rule-engine";
 import { resolveTab, rulesForOtherQuery, type Resolution } from "../core/rule-resolver";
 import { validateRule, zodDiagnostics } from "../core/rule-schema";
+import { publicRuntime } from "../core/state-machine";
 import type {
   Actor,
   AgentRecord,
@@ -291,7 +292,7 @@ export class RuleManagementService {
     const controller = controllerOf(res);
     return {
       tab,
-      runtime,
+      runtime: publicRuntime(runtime),
       statusLabel: runtime ? STATUS_LABELS[runtime.status] : isResting(res) ? "Excluded" : "Idle",
       resolution: resolutionSummary(res, controller),
       override: config.tabOverrides[String(tabIdValue)] ?? null,

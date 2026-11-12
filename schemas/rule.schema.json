@@ -391,6 +391,57 @@
           "additionalProperties": false
         },
         {
+          "title": "Content changed",
+          "description": "Matches when the text of the first matching element (or the page) differs from the previous check. The first check only remembers it.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "dom.changed"
+            },
+            "selector": {
+              "description": "CSS selector; the first match's text is watched. Defaults to the whole page (body)",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Text gone (after being seen)",
+          "description": "Matches when text that was on the page at an earlier check is no longer there. Never matches if the text hasn't been seen.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "dom.text_lost"
+            },
+            "selector": {
+              "description": "CSS selector; first match is checked. Defaults to body",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "caseSensitive": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
           "title": "URL matches",
           "description": "Matches when the tab's current URL matches the pattern (exact, domain, glob or regex).",
           "type": "object",
@@ -855,6 +906,33 @@
           "required": [
             "type",
             "selector"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "Highlight on the page",
+          "description": "Marks the element or text it found and scrolls to it, so it's easy to spot. Doesn't scroll while you're using the page.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "highlight"
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "CSS selector of the element (the first match); the page when left out"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000,
+              "description": "Text to highlight in it (the first place it appears)"
+            }
+          },
+          "required": [
+            "type"
           ],
           "additionalProperties": false
         },
