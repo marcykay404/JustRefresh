@@ -215,10 +215,12 @@ export function SupportCard() {
         JustRefresh is free, with no ads, accounts or tracking. If it saves you time, you can buy me a coffee.
       </p>
       <div className="row">
-        <a className="btn small" href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+        <a className="btn" href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-link-note">
           Buy me a coffee
         </a>
-        <span className="small muted">Opens buymeacoffee.com in a new tab.</span>
+        <span id="support-link-note" className="small muted">
+          Opens buymeacoffee.com in a new tab.
+        </span>
       </div>
     </div>
   );

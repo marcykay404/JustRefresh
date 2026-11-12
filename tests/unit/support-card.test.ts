@@ -10,6 +10,9 @@ describe("support link", () => {
     expect(html).toContain(`href="${SUPPORT_URL}"`);
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
+    // Screen readers say where it goes.
+    expect(html).toContain('aria-describedby="support-link-note"');
+    expect(html).toContain('id="support-link-note"');
     // A link only: no script, image or frame from their site.
     expect(html).not.toMatch(/<(script|img|iframe)/);
   });
