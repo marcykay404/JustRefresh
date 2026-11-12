@@ -215,7 +215,12 @@ describe("simpler popup", () => {
     expect(called("includeTab")).toEqual([{ tabId: 1 }]);
   });
 
-  it("Refresh until something appears: creates a rule for this page, hands the tab over and checks at once", async () => {
+  it("Refresh until something appears, without access: hands the set-up to the service worker before Chrome asks", async () => {
+    let toldFirst = false;
+    permissionsRequest.mockImplementationOnce(async () => {
+      toldFirst = called("afterAccess").length === 1; // on macOS the popup closes as Chrome's prompt opens
+      return true;
+    });
     await render({ source: "tab", status: "scheduled", hostAccess: false });
     await click(/^More/);
     await click(/Refresh until something appears/);
@@ -224,6 +229,28 @@ describe("simpler popup", () => {
     await click("Start watching");
     await tick();
     expect(permissionsRequest).toHaveBeenCalledWith({ origins: ["https://www.youtube.com/*"] });
+    expect(toldFirst).toBe(true);
+    expect(called("afterAccess")).toEqual([
+      {
+        origins: ["https://www.youtube.com/*"],
+        method: "refreshUntil",
+        params: expect.objectContaining({ tabId: 1, url: URL_, text: "In stock", mode: "appears", seconds: 60 }),
+      },
+    ]);
+    // Still open after Allow: it asks the service worker to do it now.
+    expect(called("runAfterAccess")).toHaveLength(1);
+    expect(called("createRule")).toEqual([]);
+  });
+
+  it("Refresh until something appears, with access: sets it up at once", async () => {
+    await render({ source: "tab", status: "scheduled" });
+    await click(/^More/);
+    await click(/Refresh until something appears/);
+    await type(el.querySelector<HTMLInputElement>('input[aria-label="Text to look for"]')!, "In stock");
+    await click("1 min");
+    await click("Start watching");
+    await tick();
+    expect(permissionsRequest).not.toHaveBeenCalled();
     const [created] = called("createRule") as { rule: { trigger: unknown; stopWhen: unknown; target: unknown } }[];
     expect(created!.rule.trigger).toEqual({ type: "interval", seconds: 60 });
     expect(created!.rule.stopWhen).toMatchObject({ operator: "contains", value: "In stock" });
@@ -346,7 +373,13 @@ describe("declining site access, then allowing it", () => {
     await click("Allow access");
     await tick();
     expect(permissionsRequest).toHaveBeenCalledTimes(2); // Start, then Allow access: no third request outside a click
-    expect(called("startTab")).toEqual([{ tabId: 1, intervalSeconds: 300 }]);
+    // Each click tells the service worker what it's for (it starts the tab once access is granted).
+    expect(called("afterAccess")).toEqual([
+      { origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 300 } },
+      { origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 300 } },
+    ]);
+    expect(called("runAfterAccess")).toHaveLength(1);
+    expect(text()).not.toContain("won't refresh this page until you allow access");
   });
 });
 

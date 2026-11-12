@@ -20,6 +20,7 @@ import { bridgeStatus, setBridgeEnabled } from "../integrations/native-bridge";
 import { STATUS_LABELS, type TabRuntime } from "../core/types";
 import { tabBadge } from "../core/badge";
 import { healthReport, startupDone, startupStep, timed } from "./diagnostics";
+import { createAfterAccess, parseAfterAccess } from "./after-access";
 import { HEALTH_CHANNEL } from "../shared/messaging-types";
 
 /** The generated JSON Schemas ship as package files; read them once, when an agent first asks. */
@@ -155,6 +156,17 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+/** What a popup click asked for, done once Chrome grants site access (the popup may have closed). */
+const afterAccess = createAfterAccess({
+  storage: chrome.storage.session,
+  granted: async (origin) => chrome.permissions.contains({ origins: [origin] }).catch(() => false),
+  call: (method, params) => service.call({ type: "user" }, method, params),
+  notify: async (title, message) => {
+    if ((await config.get()).settings.notificationsEnabled) await chromeBrowser.notify(`justrefresh:access:${Date.now()}`, title, message);
+  },
+  now: () => Date.now(),
+});
+
 /** Run `fn` once startup has finished; `what` names it in the health report while it waits or runs. */
 async function after<T>(fn: () => Promise<T>, what = "an event"): Promise<T> {
   return timed(what, async () => {
@@ -190,6 +202,8 @@ chrome.tabs.onReplaced.addListener((added, removed) => void after(() => engine.o
 chrome.permissions.onAdded.addListener(
   () =>
     void after(async () => {
+      // First what the click was for (the popup may be gone), then the open tabs.
+      await afterAccess.run();
       await syncContentScripts();
       await injectIntoOpenTabs();
       await engine.reconcileAll("config");
@@ -224,6 +238,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   void after(async () => {
     try {
       if (msg.method === "bridgeStatus") return { ok: true, result: bridgeStatus() };
+      // A popup click that asks Chrome for access: keep what it's for, and run it once granted.
+      if (msg.method === "afterAccess") {
+        const req = parseAfterAccess(msg.params);
+        if (!req) return { ok: false, error: { code: "invalid_params", message: "Invalid request" } };
+        await afterAccess.queue(req.origins, req.request);
+        return { ok: true, result: null };
+      }
+      if (msg.method === "runAfterAccess") return { ok: true, result: await afterAccess.run({ quiet: true }) };
       if (msg.method === "statusLabels") return { ok: true, result: STATUS_LABELS };
       return { ok: true, result: await service.call({ type: "user" }, msg.method, msg.params) };
     } catch (e) {

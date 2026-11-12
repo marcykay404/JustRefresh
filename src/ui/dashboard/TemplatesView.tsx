@@ -6,7 +6,7 @@ import { QueryChoice } from "../shared/QueryChoice";
 import type { Rule, Settings, TabInfo } from "../../core/types";
 import { STOP_AFTER_CHOICES } from "../../core/defaults";
 import { matchesAny } from "../../core/url-pattern";
-import { textMissing } from "../popup/actions";
+import { textMissing } from "../../shared/until";
 import { intervalLabel, priorityAbove, stopAfterLabel } from "../popup/describe";
 import { hostOf, normalizeAddress, pageLabel, stashBuilderDraft, TEMPLATES, type Template, type TemplateValues } from "./templates";
 
@@ -242,7 +242,7 @@ async function createFromTemplate(t: Template, values: TemplateValues, url: stri
   const input = t.build(values);
   // "Disappears" only counts text that has been there: on an open tab, make sure it is there now (a typo would wait forever).
   if (pickedTab && input.stopWhen?.type === "dom.text_lost") {
-    const missing = await textMissing(pickedTab.id, pickedTab.url, values.text, values.anyQuery);
+    const missing = await textMissing((m, params) => api(m, params), pickedTab.id, pickedTab.url, values.text, values.anyQuery);
     if (missing) throw new Error(`${missing} Nothing was created.`);
   }
   const rule = (await api("createRule", { rule: input })) as Rule;

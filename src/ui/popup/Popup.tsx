@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
+import { askAccessThen } from "../shared/access";
 import { useApi, useNow } from "../shared/hooks";
 import { StillLoading } from "../shared/StillLoading";
 import { ErrorBox } from "../shared/components";
@@ -160,15 +161,27 @@ function TabPopup({
   const start = (intervalSeconds: number, alreadyGranted = false) => {
     // No protection means nothing reads the page, so there is nothing to ask for.
     if (alreadyGranted || s.hostAccess || !f.origin || !f.protectionOn) return void begin(intervalSeconds);
-    void requestOrigins([f.origin])
-      .catch(() => false)
-      .then((granted) => (granted ? begin(intervalSeconds) : setDeclinedFor(intervalSeconds)));
+    // If Chrome's prompt closes the popup (macOS), the service worker starts it once you allow.
+    void askAccessThen(f.origin, { method: "startTab", params: { tabId, intervalSeconds } }).then(({ granted }) => {
+      if (!granted) return setDeclinedFor(intervalSeconds);
+      setDeclinedFor(null);
+      picker.reset();
+      setChanging(false);
+      void reloadState();
+    });
   };
 
   const onStartUntil = async (text: string, mode: "appears" | "disappears", anyQuery: boolean) => {
     setError(null);
     const stopAfterMinutes = overview?.settings.defaultStopAfterMinutes ?? null;
-    const r = await startUntil({ state: s, tabId, site: f.siteName, origin: f.origin, seconds: picker.chosen, text, mode, anyQuery, stopAfterMinutes }, run);
+    let r;
+    try {
+      r = await startUntil({ state: s, tabId, site: f.siteName, origin: f.origin, seconds: picker.chosen, text, mode, anyQuery, stopAfterMinutes });
+    } catch (e) {
+      setError(e);
+      return;
+    }
+    void reloadState();
     if (r.warning) setError(new Error(r.warning));
     if (!r.done) return;
     picker.reset();
@@ -257,7 +270,12 @@ function TabPopup({
           tabId={tabId}
           run={run}
           declinedFor={declinedFor}
-          onStart={start}
+          onAccessGranted={() => {
+            setDeclinedFor(null);
+            picker.reset();
+            setChanging(false);
+            void reloadState();
+          }}
           onStartUnprotected={async () => {
             await run("startTab", { tabId, intervalSeconds: declinedFor ?? picker.chosen, safety: { onActivityUnavailable: "refresh" } });
             setDeclinedFor(null);
@@ -277,7 +295,8 @@ function Extras(p: {
   tabId: number;
   run: Run;
   declinedFor: number | null;
-  onStart: (seconds: number, alreadyGranted?: boolean) => void;
+  /** Access was granted from the notice; the service worker did what the click was for. */
+  onAccessGranted: () => void;
   onStartUnprotected: () => Promise<void>;
   onUntil: () => void;
   reloadState: () => Promise<void>;
@@ -311,9 +330,13 @@ function Extras(p: {
     if (ok) await run("refreshNow", { tabId, force: true });
   };
 
+  // What the earlier click was for happens once you allow, even if Chrome's prompt closes the popup.
   const allowAccess = () =>
     f.origin &&
-    void requestOrigins([f.origin]).then((ok) => ok && (p.declinedFor !== null ? p.onStart(p.declinedFor, true) : void run("resumeTab", { tabId })));
+    void askAccessThen(
+      f.origin,
+      p.declinedFor !== null ? { method: "startTab", params: { tabId, intervalSeconds: p.declinedFor } } : { method: "resumeTab", params: { tabId } },
+    ).then(({ granted }) => granted && p.onAccessGranted());
 
   return (
     <>
