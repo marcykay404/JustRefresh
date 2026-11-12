@@ -9,6 +9,8 @@
   --accent-text: #ffffff;
   --accent-bg: #eff6ff;
   --accent-border: #bfdbfe;
+  /* Filled buttons: white text on it stays readable (WCAG AA) in both themes. */
+  --accent-fill: #2563eb;
   --ok: #15803d;
   --ok-bg: #dcfce7;
   --warn: #a16207;
@@ -33,6 +35,7 @@
     --accent: #4f8cff;
     --accent-bg: #172338;
     --accent-border: #2c4a7a;
+    --accent-fill: #2563eb;
     --ok: #4ade80;
     --ok-bg: #12301f;
     --warn: #fbbf24;
@@ -110,9 +113,9 @@ button:disabled {
   cursor: not-allowed;
 }
 button.primary {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-text);
-  border-color: var(--accent);
+  border-color: var(--accent-fill);
 }
 button.danger {
   color: var(--error);
@@ -755,12 +758,13 @@ button.big {
 a.btn {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   text-decoration: none;
   color: var(--text);
 }
 a.btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
   color: var(--accent-text);
 }
 .eyebrow {

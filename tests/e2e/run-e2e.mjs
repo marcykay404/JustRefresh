@@ -986,6 +986,7 @@ await test("popup and dashboard render", async () => {
   assert.equal(await page.getByRole("link", { name: "Source code" }).getAttribute("href"), "https://github.com/marcykay404/JustRefresh");
   // First on the page, above the settings.
   const [support, global] = await Promise.all(["Support JustRefresh", "Global"].map((name) => page.getByRole("heading", { name, exact: true }).boundingBox()));
+  assert.ok(support && global, "both headings are on the page");
   assert.ok(support.y < global.y, "Support JustRefresh comes before the settings");
   await page.screenshot({ path: join(root, "test-results", "settings-support.png") });
   await page.emulateMedia({ colorScheme: "dark" });
