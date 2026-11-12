@@ -10,6 +10,7 @@ import { RuleEngine } from "../core/rule-engine";
 import { RuleManagementService } from "../api/rule-api";
 import type { SchemaBundle } from "../api/capabilities";
 import { isApiRequest, isExtensionPage, toErrorResponse } from "../api/messaging";
+import { ApiError } from "../api/permissions";
 import { AuditRepository, ConfigRepository, HistoryRepository, RUNTIME_PREFIX, RuntimeRepository } from "../storage/repositories";
 import { chromeAlarms, chromeBrowser, chromePage, setShortTimerHandler, systemClock } from "./chrome-ports";
 import { hasHostAccess, injectIntoOpenTabs, originPattern, syncContentScripts } from "./host-access";
@@ -166,7 +167,11 @@ const afterAccess = createAfterAccess({
     return pattern !== null && origins.includes(pattern);
   },
   call: (method, params) => service.call({ type: "user" }, method, params),
-  popupOpen: async () => (await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.POPUP] })).length > 0,
+  popupOpen: async (tabId) => {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    const contexts = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.POPUP], ...(tab ? { windowIds: [tab.windowId] } : {}) });
+    return contexts.length > 0;
+  },
   notify: async (tabId, title, message) => {
     // tabId before the time: clicking it brings the tab to the front (see notifications.onClicked).
     if ((await config.get()).settings.notificationsEnabled) await chromeBrowser.notify(`justrefresh:access:${tabId}:${Date.now()}`, title, message);
@@ -204,10 +209,10 @@ chrome.tabs.onRemoved.addListener((tabId) => void after(() => engine.onTabRemove
 chrome.tabs.onReplaced.addListener((added, removed) => void after(() => engine.onTabReplaced(added, removed)));
 
 chrome.permissions.onAdded.addListener(
-  () =>
+  (added) =>
     void after(async () => {
       // First what the click was for (the popup may be gone), then the open tabs (whatever happened to it).
-      await afterAccess.runGranted().catch((e) => console.warn("JustRefresh: couldn't finish what access was asked for", e));
+      await afterAccess.runGranted(added.origins ?? []).catch((e) => console.warn("JustRefresh: couldn't finish what access was asked for", e));
       await syncContentScripts();
       await injectIntoOpenTabs();
       await engine.reconcileAll("config");
@@ -227,6 +232,38 @@ chrome.notifications.onClicked.addListener((id) => {
   void chrome.notifications.clear(id);
 });
 
+/** Invalid parameters for a page-only request. */
+const invalid = (message: string) => new ApiError("invalid_params", message);
+
+/**
+ * Requests only JustRefresh's own pages make: the bridge's status, status
+ * labels, and what a popup click that asks Chrome for access is for
+ * (background/after-access.ts).
+ */
+const PAGE_ONLY: Record<string, (params: unknown) => Promise<unknown>> = {
+  bridgeStatus: async () => bridgeStatus(),
+  statusLabels: async () => STATUS_LABELS,
+  afterAccess: async (params) => {
+    const req = parseAfterAccess(params);
+    if (!req) throw invalid("Invalid request");
+    await afterAccess.queue(req.id, req.origins, req.request);
+    return null;
+  },
+  runAfterAccess: async (params) => {
+    const id = (params as { id?: unknown } | undefined)?.id;
+    return typeof id === "string" ? afterAccess.resultFor(id) : null;
+  },
+  takeAfterAccess: async (params) => {
+    const { tabId, id } = (params ?? {}) as { tabId?: unknown; id?: unknown };
+    return typeof tabId === "number" ? afterAccess.take(tabId, typeof id === "string" ? id : undefined) : null;
+  },
+  cancelAfterAccessFor: async (params) => {
+    const origins = (params as { origins?: unknown } | undefined)?.origins;
+    if (Array.isArray(origins) && origins.every((o) => typeof o === "string")) await afterAccess.cancelFor(origins as string[]);
+    return null;
+  },
+};
+
 /* Internal API for the popup / dashboard. */
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // What it's busy with: answered at once, without waiting for startup.
@@ -241,23 +278,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   void after(async () => {
     try {
-      if (msg.method === "bridgeStatus") return { ok: true, result: bridgeStatus() };
-      // A popup click that asks Chrome for access: keep what it's for, and run it once granted.
-      if (msg.method === "afterAccess") {
-        const req = parseAfterAccess(msg.params);
-        if (!req) return { ok: false, error: { code: "invalid_params", message: "Invalid request" } };
-        await afterAccess.queue(req.id, req.origins, req.request);
-        return { ok: true, result: null };
-      }
-      if (msg.method === "runAfterAccess") {
-        const id = (msg.params as { id?: unknown } | undefined)?.id;
-        return { ok: true, result: typeof id === "string" ? await afterAccess.resultFor(id) : null };
-      }
-      if (msg.method === "takeAfterAccess") {
-        const tabId = (msg.params as { tabId?: unknown } | undefined)?.tabId;
-        return { ok: true, result: typeof tabId === "number" ? await afterAccess.take(tabId) : null };
-      }
-      if (msg.method === "statusLabels") return { ok: true, result: STATUS_LABELS };
+      // Requests only extension pages make (never agents): answered here, not by the Rule Management API.
+      if (Object.hasOwn(PAGE_ONLY, msg.method)) return { ok: true, result: await PAGE_ONLY[msg.method]!(msg.params) };
       return { ok: true, result: await service.call({ type: "user" }, msg.method, msg.params) };
     } catch (e) {
       return toErrorResponse(e);

@@ -43,7 +43,7 @@ export function startUntil(r: UntilRequest): Promise<UntilOutcome> {
   if (r.state.hostAccess || !r.origin) return setUpUntil(plan, (method, params) => api(method, params));
   return askAccessThen(r.origin, { method: "refreshUntil", params: plan }).then(({ granted, result }) => {
     if (!granted) return { done: false, warning: `JustRefresh needs access to ${r.site} to read the page. Nothing was set up.` };
-    if (!result) return { done: false, warning: "Nothing was set up: the tab no longer shows this page." };
+    if (!result) return { done: false, warning: "Nothing was set up (the tab moved on, or Chrome took too long to ask). Click Start watching to try again." };
     return { done: result.ok, warning: result.message };
   });
 }

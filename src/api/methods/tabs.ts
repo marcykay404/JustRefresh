@@ -1,7 +1,8 @@
 /** Tabs: what runs where, per-tab timers and protection, refresh controls, pause/resume all. */
 import { detectRuleConflicts, resolveTab, type Resolution } from "../../core/rule-resolver";
 import { publicRuntime } from "../../core/state-machine";
-import type { Config, TabInfo, TabRuntime } from "../../core/types";
+import type { Config, SafetyConfig, TabInfo, TabRuntime } from "../../core/types";
+import { DEFAULT_SAFETY } from "../../core/defaults";
 import { z } from "../../core/zod";
 import { FAST_MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS } from "../../triggers/interval";
 import { ApiError } from "../permissions";
@@ -27,7 +28,11 @@ export function tabsMethods(svc: ServiceInternals): Record<string, MethodDef> {
           tabs.map(async (tab) => {
             const res = resolveTab(tab, config);
             const row = overviewRow(tab, res, runtimes.get(tab.id) ?? null);
-            return { ...row, needsAccess: await needsAccess(row.status, res, config, () => d.hostAccess(tab.url)) };
+            return {
+              ...row,
+              needsAccess: await needsAccess(row.status, res, config, () => d.hostAccess(tab.url)),
+              timerNeedsAccess: protects({ ...DEFAULT_SAFETY, ...config.settings.defaultSafety, ...(config.tabOverrides[String(tab.id)]?.safety ?? {}) }),
+            };
           }),
         );
         const count = (pred: (s: string) => boolean) => rows.filter((r) => pred(r.status)).length;
@@ -207,9 +212,14 @@ export function tabsMethods(svc: ServiceInternals): Record<string, MethodDef> {
 async function needsAccess(status: string, res: Resolution, config: Config, hostAccess: () => Promise<boolean>): Promise<boolean> {
   if (!["scheduled", "evaluating", "refreshing", "paused_activity"].includes(status)) return false;
   const safety = (res.kind === "controller" ? res.controller.safety : null) ?? config.settings.defaultSafety;
-  const protects = safety.pauseWhileTyping || safety.protectUnsavedChanges || safety.pauseOnMouse || safety.pauseOnScroll;
-  if (!protects || safety.onActivityUnavailable === "refresh") return false;
+  if (!protects(safety)) return false;
   return !(await hostAccess().catch(() => false));
+}
+
+/** Protection that needs to look inside the page, and holds the refresh when it can't. */
+function protects(safety: Partial<SafetyConfig>): boolean {
+  const watches = safety.pauseWhileTyping || safety.protectUnsavedChanges || safety.pauseOnMouse || safety.pauseOnScroll;
+  return !!watches && safety.onActivityUnavailable !== "refresh";
 }
 
 /** One row of the Tabs overview: the tab, its run, and what controls it. */

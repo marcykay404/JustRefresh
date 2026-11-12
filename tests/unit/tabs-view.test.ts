@@ -119,9 +119,9 @@ it("a bulk start leaves a declined site alone, and offers to start it without pr
   expect(el.textContent).not.toContain("Not started");
 });
 
-it("without protection by default, a bulk start doesn't ask Chrome: nothing needs reading", async () => {
-  const safety = overview.settings.defaultSafety;
-  overview.settings.defaultSafety = { ...safety, pauseWhileTyping: false, protectUnsavedChanges: false };
+it("a tab whose timer wouldn't need to see the page isn't asked about: it just starts", async () => {
+  const r4 = overview.tabs.find((t) => t.tab.id === 4)!;
+  (r4 as Record<string, unknown>).timerNeedsAccess = false;
   try {
     await act(async () => root.render(createElement(DialogProvider, null, createElement(TabsView))));
     await flush();
@@ -129,9 +129,10 @@ it("without protection by default, a bulk start doesn't ask Chrome: nothing need
     await act(async () => rowOf(4).querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     await act(async () => [...el.querySelectorAll("button")].find((b) => b.textContent === "Start refreshing")!.click());
     await flush();
+    await flush();
     expect(permissionsRequest).not.toHaveBeenCalled();
     expect(calls.filter((c) => c.method === "startTab").map((c) => (c.params as { tabId: number }).tabId)).toEqual([4]);
   } finally {
-    overview.settings.defaultSafety = safety;
+    delete (r4 as Record<string, unknown>).timerNeedsAccess;
   }
 });

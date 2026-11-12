@@ -51,8 +51,8 @@ export interface AfterAccessDeps {
   tabOn(tabId: number, origins: string[]): Promise<boolean>;
   /** The Rule Management API, as the user. */
   call: ApiCall;
-  /** Whether a JustRefresh popup is open (it shows the result itself). */
-  popupOpen(): Promise<boolean>;
+  /** Whether a JustRefresh popup is open in this tab's window (it shows the result itself). */
+  popupOpen(tabId: number): Promise<boolean>;
   /** Tell the user (the popup is gone). */
   notify(tabId: number, title: string, message: string): Promise<void>;
   now(): number;
@@ -94,13 +94,13 @@ export function createAfterAccess(deps: AfterAccessDeps) {
     return { method: r.method, ok: true };
   }
 
-  /** Run every request whose access is now granted; keep each result under its id. */
-  async function runReady(): Promise<{ id: string; tabId: number; result: AfterAccessResult }[]> {
+  /** Run the requests `pick` chooses whose access is now granted; keep each result under its id. */
+  async function runReady(pick: (p: Pending) => boolean): Promise<{ id: string; tabId: number; result: AfterAccessResult }[]> {
     const now = deps.now();
     const list = (await load()).filter((p) => p.until > now);
     const ready: Pending[] = [];
     const waiting: Pending[] = [];
-    for (const p of list) ((await allGranted(p)) ? ready : waiting).push(p);
+    for (const p of list) (pick(p) && (await allGranted(p)) ? ready : waiting).push(p);
     // Taken off the list before running: each runs at most once.
     await save(waiting);
     const done: { id: string; tabId: number; result: AfterAccessResult }[] = [];
@@ -119,11 +119,15 @@ export function createAfterAccess(deps: AfterAccessDeps) {
   }
 
   return {
-    /** Keep a request until access is granted (a newer one for the same tab replaces it). */
+    /**
+     * Keep a request until access is granted. A newer click replaces any request
+     * for the same tab or the same sites: Chrome asks one thing at a time, and
+     * an older one (declined after its popup closed) mustn't start with it.
+     */
     queue(id: string, origins: string[], request: AfterAccessRequest) {
       return serial(async () => {
         const now = deps.now();
-        const list = (await load()).filter((p) => p.until > now && tabOf(p.request) !== tabOf(request));
+        const list = (await load()).filter((p) => p.until > now && tabOf(p.request) !== tabOf(request) && !p.origins.some((o) => origins.includes(o)));
         await save([...list, { id, origins, request, until: now + AFTER_ACCESS_MS }]);
       });
     },
@@ -132,32 +136,45 @@ export function createAfterAccess(deps: AfterAccessDeps) {
      * "Deny", or when the popup, opened again, shows it (prefilled) instead,
      * so it can't start later by surprise. A granted one is left to run.
      */
-    take(tabId: number) {
+    take(tabId: number, id?: string) {
       return serial(async () => {
         const now = deps.now();
         const list = (await load()).filter((p) => p.until > now);
-        const mine = list.find((p) => tabOf(p.request) === tabId);
+        const mine = list.find((p) => tabOf(p.request) === tabId && (id === undefined || p.id === id));
         if (!mine || (await allGranted(mine))) return null;
         await save(list.filter((p) => p !== mine));
         return mine.request;
       });
     },
-    /** Chrome granted access: run what's ready, and tell the user about problems when no popup is open to. */
-    runGranted() {
+    /**
+     * Chrome granted access to `origins`: run the requests for those sites
+     * (only those: access granted for something else doesn't start a request
+     * the user declined), telling the user about a problem when no popup in
+     * that tab's window is open to show it.
+     */
+    runGranted(origins: string[]) {
       return serial(async () => {
-        const done = await runReady();
-        if (done.some((d) => d.result.message) && (await deps.popupOpen().catch(() => false))) return done;
+        const done = await runReady((p) => p.origins.some((o) => origins.includes(o)));
         for (const d of done) {
-          if (d.result.message) await deps.notify(d.tabId, d.result.ok ? "JustRefresh" : "JustRefresh couldn't start", d.result.message);
+          if (!d.result.message || (await deps.popupOpen(d.tabId).catch(() => false))) continue;
+          await deps.notify(d.tabId, d.result.ok ? "JustRefresh" : "JustRefresh couldn't start", d.result.message);
         }
         return done;
       });
     },
-    /** The popup that asked, still open after "Allow": run what's ready, and say what happened to its request. */
+    /** The popup that asked, still open after "Allow": run its request if Chrome's event hasn't, and say what happened. */
     resultFor(id: string) {
       return serial(async () => {
-        await runReady();
+        await runReady((p) => p.id === id);
         return (await loadResults())[id]?.result ?? null;
+      });
+    },
+    /** Another page is about to ask Chrome for these sites itself: drop requests waiting for them. */
+    cancelFor(origins: string[]) {
+      return serial(async () => {
+        const list = await load();
+        const kept = list.filter((p) => !p.origins.some((o) => origins.includes(o)));
+        if (kept.length !== list.length) await save(kept);
       });
     },
   };

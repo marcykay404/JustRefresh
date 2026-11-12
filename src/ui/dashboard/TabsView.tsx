@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
 import { useApi, useNow } from "../shared/hooks";
 import { fileAccessAllowed, openChromeSiteAccess } from "../shared/chrome-settings";
+import { cancelAfterAccessFor } from "../shared/access";
 import { formatDuration, formatTime, statusLabel } from "../shared/format";
 import { Empty, ErrorBox, StatusPill } from "../shared/components";
 import { INTERVAL_PRESETS } from "../../core/defaults";
@@ -18,6 +19,8 @@ interface Row {
   controllerName: string | null;
   /** Running, but won't refresh until site access is allowed (its protection needs to see the page). */
   needsAccess?: boolean;
+  /** A tab timer started here would need to see the page (its protection, with the tab's own settings). */
+  timerNeedsAccess?: boolean;
 }
 interface Overview {
   settings: Settings;
@@ -83,30 +86,21 @@ export function TabsView() {
   const bulkStart = () => {
     const targets = rows.filter((r) => selected.has(r.tab.id) && !r.tab.restricted);
     setDeclined(null);
-    // Tab timers use the default protection: without it, or set to refresh anyway, nothing needs reading.
-    const safety = data?.settings.defaultSafety;
-    const protects =
-      !!safety &&
-      safety.onActivityUnavailable !== "refresh" &&
-      (safety.pauseWhileTyping || safety.protectUnsavedChanges || safety.pauseOnMouse || safety.pauseOnScroll);
-    if (!protects) {
-      void (async () => {
-        for (const r of targets) await act("startTab", { tabId: r.tab.id, intervalSeconds: bulkInterval });
-        setNotice(`Started ${targets.length} tab(s)`);
-      })();
-      return;
-    }
+    // Only tabs whose timer would need to see the page (their protection, with their own settings) need access.
+    const asking = targets.filter((r) => r.timerNeedsAccess !== false);
     // Local files can't be granted by a prompt while Chrome's file switch is off: leave them out of it
     // (Chrome would refuse the whole request without asking).
-    const origins = [...new Set(targets.map((r) => originOf(r.tab.url)).filter((o): o is string => !!o && (o !== "file:///*" || filesOn)))];
+    const origins = [...new Set(asking.map((r) => originOf(r.tab.url)).filter((o): o is string => !!o && (o !== "file:///*" || filesOn)))];
+    // Asking here: what declined popup clicks left waiting for these sites mustn't start with it.
+    cancelAfterAccessFor(origins);
     // Request site access in the click gesture; then start the tabs JustRefresh may read. Like the
     // popup, a declined site isn't started silently: it's listed, with "start without protection".
-    void requestOrigins(origins)
+    void (origins.length ? requestOrigins(origins) : Promise.resolve(true))
       .catch(() => false)
       .then(async () => {
         const allowed = new Set<string>();
         for (const o of origins) if (await chrome.permissions.contains({ origins: [o] }).catch(() => false)) allowed.add(o);
-        const ok = targets.filter((r) => !originOf(r.tab.url) || allowed.has(originOf(r.tab.url)!));
+        const ok = targets.filter((r) => r.timerNeedsAccess === false || !originOf(r.tab.url) || allowed.has(originOf(r.tab.url)!));
         const no = targets.filter((r) => !ok.includes(r));
         for (const r of ok) await act("startTab", { tabId: r.tab.id, intervalSeconds: bulkInterval });
         setNotice(ok.length ? `Started ${ok.length} tab(s)` : null);
@@ -241,8 +235,11 @@ export function TabsView() {
       {declined && (
         <div className="notice small col" role="status" style={{ gap: 6 }}>
           <span>
-            Not started: JustRefresh wasn't allowed to read {declined.tabs.map((r) => hostOfUrl(r.tab.url)).join(", ")}, so it couldn't tell whether you're
-            typing or have unsaved form changes there.
+            Not started: JustRefresh wasn't allowed to read {declined.tabs.map((r) => hostOfUrl(r.tab.url) || "local files").join(", ")}, so it couldn't tell
+            whether you're typing or have unsaved form changes there.
+            {!filesOn &&
+              declined.tabs.some((r) => r.tab.url.startsWith("file:")) &&
+              " For local files, turn on “Allow access to file URLs” in Chrome's settings."}
           </span>
           <div className="row">
             <button className="small" onClick={() => void startUnprotected()}>
@@ -403,7 +400,13 @@ function AccessNeeded({ url }: { url: string }) {
         </button>
       ) : (
         origin && (
-          <button className="link small" onClick={() => void requestOrigins([origin]).catch(() => false)}>
+          <button
+            className="link small"
+            onClick={() => {
+              cancelAfterAccessFor([origin]);
+              void requestOrigins([origin]).catch(() => false);
+            }}
+          >
             Allow access
           </button>
         )

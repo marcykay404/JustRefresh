@@ -20,14 +20,23 @@ export function askAccessThen(origin: string, then: AfterAccessRequest): Promise
     .catch(() => false)
     .then(async (granted) => {
       if (!granted) {
-        // Declined: don't leave it waiting to start later by surprise.
-        await api("takeAfterAccess", { tabId: then.params.tabId }).catch(() => null);
+        // Declined: don't leave it waiting to start later by surprise (only this click's request).
+        await api("takeAfterAccess", { tabId: then.params.tabId, id }).catch(() => null);
         return { granted, result: null };
       }
       // Still open: whichever side ran it (Chrome's event may come first), say what happened.
       const result = ((await api("runAfterAccess", { id }).catch(() => null)) as AfterAccessResult | null) ?? null;
       return { granted, result };
     });
+}
+
+/**
+ * A page about to ask Chrome for these sites itself (dashboard): drop what
+ * declined popup clicks left waiting for them, so granting here can't start those.
+ * Sent before the request, in the same click.
+ */
+export function cancelAfterAccessFor(origins: string[]): void {
+  void api("cancelAfterAccessFor", { origins }).catch(() => null);
 }
 
 /** Cancel what a declined click left waiting (e.g. the user chose "refresh without protection" instead). */

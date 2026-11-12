@@ -196,9 +196,12 @@ function TabPopup({
     // Chrome refuses local files without asking while its file switch is off: explain instead of asking.
     if (filesOff) return void setDeclinedFor(intervalSeconds);
     // If Chrome's prompt closes the popup (macOS), the service worker starts it once you allow.
+    setError(null);
     void askAccessThen(f.origin, { method: "startTab", params: { tabId, intervalSeconds } }).then(({ granted, result }) => {
       if (!granted) return setDeclinedFor(intervalSeconds);
-      if (result && !result.ok) setError(new Error(result.message ?? "Couldn't start"));
+      // Nothing ran (e.g. it expired while Chrome asked): still open, so start it here (starting twice is harmless).
+      if (!result) return void begin(intervalSeconds);
+      if (!result.ok) setError(new Error(result.message ?? "Couldn't start"));
       setDeclinedFor(null);
       picker.reset();
       setChanging(false);
@@ -407,15 +410,19 @@ function Extras(p: {
   };
 
   // What the earlier click was for happens once you allow, even if Chrome's prompt closes the popup.
-  const allowAccess = () =>
-    f.origin &&
-    void askAccessThen(
-      f.origin,
-      p.declinedFor !== null ? { method: "startTab", params: { tabId, intervalSeconds: p.declinedFor } } : { method: "resumeTab", params: { tabId } },
-    ).then(({ granted, result }) => {
-      if (result && !result.ok) p.setError(new Error(result.message ?? "Couldn't start"));
-      if (granted) p.onAccessGranted();
+  const allowAccess = () => {
+    if (!f.origin) return;
+    p.setError(null);
+    const then: AfterAccessRequest =
+      p.declinedFor !== null ? { method: "startTab", params: { tabId, intervalSeconds: p.declinedFor } } : { method: "resumeTab", params: { tabId } };
+    void askAccessThen(f.origin, then).then(({ granted, result }) => {
+      if (!granted) return;
+      // Nothing ran (e.g. it expired while Chrome asked): still open, so do it here (harmless if it already ran).
+      if (!result) void run(then.method, then.params);
+      else if (!result.ok) p.setError(new Error(result.message ?? "Couldn't start"));
+      p.onAccessGranted();
     });
+  };
 
   return (
     <>
