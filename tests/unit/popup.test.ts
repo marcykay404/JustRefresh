@@ -430,8 +430,12 @@ describe("pages the popup can't refresh", () => {
     expect(isOwnPage(`${own}dashboard.html#/settings`, own)).toBe(true);
     expect(isOwnPage("https://example.com/", own)).toBe(false);
     expect(isOwnPage("https://example.com/", "")).toBe(false);
-    expect(restrictedMessage(`${own}dashboard.html`, own)).toMatch(/JustRefresh's own page, so there's nothing to refresh here/);
-    expect(restrictedMessage("chrome://settings/", own)).toMatch(/browser's own pages/);
-    expect(restrictedMessage("https://chromewebstore.google.com/detail/x", own)).toMatch(/Chrome Web Store/);
+    expect(restrictedMessage(`${own}dashboard.html`, own)).toMatch(/JustRefresh's own pages, which it doesn't refresh/);
+    expect(restrictedMessage("chrome://settings/", own)).toMatch(/browser's own pages .* doesn't let extensions look inside those/);
+    expect(restrictedMessage("https://chromewebstore.google.com/detail/x", own)).toMatch(/look inside the Chrome Web Store/);
+    // It never claims Chrome forbids the refresh itself.
+    for (const u of [`${own}x`, "chrome://newtab/", "https://chromewebstore.google.com/", "data:text/html,x"]) {
+      expect(restrictedMessage(u, own)).not.toMatch(/doesn't let extensions refresh/);
+    }
   });
 });
