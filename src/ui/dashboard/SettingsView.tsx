@@ -199,7 +199,39 @@ export function SettingsView() {
         </div>
       </div>
       <ImportExport onDone={reload} />
+      <SupportCard />
     </>
+  );
+}
+
+/** The developer's Buy Me a Coffee page. A plain link: no widget, nothing loaded from their site until it's clicked. */
+export const SUPPORT_URL = "https://buymeacoffee.com/marcykaycod";
+/** JustRefresh's source code (MIT). */
+export const SOURCE_URL = "https://github.com/marcykay404/JustRefresh";
+
+export function SupportCard() {
+  return (
+    <div className="card col">
+      <h2>Support JustRefresh</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        JustRefresh is free and open source (MIT), with no ads, accounts or tracking. If it saves you time, you can buy me a coffee. The code is on GitHub, for
+        reading, reporting problems or contributing.
+      </p>
+      <div className="row">
+        <a className="btn" href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-link-note">
+          Buy me a coffee
+        </a>
+        <span id="support-link-note" className="small muted">
+          Opens buymeacoffee.com in a new tab.
+        </span>
+        <a className="btn" href={SOURCE_URL} target="_blank" rel="noopener noreferrer" aria-describedby="source-link-note">
+          Source code
+        </a>
+        <span id="source-link-note" className="small muted">
+          Opens github.com in a new tab.
+        </span>
+      </div>
+    </div>
   );
 }
 
