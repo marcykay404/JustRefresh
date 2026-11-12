@@ -941,6 +941,12 @@ await test("popup and dashboard render", async () => {
   await page.screenshot({ path: join(root, "test-results", "tabs.png") });
   // Settings → Site access: Chrome's own settings for JustRefresh are one click away.
   await page.goto(`chrome-extension://${extId}/dashboard.html#/settings`);
+  // The support link: a plain link to Buy Me a Coffee, opening in a new tab.
+  const coffee = page.getByRole("link", { name: "Buy me a coffee" });
+  assert.equal(await coffee.getAttribute("href"), "https://buymeacoffee.com/marcykaycod");
+  assert.equal(await coffee.getAttribute("target"), "_blank");
+  await coffee.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: join(root, "test-results", "settings-support.png") });
   const opened = context.waitForEvent("page");
   await page.getByRole("button", { name: "Remove completely in Chrome's settings…" }).click();
   const chromeSettings = await opened;

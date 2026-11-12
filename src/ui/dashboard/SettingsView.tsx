@@ -199,7 +199,28 @@ export function SettingsView() {
         </div>
       </div>
       <ImportExport onDone={reload} />
+      <SupportCard />
     </>
+  );
+}
+
+/** The developer's Buy Me a Coffee page. A plain link: no widget, nothing loaded from their site until it's clicked. */
+export const SUPPORT_URL = "https://buymeacoffee.com/marcykaycod";
+
+export function SupportCard() {
+  return (
+    <div className="card col">
+      <h2>Support JustRefresh</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        JustRefresh is free, with no ads, accounts or tracking. If it saves you time, you can buy me a coffee.
+      </p>
+      <div className="row">
+        <a className="btn small" href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+          Buy me a coffee
+        </a>
+        <span className="small muted">Opens buymeacoffee.com in a new tab.</span>
+      </div>
+    </div>
   );
 }
 
