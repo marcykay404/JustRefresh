@@ -92,12 +92,13 @@ const id = { type: "string", description: "Rule id" };
 const revision = { type: "integer", description: "meta.revision from refresh_get_rule; the call fails with conflict if the rule changed since" };
 
 /*
- * MCP tool annotations: hints for the client's permission prompts. Nothing
- * here reaches beyond the user's own browser (openWorldHint: false).
+ * MCP tool annotations: hints for the client's permission prompts and for how
+ * far to trust a result. openWorldHint is true where a tool returns text web
+ * pages control (tab titles) or makes a rule act on websites.
  */
 const READ = { readOnlyHint: true, openWorldHint: false };
+const READ_WEB = { ...READ, openWorldHint: true };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
-const ONCE = { ...WRITE, idempotentHint: true };
 const DESTRUCTIVE = { ...WRITE, destructiveHint: true };
 
 const tool = (name, method, title, annotations, description, properties = {}, required = []) => ({
@@ -117,7 +118,7 @@ export const TOOLS = [
     READ,
     "Supported triggers, conditions and actions, interval limits, and the rule JSON Schema. Large: call it once per session, before writing your first rule.",
   ),
-  tool("refresh_list_tabs", "listTabs", "List tabs", READ, "Open browser tabs: id, title and URL (query strings hidden unless the user allows them)."),
+  tool("refresh_list_tabs", "listTabs", "List tabs", READ_WEB, "Open browser tabs: id, title and URL (query strings hidden unless the user allows them)."),
   tool("refresh_list_rules", "listRules", "List rules", READ, "All rules, the user's and agents', highest priority first."),
   tool("refresh_get_rule", "getRule", "Get rule", READ, "One rule, including meta.revision (pass it as expectedRevision to update or delete safely).", { id }, [
     "id",
@@ -127,7 +128,7 @@ export const TOOLS = [
     "validateRule",
     "Validate rule",
     READ,
-    "Check a rule without saving it. Returns diagnostics with JSON paths to fix, and the rule as it would be saved.",
+    "Check a rule without saving it. Returns diagnostics with JSON paths to fix, and the rule with defaults filled in.",
     { rule: ruleObject },
     ["rule"],
   ),
@@ -135,9 +136,10 @@ export const TOOLS = [
     "refresh_test_rule",
     "testRule",
     "Test rule (dry run)",
-    READ,
+    READ_WEB,
     "Dry-run a rule's stopWhen conditions against an open tab: no refresh, no actions. Also says whether the rule targets the tab and whether site access is granted. " +
-      "To check a CSS selector, test a throwaway rule whose stopWhen is a dom.exists condition. An unknown result means it couldn't be checked yet (no site access, page loading), not false.",
+      "To check a CSS selector, test a throwaway rule whose stopWhen is a dom.exists condition. An unknown result is not false: read result.code " +
+      "(invalid_selector: fix the selector; missing_permission: no site access; page_not_ready or timeout: try again later).",
     { rule: ruleObject, tabId: { type: "integer", description: "Tab id from refresh_list_tabs" } },
     ["rule", "tabId"],
   ),
@@ -146,7 +148,7 @@ export const TOOLS = [
     "createRule",
     "Create rule (draft)",
     WRITE,
-    "Save a new rule as a disabled draft. Nothing runs until refresh_enable_rule is approved by the user.",
+    "Save a new rule as a disabled draft. Nothing runs until refresh_enable_rule switches it on (after the user approves, unless they trust you).",
     { rule: ruleObject },
     ["rule"],
   ),
@@ -173,9 +175,10 @@ export const TOOLS = [
     "refresh_enable_rule",
     "enableRule",
     "Ask to enable rule",
-    ONCE,
+    // It can switch a rule on at once (trusted agents), and a live rule reloads and clicks on websites.
+    { ...WRITE, destructiveHint: true, openWorldHint: true },
     "Ask to switch on a rule you created. Usually returns pending_approval: tell the user to approve it in the JustRefresh dashboard → Agent Integrations → Waiting for your OK, " +
-      "then check refresh_get_status: enabled means approved; not enabled with nothing in pendingApprovals means the user declined it or the rule changed since you asked. Agents the user trusts are enabled at once.",
+      "then check refresh_get_status: enabled means approved; not enabled with nothing in pendingApprovals means the user declined it or the rule changed since you asked. Check every 30 s or more slowly. If the user trusts you, the rule is switched on at once, with no approval step.",
     { id },
     ["id"],
   ),
@@ -212,11 +215,12 @@ export const INSTRUCTIONS =
   "Controls the JustRefresh Chrome extension, which refreshes the user's tabs on a schedule and can stop, notify or click when something appears on the page. " +
   "Workflow: refresh_get_capabilities (once) → refresh_list_tabs → refresh_validate_rule → refresh_test_rule (dry run on a tab) → refresh_create_rule (saves a disabled draft) → " +
   "refresh_enable_rule (the user approves in the extension) → refresh_get_status. " +
-  "Rules you write never run without the user's approval, and any refresh_update_rule turns a running rule off until the user approves it again, so ask before changing a rule the user relies on. " +
-  "Conditions return matched, not_matched or unknown; unknown means it couldn't be checked (no site access, page still loading), not false. " +
+  "Your rules run only once the user approves them (unless the user marked you as trusted: then refresh_enable_rule switches a rule on at once, so only enable what the user asked for). " +
+  "Any refresh_update_rule turns a running rule off until it is enabled again, so ask before changing a rule the user relies on. " +
+  "Conditions return matched, not_matched or unknown; unknown means it couldn't be checked, not false: its code says why (invalid_selector means fix the selector; missing_permission means no site access). " +
   "To check a CSS selector, refresh_test_rule a throwaway rule whose stopWhen is a dom.exists condition. " +
   "Keep intervals reasonable: refresh as slowly as the task allows (minimum 30 s, or 5 s if the user enabled fast intervals), and set limits (maxRefreshes, maxDurationSeconds) for one-off watches. " +
-  "You can't read page text or full URLs with query strings; use your own browser tools for that.";
+  "Page text isn't shared with agents, and query strings in URLs are hidden while the user's settings say so: don't try to recover them another way.";
 
 /**
  * Results larger than this are sent once, as compact JSON text, without the
@@ -292,7 +296,8 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
 }
 
 function toolResult(result) {
-  const text = JSON.stringify(result) ?? "null";
+  result ??= null;
+  const text = JSON.stringify(result);
   const out = { content: [{ type: "text", text }] };
   if (Buffer.byteLength(text, "utf8") <= STRUCTURED_MAX_BYTES) out.structuredContent = wrap(result);
   return out;

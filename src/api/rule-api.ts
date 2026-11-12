@@ -253,6 +253,8 @@ export class RuleManagementService {
     await this.deps.config.update((c) => {
       const r = c.rules[id];
       if (!r) throw new ApiError("not_found", `Rule "${id}" not found`);
+      // Already so: nothing changes, so the revision (and any approval waiting on it) stays valid.
+      if (r.enabled === enabled && !(enabled && r.meta.draft)) return;
       r.enabled = enabled;
       if (enabled) r.meta.draft = false;
       r.meta.updatedAt = this.deps.clock.now();

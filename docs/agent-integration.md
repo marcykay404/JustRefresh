@@ -94,8 +94,15 @@ Things agents wouldn't expect:
 - An agent's `updateRule` always turns the rule off and makes it a draft
   again, even when it was running: it needs `enableRule` and the user's
   approval again.
-- `unknown` is not `false`: it means the condition couldn't be checked yet
-  (no site access, page still loading).
+- For an agent the user marked as trusted, `enableRule` switches the rule on
+  at once, with no approval step.
+- `unknown` is not `false`: it means the condition couldn't be checked. Its
+  `code` says why: `invalid_selector` (fix the selector; agent rules are
+  validated where there is no page, so a bad selector shows up here),
+  `missing_permission` (no site access), `page_not_ready` or `timeout` (try
+  again later).
+- Enabling or disabling a rule that is already so changes nothing, so its
+  revision and any approval waiting on it stay valid.
 - `testSelector` isn't available to agents. They check a selector by
   running `testRule` with a throwaway rule whose `stopWhen` is a `dom.exists`
   condition.
@@ -104,4 +111,5 @@ MCP agents get this at runtime: the server's `instructions` (sent at
 `initialize`, `INSTRUCTIONS` in `bridge/lib.mjs`) and each tool's description
 cover the workflow and the points above, and every tool has a `title` and
 annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
-`openWorldHint: false`) for the client's permission prompts.
+`openWorldHint`) for the client's permission prompts. The instructions
+don't suggest recovering hidden query strings or page text by other means.

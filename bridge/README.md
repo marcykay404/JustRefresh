@@ -79,9 +79,12 @@ From a checkout of this repository, `node bridge/justrefresh-bridge.mjs install 
 | `refresh_get_status`       | getRuleStatus         |
 | `refresh_get_history`      | getHistory            |
 
-Each tool has a `title` and MCP annotations: the read-only tools say so, and
-`refresh_update_rule`, `refresh_delete_rule` and `refresh_disable_rule` are
-marked destructive, so clients can ask before running them. Results come back
+Each tool has a `title` and MCP annotations: the read-only tools say so;
+`refresh_update_rule`, `refresh_delete_rule`, `refresh_disable_rule` and
+`refresh_enable_rule` (which switches a rule on at once for a trusted agent)
+are marked destructive, so clients can ask before running them; and
+`refresh_list_tabs`, `refresh_test_rule` and `refresh_enable_rule` are marked
+open-world, since they return text from web pages or make a rule act on them. Results come back
 as compact JSON text; a result up to 4 KB is also sent as `structuredContent`,
 a larger one (such as `refresh_get_capabilities`) only once, as text.
 

@@ -103,14 +103,29 @@ describe("MCP self-description", () => {
       expect(def.scope, `${t.method} must be callable by agents`).not.toBeNull();
       expect(t.title.length).toBeGreaterThan(0);
       expect(t.annotations.title).toBe(t.title);
-      expect(t.annotations.openWorldHint).toBe(false);
+      expect(typeof t.annotations.openWorldHint).toBe("boolean");
       // A tool says it's read-only exactly when its method changes nothing.
       expect(t.annotations.readOnlyHint, t.name).toBe(!def.mutates);
       if (def.mutates) expect(typeof t.annotations.destructiveHint, t.name).toBe("boolean");
     }
     const hint = (name: string) => TOOLS.find((t) => t.name === name).annotations;
-    for (const name of ["refresh_update_rule", "refresh_delete_rule", "refresh_disable_rule"]) expect(hint(name).destructiveHint, name).toBe(true);
+    // Enabling can take effect at once (trusted agents), and a live rule acts on websites.
+    for (const name of ["refresh_update_rule", "refresh_delete_rule", "refresh_disable_rule", "refresh_enable_rule"])
+      expect(hint(name).destructiveHint, name).toBe(true);
     expect(hint("refresh_create_rule").destructiveHint).toBe(false);
+    // Tab titles come from web pages; enabled rules act on them.
+    for (const name of ["refresh_list_tabs", "refresh_test_rule", "refresh_enable_rule"]) expect(hint(name).openWorldHint, name).toBe(true);
+    expect(hint("refresh_enable_rule").idempotentHint).toBe(false);
+  });
+
+  it("tools/list sends titles and annotations", async () => {
+    const handle = createMcpHandler({ callApi: async () => ({ ok: true, result: {} }) });
+    const { tools } = (await handle({ jsonrpc: "2.0", id: 1, method: "tools/list" })).result;
+    for (const t of tools) {
+      expect(t.title, t.name).toBeTruthy();
+      expect(t.annotations, t.name).toBeTruthy();
+      expect(t.method).toBeUndefined();
+    }
   });
 
   it("tool descriptions warn about what agents wouldn't expect", () => {
@@ -120,6 +135,23 @@ describe("MCP self-description", () => {
     expect(desc("refresh_enable_rule")).toMatch(/Agent Integrations/);
     expect(desc("refresh_test_rule")).toMatch(/dom\.exists/);
     expect(desc("refresh_test_rule")).toMatch(/not false/);
+    expect(desc("refresh_test_rule")).toMatch(/invalid_selector/);
+    expect(desc("refresh_enable_rule")).toMatch(/trusts you/);
+    expect(desc("refresh_create_rule")).toMatch(/unless they trust you/);
+  });
+
+  it("names dashboard places, result codes and limits that exist", async () => {
+    const { readFileSync } = await import("node:fs");
+    const ui = ["src/ui/dashboard/Dashboard.tsx", "src/ui/dashboard/AgentsView.tsx"].map((f) => readFileSync(f, "utf8")).join("\n");
+    const types = readFileSync("src/core/types.ts", "utf8");
+    const text = TOOLS.map((t) => t.description).join(" ") + INSTRUCTIONS;
+    for (const place of text.match(/Agent Integrations|Waiting for your OK/g)) expect(ui).toContain(place);
+    for (const code of ["invalid_selector", "missing_permission", "page_not_ready", "timeout"]) {
+      expect(text).toContain(code);
+      expect(types).toContain(`"${code}"`);
+    }
+    const { MIN_INTERVAL_SECONDS, FAST_MIN_INTERVAL_SECONDS } = await import("@/triggers/interval");
+    expect(INSTRUCTIONS).toContain(`minimum ${MIN_INTERVAL_SECONDS} s, or ${FAST_MIN_INTERVAL_SECONDS} s`);
   });
 
   it("initialize sends short instructions covering the workflow and the gotchas", async () => {
@@ -127,7 +159,10 @@ describe("MCP self-description", () => {
     const init = await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
     expect(init.result.instructions).toBe(INSTRUCTIONS);
     expect(INSTRUCTIONS.length).toBeLessThan(1500);
-    for (const must of [/refresh_create_rule/, /turns a running rule off/, /unknown means/, /dom\.exists/, /30 s/]) expect(INSTRUCTIONS).toMatch(must);
+    for (const must of [/refresh_create_rule/, /turns a running rule off/, /unknown means/, /dom\.exists/, /trusted/, /don't try to recover them/]) {
+      expect(INSTRUCTIONS).toMatch(must);
+    }
+    expect(INSTRUCTIONS).not.toMatch(/browser tools/);
     // Every tool it names exists.
     for (const name of INSTRUCTIONS.match(/refresh_[a-z_]+/g))
       expect(
@@ -149,6 +184,35 @@ describe("MCP self-description", () => {
     const large = (await call()).result;
     expect(JSON.parse(large.content[0].text)).toEqual(result);
     expect(large.structuredContent).toBeUndefined();
+    // The limit is in bytes: short in characters, long in UTF-8.
+    result = { s: "ü".repeat(STRUCTURED_MAX_BYTES / 2) };
+    expect(JSON.stringify(result).length).toBeLessThan(STRUCTURED_MAX_BYTES + 10);
+    expect((await call()).result.structuredContent).toBeUndefined();
+    // Nothing at all: text and structuredContent agree.
+    result = undefined;
+    const none = (await call()).result;
+    expect(none.content[0].text).toBe("null");
+    expect(none.structuredContent).toEqual({ result: null });
+  });
+
+  it("enabling or disabling a rule that is already so changes nothing (a waiting approval stays valid)", async () => {
+    const env = createApiEnv();
+    const agent = env.agent();
+    await env.pairAgent();
+    const created = await env.service.call(agent, "createRule", { rule: SPEC_EXAMPLE });
+    const pending = await env.service.call(agent, "enableRule", { id: created.id });
+    expect(pending.status).toBe("pending_approval");
+    const revision = async () => (await env.config.get()).rules[created.id].meta.revision;
+    const before = await revision();
+    await env.service.call(agent, "disableRule", { id: created.id });
+    await env.service.call(agent, "disableRule", { id: created.id });
+    expect(await revision()).toBe(before);
+    await env.service.call(env.user, "resolveApproval", { id: pending.approvalId, approve: true });
+    const rule = (await env.config.get()).rules[created.id];
+    expect(rule.enabled).toBe(true);
+    const enabledAt = rule.meta.revision;
+    await env.service.call(env.user, "enableRule", { id: created.id });
+    expect(await revision()).toBe(enabledAt);
   });
 
   it("errors are compact too", async () => {
