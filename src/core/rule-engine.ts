@@ -20,7 +20,7 @@ import type { Actor, Config, EvaluationResult, Rule, TabInfo, TabRuntime } from 
 import { CycleEngine } from "./engine/cycle";
 import { FAST_WAIT_REASON } from "./engine/fast-site-limit";
 import { alarmName, tabIdFromAlarm, type CycleResult } from "./engine/ports";
-import { resolutionKey, waitingReason, withMemory, withoutHash } from "./engine/support";
+import { matchedInThisRun, resolutionKey, waitingReason, withMemory, withoutHash } from "./engine/support";
 
 export * from "./engine/ports";
 export { FORM_RESULT_REASON } from "./safety";
@@ -263,7 +263,7 @@ export class RuleEngine extends CycleEngine {
     const evalOut = await this.evaluate(rule, tab, cur, { justLoaded: true });
     const latest = await this.deps.stores.runtime.get(tab.id);
     if (!latest || latest.generation !== cur.generation) return null;
-    const wasMatched = latest.lastEvaluation?.status === "matched";
+    const wasMatched = matchedInThisRun(latest);
     cur = {
       ...latest,
       lastEvaluation: { at: now, status: evalOut.result.status, reason: explainTrace(evalOut.trace) },

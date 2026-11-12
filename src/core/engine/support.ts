@@ -4,6 +4,13 @@ import { transition } from "../state-machine";
 import type { ExecutionStatus, Rule, TabInfo, TabRuntime } from "../types";
 
 /** Thrown by the refresh path when a refresh must not happen now; carries the state to move to. */
+/**
+ * This run's last check matched, so the agent behind the rule has heard
+ * about it. A check from before the run started (it was restarted since)
+ * doesn't count.
+ */
+export const matchedInThisRun = (rt: TabRuntime) => rt.lastEvaluation?.status === "matched" && rt.lastEvaluation.at > rt.startedAt;
+
 export class SafetyBlock extends Error {
   constructor(
     public readonly status: ExecutionStatus,

@@ -119,6 +119,29 @@ describe("rule events", () => {
     expect(await kinds()).toEqual(["rule.matched", "rule.matched"]);
   });
 
+  it("a run started again (popup Restart) says matched again", async () => {
+    const { env, agent, kinds, create, tick } = await setup({ trusted: true });
+    const id = await create();
+    await env.service.call(agent, "enableRule", { id });
+    env.page.setHtml(TAB, `<p id="status">Shipped</p>`);
+    await tick();
+    expect(await kinds()).toEqual(["rule.matched", "rule.completed"]);
+    env.clock.advance(1000);
+    await env.service.call(env.user, "resumeTab", { tabId: TAB });
+    await tick();
+    expect(await kinds()).toEqual(["rule.matched", "rule.completed", "rule.matched", "rule.completed"]);
+  });
+
+  it("a rule that refreshes while matched says matched once, also across the checks right after each load", async () => {
+    const { env, agent, kinds, create, tick } = await setup({ trusted: true });
+    const id = await create({ ...ORDER_RULE, actions: { onMatched: [{ type: "refresh" }], onNotMatched: [{ type: "refresh" }] } });
+    await env.service.call(agent, "enableRule", { id });
+    env.page.setHtml(TAB, `<p id="status">Shipped</p>`);
+    for (let i = 0; i < 3; i++) await tick();
+    expect(env.browser.reloads.length).toBe(3);
+    expect(await kinds({ kinds: ["rule.matched"] })).toEqual(["rule.matched"]);
+  });
+
   it("also when the match is found right after the refresh loads, as in a real browser", async () => {
     const { env, agent, kinds, create } = await setup({ trusted: true });
     const id = await create();
@@ -214,8 +237,15 @@ describe("who hears what", () => {
   it("addresses quoted in a reason are hidden too", async () => {
     const { env, events } = await setup();
     const rule = makeRule({ id: "r1" }, { origin: { type: "agent", agentId: "native:claude" } });
-    await env.events.rule({ kind: "rule.error", rule, tabId: TAB, url: ORDER, reason: `Cannot access contents of url "${ORDER}?id=42#x". Retry.` });
-    expect((await events()).events[0].reason).toBe(`Cannot access contents of url "${ORDER}?…". Retry.`);
+    const reasons = [
+      [`Cannot access contents of url "${ORDER}?id=42#x". Retry.`, `Cannot access contents of url "${ORDER}?…". Retry.`],
+      ["See https://en.wikipedia.org/wiki/Foo_(bar)?token=SECRET", "See https://en.wikipedia.org/wiki/Foo_(bar)?…"],
+      ["At https://a.test/x?token=1, retrying", "At https://a.test/x?…, retrying"],
+      ["(HTTPS://A.TEST/p?q=1)", "(HTTPS://A.TEST/p?…)"],
+      ["file:///Users/me/report.html?x=1 and chrome-extension://abc/page.html#secret", "file:///Users/me/report.html?… and chrome-extension://abc/page.html#…"],
+    ];
+    for (const [i, [reason]] of reasons.entries()) await env.events.rule({ kind: "rule.error", rule, tabId: i, url: ORDER, reason });
+    expect((await events()).events.map((e) => e.reason)).toEqual(reasons.map(([, hidden]) => hidden));
   });
 
   it("requests settled by a call running at the same time, or dropped from the list while waiting, are reported", async () => {
@@ -265,7 +295,7 @@ describe("getEvents", () => {
     await settle();
     // A client that gave up on its calls and asks again isn't blocked by them.
     const third = events({ waitSec: 30 });
-    expect(await waits[0]).toEqual({ events: [], cursor: 0, truncated: false });
+    expect(await waits[0]).toEqual({ events: [], cursor: 0, truncated: false, interrupted: true });
     expect(Date.now() - started).toBeLessThan(2000);
     // An event lets the rest return.
     const id = await create();
@@ -280,6 +310,11 @@ describe("getEvents", () => {
     await env.events.rule({ kind: "rule.matched", rule, tabId: TAB, url: ORDER });
     expect(await events({ since: 500 })).toMatchObject({ events: [{ seq: 1 }], cursor: 1, truncated: true });
     expect(await events({ since: 500, kinds: ["rule.error"] })).toEqual({ events: [], cursor: 1, truncated: true });
+    // Also when the call has to wait for the next one.
+    const waiting = events({ since: 500, kinds: ["rule.error"], waitSec: 5 });
+    await settle();
+    await env.events.rule({ kind: "rule.error", rule, tabId: TAB, url: ORDER, reason: "click: no element" });
+    expect(await waiting).toMatchObject({ events: [{ seq: 2, kind: "rule.error" }], cursor: 2, truncated: true });
   });
 
   it(`keeps the last ${AGENT_EVENTS_PER_AGENT} per agent and says when some were trimmed`, async () => {

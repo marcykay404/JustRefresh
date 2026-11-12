@@ -25,7 +25,7 @@ import type { ActionConfig, Actor, Config, EvaluationResult, EvaluationTrace, Hi
 import { EngineBase } from "./base";
 import { FAST_WAIT_REASON } from "./fast-site-limit";
 import { alarmName, NAVIGATION_TIMEOUT_MS, UNKNOWN_STREAK_EVENT, type CycleResult } from "./ports";
-import { SafetyBlock, siteKey, waitingReason, withMemory } from "./support";
+import { matchedInThisRun, SafetyBlock, siteKey, waitingReason, withMemory } from "./support";
 
 /** How an action's result is recorded in History. */
 const outcomeOf = (r: ActionResult): HistoryEntry["outcome"] => (r.ok ? "ok" : r.skipped ? "skipped" : "error");
@@ -86,7 +86,7 @@ export abstract class CycleEngine extends EngineBase {
     const rule = res.controller;
     const trigger = this.registries.triggers.get(rule.trigger.type);
     if (!trigger) return { result: await this.save(transition(rt, "error", { lastError: `Unknown trigger ${rule.trigger.type}`, nextDueAt: null })) };
-    const wasMatched = rt.lastEvaluation?.status === "matched" && !isTerminal(rt.status);
+    const wasMatched = matchedInThisRun(rt) && !isTerminal(rt.status);
     return { tabId, event, config, tab, rule, trigger, now: this.now(), rt, wasMatched };
   }
 

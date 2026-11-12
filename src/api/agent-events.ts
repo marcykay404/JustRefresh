@@ -42,8 +42,25 @@ export interface EventPage {
   events: AgentEvent[];
   /** Pass back as `since` to get only what comes after. */
   cursor: number;
-  /** Some events after `since` were trimmed away (more than 100, or older than a week). */
+  /** Some events after `since` were trimmed away (more than 100, or older than a week), or `since` is from before a reset. */
   truncated: boolean;
+  /** A waiting call that returned early because the same agent started another one past the limit. */
+  interrupted?: true;
+}
+
+/** Any address in free text (a scheme, then up to the next space). */
+const ADDRESS = /\b[a-z][\w+.-]*:\/\/\S+/gi;
+/** Punctuation that usually ends the sentence, not the address. */
+const TRAILING = /[)\].,;:'"]+$/;
+
+/** Addresses in a text, with their query strings and #fragments hidden. */
+export function redactText(text: string): string {
+  return text.replace(ADDRESS, (found) => {
+    const tail = TRAILING.exec(found)?.[0] ?? "";
+    const url = found.slice(0, found.length - tail.length);
+    const cut = url.search(/[?#]/);
+    return (cut < 0 ? url : `${url.slice(0, cut)}${url[cut] === "?" ? "?" : "#"}…`) + tail;
+  });
 }
 
 /** An event as an agent sees it: page addresses hidden as the settings say, in its reason too (some Chrome errors quote them). */
@@ -52,7 +69,7 @@ export function publicEvent(e: AgentEvent, redact: boolean): Omit<AgentEvent, "a
   return {
     ...rest,
     ...(rest.url !== undefined ? { url: redactUrl(rest.url, redact) } : {}),
-    ...(rest.reason !== undefined && redact ? { reason: rest.reason.replace(/\bhttps?:\/\/[^\s"'<>)]+/g, (u) => redactUrl(u, true) || "…") } : {}),
+    ...(rest.reason !== undefined && redact ? { reason: redactText(rest.reason) } : {}),
   };
 }
 
@@ -173,19 +190,26 @@ export class AgentEvents {
     this.waiting.set(key, queue);
     while (queue.length >= MAX_WAITS_PER_AGENT) queue.shift()!();
     let woken!: () => void;
+    let interrupted = false;
     const arrived = new Promise<void>((resolve) => (woken = resolve));
-    queue.push(woken);
+    const interrupt = () => {
+      interrupted = true;
+      woken();
+    };
+    queue.push(interrupt);
     const off = this.onEvents((added) => added.some((e) => matches(e, agentId, { ...f, since: undefined })) && woken());
     const timer = setTimeout(woken, ms);
     try {
       const first = await this.list(agentId, f);
       if (first.events.length) return first;
       await arrived;
-      return await this.list(agentId, { ...f, since: first.cursor });
+      const next = await this.list(agentId, { ...f, since: first.cursor });
+      // A reset seen before the wait still applies to what came after it.
+      return { ...next, truncated: next.truncated || first.truncated, ...(interrupted && !next.events.length ? { interrupted: true as const } : {}) };
     } finally {
       off();
       clearTimeout(timer);
-      const i = queue.indexOf(woken);
+      const i = queue.indexOf(interrupt);
       if (i >= 0) queue.splice(i, 1);
     }
   }

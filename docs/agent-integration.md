@@ -133,7 +133,7 @@ since event N?"; the extension also checks the agent's key on every read.
 | `approval.approved`   | the user approved a request (`approvalKind`: `activate` or `delete`)                                                                                   |
 | `approval.rejected`   | the user declined it                                                                                                                                   |
 | `approval.stale`      | it no longer applies: the rule changed, was switched on or off or deleted, or a newer request replaced it (or it dropped off the list of 200 requests) |
-| `rule.matched`        | the rule's stop condition started matching on a tab (once, not at every check while it stays matched)                                                  |
+| `rule.matched`        | the rule's stop condition started matching on a tab (once per run, not at every check while it stays matched)                                          |
 | `rule.completed`      | the run ended: a stop action, a time or refresh limit, or the "stop" choice for unreadable pages                                                       |
 | `rule.paused`         | the run waits for the user: a page reached by submitting a form (never refreshed), gave up on an unreadable page, or the rule's own pause with no end  |
 | `rule.error`          | an action failed (the same error on the same tab at most once every 10 minutes)                                                                        |
@@ -154,12 +154,15 @@ since event N?"; the extension also checks the agent's key on every read.
   (left out: everything still kept). With `waitSec` (up to 240, below the
   5 minutes Chrome gives a message from another extension) and nothing new
   yet, the call waits for the first event. An agent has at most 2 waiting
-  calls: a third lets the oldest return at once (a client that gave up on a
-  call doesn't block the next ones). Pass `cursor` back as `since`.
+  calls: a third lets the oldest return at once, with `interrupted: true`
+  (a client that gave up on a call doesn't block the next ones; several
+  sessions under one agent name cut each other's waits short). Pass
+  `cursor` back as `since`.
   `truncated: true` means some events after `since` were trimmed (the last
   100 per agent are kept, for up to 7 days), or that `since` is from before
   the events were reset (the extension reinstalled or its data cleared):
-  then everything still kept comes back.
+  then everything still kept comes back. A reset goes unnoticed once as
+  many new events have happened as the old cursor counted.
 - **MCP:** `refresh_wait_for_event` waits 45 s by default (many MCP clients
   give up on a tool call after 60 s). MCP itself can't start a turn for the
   model: a server's notifications reach the client, not the model, so

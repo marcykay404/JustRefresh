@@ -240,7 +240,7 @@ export const TOOLS = [
       "rule.matched; rule.completed (the run ended: stop action or limit); rule.paused (waiting for the user, e.g. a page reached by submitting a form, which is never refreshed); " +
       "rule.error; rule.unknown_streak (3 checks in a row couldn't read the page). Returns at once if there are events after since, otherwise waits up to timeoutSec " +
       `(default ${DEFAULT_WAIT_SECONDS}; many MCP clients give up after 60 s). Pass the cursor back as since next time; leave since out the first time to get what is still kept ` +
-      "(the last 100 per agent, for up to 7 days). truncated means some were trimmed away. If eventsFile is set, the same events are appended there, one JSON line each: " +
+      "(the last 100 per agent, for up to 7 days). truncated means some were missed; interrupted means another call of yours took this one's place. If eventsFile is set, the same events are appended there, one JSON line each: " +
       "following it (for example tail -F) wakes you only when something happens.",
     {
       since: { type: "integer", minimum: 0, description: "cursor from the previous call" },
