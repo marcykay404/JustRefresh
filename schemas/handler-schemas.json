@@ -348,7 +348,7 @@
               "type"
             ],
             "additionalProperties": {},
-            "description": "Any condition: see getSchema({ kind: 'condition', type }) for each type's fields"
+            "description": "Any condition: see getSchema({ kind: 'condition', type }) (MCP tool refresh_get_schema) for each type's fields"
           }
         }
       },
@@ -381,7 +381,7 @@
               "type"
             ],
             "additionalProperties": {},
-            "description": "Any condition: see getSchema({ kind: 'condition', type }) for each type's fields"
+            "description": "Any condition: see getSchema({ kind: 'condition', type }) (MCP tool refresh_get_schema) for each type's fields"
           }
         }
       },
@@ -410,7 +410,7 @@
             "type"
           ],
           "additionalProperties": {},
-          "description": "Any condition: see getSchema({ kind: 'condition', type }) for each type's fields"
+          "description": "Any condition: see getSchema({ kind: 'condition', type }) (MCP tool refresh_get_schema) for each type's fields"
         }
       },
       "required": [

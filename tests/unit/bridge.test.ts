@@ -318,6 +318,26 @@ describe("MCP self-description", () => {
     expect(await call("refresh_get_schema", { kind: "rule" })).toEqual({ method: "getSchema", params: { kind: "rule" }, notes: ["n"] });
   });
 
+  it("an older extension that doesn't know includeSchemas still answers get_capabilities", async () => {
+    const seen: unknown[] = [];
+    const old = async (method: string, params: unknown) => {
+      seen.push(params);
+      if (params && typeof params === "object" && Object.keys(params).length > 0)
+        return { ok: false, error: { code: "invalid_params", message: "Invalid parameters", diagnostics: [{ message: "Unknown field(s): includeSchemas" }] } };
+      return { ok: true, result: { method, ruleSchema: {}, notes: ["n"] } };
+    };
+    const handle = createMcpHandler({ callApi: old });
+    const r = (await handle({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "refresh_get_capabilities", arguments: {} } })).result;
+    expect(r.isError).toBeUndefined();
+    expect(JSON.parse(r.content[0].text)).toEqual({ instructions: INSTRUCTIONS, method: "getCapabilities", ruleSchema: {} });
+    expect(seen).toEqual([{ includeSchemas: false }, undefined]);
+    // An agent that asked for includeSchemas itself gets the extension's answer, not a silent retry.
+    const asked = (
+      await handle({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "refresh_get_capabilities", arguments: { includeSchemas: true } } })
+    ).result;
+    expect(asked.isError).toBe(true);
+  });
+
   it("refresh_get_schema offers the kinds the API accepts", async () => {
     const env = createApiEnv();
     await env.pairAgent();

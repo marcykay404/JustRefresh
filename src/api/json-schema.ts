@@ -64,7 +64,7 @@ export function buildHandlerSchemas(registries: Registries = defaultRegistries()
   };
   const byType = (list: { type: string; schema: z.ZodMiniType }[]) => Object.fromEntries(list.map((h) => [h.type, one(h.schema)]));
   // all/any/not hold other conditions: say where their fields are (the rule schema uses $ref for this).
-  const NESTED = "Any condition: see getSchema({ kind: 'condition', type }) for each type's fields";
+  const NESTED = "Any condition: see getSchema({ kind: 'condition', type }) (MCP tool refresh_get_schema) for each type's fields";
   const conditions = byType(registries.conditions.list()) as Record<string, Json>;
   for (const s of Object.values(conditions)) {
     if (s.properties?.conditions?.items) s.properties.conditions.items.description = NESTED;

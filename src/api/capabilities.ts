@@ -1,7 +1,7 @@
 /**
  * Capability discovery for agents and the rule builder: every registered
- * condition/trigger/action with its description (and, on request, its JSON
- * Schema; getSchema gives one piece at a time). The
+ * condition/trigger/action with its description and JSON Schema (unless the
+ * caller asks for the summary; getSchema gives one piece at a time). The
  * schemas are generated at build time (`npm run gen:schema`) and read from
  * the extension package on demand, so the service worker ships neither
  * zod's JSON Schema converter nor the schemas themselves.
@@ -106,7 +106,7 @@ export function buildCapabilities(
 export function schemaFor(registries: Registries, schemas: SchemaBundle, kind: SchemaKind, type?: string): unknown {
   if (kind === "rule") {
     const rule = schemas.rule as { $defs?: Record<string, unknown> };
-    const pointer = (k: string) => ({ description: `Any ${k}: see getSchema({ kind: '${k}', type }) for each type's fields` });
+    const pointer = (k: string) => ({ description: `Any ${k}: see getSchema({ kind: '${k}', type }) (MCP tool refresh_get_schema) for each type's fields` });
     // Not the full schema document, so not under its $id either.
     const { $id: _id, ...fields } = rule as { $id?: string };
     return { ...fields, $defs: { condition: pointer("condition"), trigger: pointer("trigger"), action: pointer("action") } };

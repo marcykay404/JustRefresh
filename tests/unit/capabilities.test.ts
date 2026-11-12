@@ -1,4 +1,4 @@
-/** Capabilities for agents: a small summary by default, JSON Schemas one piece at a time (#27 phase 2). */
+/** Capabilities for agents: a small summary on request, JSON Schemas one piece at a time (#27 phase 2). */
 import { createApiEnv } from "../helpers/api-env";
 import { defaultRegistries } from "@/registries";
 

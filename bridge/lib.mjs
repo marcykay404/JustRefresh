@@ -116,7 +116,7 @@ export const TOOLS = [
     "getCapabilities",
     "Get capabilities",
     READ,
-    "Start here: how to work with JustRefresh (instructions), the supported triggers, conditions and actions, interval limits and notes. " +
+    "Start here: how to work with JustRefresh (instructions), the supported triggers, conditions and actions, and interval limits. " +
       "Get JSON Schemas one piece at a time with refresh_get_schema; includeSchemas returns them all at once (large).",
     { includeSchemas: { type: "boolean", description: "Also return every JSON Schema (large; prefer refresh_get_schema)" } },
   ),
@@ -293,7 +293,9 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
           return reply({ isError: true, content: [{ type: "text", text: e.message }] });
         }
         try {
-          const res = await callApi(t.method, forApi(t.method, params));
+          let res = await callApi(t.method, forApi(t.method, params));
+          // An older extension doesn't know includeSchemas: ask it the way it understands (its full payload).
+          if (t.method === "getCapabilities" && params?.includeSchemas === undefined && rejectsIncludeSchemas(res)) res = await callApi(t.method, params);
           if (!res?.ok) {
             const err = res?.error ?? { code: "internal", message: "No response" };
             const hint = err.code === "pairing_required" ? "\nOpen the extension dashboard → Agent Integrations and approve this agent." : "";
@@ -320,6 +322,8 @@ function withInstructions(result) {
   const { notes: _notes, ...rest } = result;
   return { instructions: INSTRUCTIONS, ...rest };
 }
+
+const rejectsIncludeSchemas = (res) => !res?.ok && res?.error?.code === "invalid_params" && JSON.stringify(res.error).includes("includeSchemas");
 
 /** MCP agents get the capabilities summary unless they ask for every schema (the API's own default is the full payload). */
 const forApi = (method, params) => (method === "getCapabilities" ? { includeSchemas: false, ...params } : params);
