@@ -1,7 +1,7 @@
 /** Tabs: what runs where, per-tab timers and protection, refresh controls, pause/resume all. */
 import { detectRuleConflicts, resolveTab, type Resolution } from "../../core/rule-resolver";
 import { publicRuntime } from "../../core/state-machine";
-import type { TabInfo, TabRuntime } from "../../core/types";
+import type { Config, TabInfo, TabRuntime } from "../../core/types";
 import { z } from "../../core/zod";
 import { FAST_MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS } from "../../triggers/interval";
 import { ApiError } from "../permissions";
@@ -23,7 +23,13 @@ export function tabsMethods(svc: ServiceInternals): Record<string, MethodDef> {
         const config = await d.config.get();
         const tabs = await d.browser.listTabs();
         const runtimes = new Map((await d.runtime.getAll()).map((r) => [r.tabId, r]));
-        const rows = tabs.map((tab) => overviewRow(tab, resolveTab(tab, config), runtimes.get(tab.id) ?? null));
+        const rows = await Promise.all(
+          tabs.map(async (tab) => {
+            const res = resolveTab(tab, config);
+            const row = overviewRow(tab, res, runtimes.get(tab.id) ?? null);
+            return { ...row, needsAccess: await needsAccess(row.status, res, config, () => d.hostAccess(tab.url)) };
+          }),
+        );
         const count = (pred: (s: string) => boolean) => rows.filter((r) => pred(r.status)).length;
         return {
           settings: config.settings,
@@ -191,6 +197,19 @@ export function tabsMethods(svc: ServiceInternals): Record<string, MethodDef> {
       handler: async (_a, p) => d.engine.refreshAll({ force: p?.force }),
     }),
   };
+}
+
+/**
+ * A running tab that can't refresh until the user allows site access: its
+ * protection needs to look inside the page, and an unreadable page holds the
+ * refresh (rather than refreshing without protection).
+ */
+async function needsAccess(status: string, res: Resolution, config: Config, hostAccess: () => Promise<boolean>): Promise<boolean> {
+  if (!["scheduled", "evaluating", "refreshing", "paused_activity"].includes(status)) return false;
+  const safety = (res.kind === "controller" ? res.controller.safety : null) ?? config.settings.defaultSafety;
+  const protects = safety.pauseWhileTyping || safety.protectUnsavedChanges || safety.pauseOnMouse || safety.pauseOnScroll;
+  if (!protects || safety.onActivityUnavailable === "refresh") return false;
+  return !(await hostAccess().catch(() => false));
 }
 
 /** One row of the Tabs overview: the tab, its run, and what controls it. */

@@ -15,6 +15,8 @@ interface Row {
   reason?: string;
   controllerId: string | null;
   controllerName: string | null;
+  /** Running, but won't refresh until site access is allowed (its protection needs to see the page). */
+  needsAccess?: boolean;
 }
 interface Overview {
   settings: Settings;
@@ -36,6 +38,8 @@ export function TabsView() {
   const [bulkInterval, setBulkInterval] = useState(300);
   const [actionError, setActionError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Tabs a bulk start left alone because access to their site was declined. */
+  const [declined, setDeclined] = useState<{ tabs: Row[]; intervalSeconds: number } | null>(null);
   const [refreshingAll, setRefreshingAll] = useState(false);
 
   const rows = useMemo(() => {
@@ -73,13 +77,29 @@ export function TabsView() {
   const bulkStart = () => {
     const targets = rows.filter((r) => selected.has(r.tab.id) && !r.tab.restricted);
     const origins = [...new Set(targets.map((r) => originOf(r.tab.url)).filter((o): o is string => !!o))];
-    // Request site access in the click gesture, then start each tab.
+    setDeclined(null);
+    // Request site access in the click gesture; then start the tabs JustRefresh may read. Like the
+    // popup, a declined site isn't started silently: it's listed, with "start without protection".
     void requestOrigins(origins)
       .catch(() => false)
       .then(async () => {
-        for (const r of targets) await act("startTab", { tabId: r.tab.id, intervalSeconds: bulkInterval });
-        setNotice(`Started ${targets.length} tab(s)`);
+        const allowed = new Set<string>();
+        for (const o of origins) if (await chrome.permissions.contains({ origins: [o] }).catch(() => false)) allowed.add(o);
+        const ok = targets.filter((r) => !originOf(r.tab.url) || allowed.has(originOf(r.tab.url)!));
+        const no = targets.filter((r) => !ok.includes(r));
+        for (const r of ok) await act("startTab", { tabId: r.tab.id, intervalSeconds: bulkInterval });
+        setNotice(ok.length ? `Started ${ok.length} tab(s)` : null);
+        if (no.length) setDeclined({ tabs: no, intervalSeconds: bulkInterval });
       });
+  };
+  /** Tabs not started because their site access was declined: start them refreshing without protection. */
+  const startUnprotected = async () => {
+    if (!declined) return;
+    for (const r of declined.tabs) {
+      await act("startTab", { tabId: r.tab.id, intervalSeconds: declined.intervalSeconds, safety: { onActivityUnavailable: "refresh" } });
+    }
+    setNotice(`Started ${declined.tabs.length} tab(s) without protection`);
+    setDeclined(null);
   };
   const bulk = async (method: string) => {
     for (const id of selected) await act(method, { tabId: id });
@@ -197,6 +217,22 @@ export function TabsView() {
       )}
       <ErrorBox error={actionError} />
       {notice && <div className="info">{notice}</div>}
+      {declined && (
+        <div className="notice small col" role="status" style={{ gap: 6 }}>
+          <span>
+            Not started: JustRefresh wasn't allowed to read {declined.tabs.map((r) => hostOfUrl(r.tab.url)).join(", ")}, so it couldn't tell whether you're
+            typing or have unsaved form changes there.
+          </span>
+          <div className="row">
+            <button className="small" onClick={() => void startUnprotected()}>
+              Start without protection
+            </button>
+            <button className="small" onClick={() => setDeclined(null)}>
+              Leave them
+            </button>
+          </div>
+        </div>
+      )}
       {data.conflicts.length > 0 && (
         <div className="notice">
           Rule conflicts: {data.conflicts.map((c) => `${c.a} and ${c.b} share "${c.pattern}" at equal priority (tie-break: oldest rule wins)`).join("; ")}
@@ -321,6 +357,29 @@ function RowActions({ row: r, act }: { row: Row; act: Act }) {
   );
 }
 
+const hostOfUrl = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/** A running tab JustRefresh can't see into: it won't refresh until allowed (the dashboard stays open for Chrome's prompt). */
+function AccessNeeded({ url }: { url: string }) {
+  const origin = originOf(url);
+  return (
+    <div className="small warn-text" style={{ maxWidth: 220 }}>
+      No site access: won't refresh until you allow it.{" "}
+      {origin && (
+        <button className="link small" onClick={() => void requestOrigins([origin]).catch(() => false)}>
+          Allow access
+        </button>
+      )}
+    </div>
+  );
+}
+
 function TabRow({ row: r, now, checked, onSelect, act }: { row: Row; now: number; checked: boolean; onSelect: (on: boolean) => void; act: Act }) {
   const next = nextRefreshAt(r.runtime);
   return (
@@ -336,6 +395,7 @@ function TabRow({ row: r, now, checked, onSelect, act }: { row: Row; now: number
       </td>
       <td>
         <StatusPill status={r.status} />
+        {r.needsAccess && <AccessNeeded url={r.tab.url} />}
         {r.reason && (
           <div className="small muted" style={{ maxWidth: 220 }}>
             {r.reason}

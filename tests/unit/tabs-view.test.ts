@@ -25,11 +25,19 @@ const overview = {
     row(3, "stopped"),
     row(4, null),
     row(5, "idle", { controllerId: "tab:5" }),
+    row(7, "scheduled", { controllerId: "tab:7", needsAccess: true }),
     { ...row(6, null), tab: { id: 6, title: "Tab 6", url: "chrome://settings", restricted: true } },
   ],
 };
 const calls: { method: string; params: unknown }[] = [];
+/** Sites JustRefresh may read (what Chrome's prompt granted). */
+const granted = new Set<string>();
+const permissionsRequest = vi.fn(async (p: { origins: string[] }) => {
+  for (const o of p.origins) if (o !== "https://t4.com/*") granted.add(o); // t4.com is declined
+  return false;
+});
 (globalThis as { chrome?: unknown }).chrome = {
+  permissions: { request: permissionsRequest, contains: async (p: { origins: string[] }) => p.origins.every((o) => granted.has(o)) },
   runtime: {
     sendMessage: vi.fn(async (m: { method: string; params: unknown }) => {
       if (m.method !== "getOverview") calls.push({ method: m.method, params: m.params });
@@ -85,4 +93,28 @@ it("resumes paused or stopped tabs and starts the others", async () => {
     { method: "pauseTab", params: { tabId: 1 } },
     { method: "clearTabOverride", params: { tabId: 5 } },
   ]);
+});
+
+it("says when a running tab can't refresh for lack of site access, and offers to allow it", async () => {
+  expect(rowOf(7).textContent).toContain("No site access: won't refresh until you allow it");
+  await act(async () => [...rowOf(7).querySelectorAll("button")].find((b) => b.textContent === "Allow access")!.click());
+  expect(permissionsRequest).toHaveBeenCalledWith({ origins: ["https://t7.com/*"] });
+  expect(rowOf(1).textContent).not.toContain("No site access");
+});
+
+it("a bulk start leaves a declined site alone, and offers to start it without protection", async () => {
+  granted.clear();
+  const tick = async (id: number) => act(async () => rowOf(id).querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await tick(3);
+  await tick(4);
+  await act(async () => [...el.querySelectorAll("button")].find((b) => b.textContent === "Start refreshing")!.click());
+  await flush();
+  await flush();
+  expect(calls.filter((c) => c.method === "startTab").map((c) => (c.params as { tabId: number }).tabId)).toEqual([3]);
+  expect(el.textContent).toContain("Not started: JustRefresh wasn't allowed to read t4.com");
+  await act(async () => [...el.querySelectorAll("button")].find((b) => b.textContent === "Start without protection")!.click());
+  await flush();
+  const started = calls.filter((c) => c.method === "startTab").map((c) => c.params);
+  expect(started.at(-1)).toMatchObject({ tabId: 4, safety: { onActivityUnavailable: "refresh" } });
+  expect(el.textContent).not.toContain("Not started");
 });
