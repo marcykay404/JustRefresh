@@ -711,6 +711,30 @@ await test("the desktop bridge is packaged as one runnable file", async () => {
   assert.match(r.stderr, /Usage: justrefresh-bridge\.mjs install/);
 });
 
+await test("a new rule shows problems only in the parts you have edited", async () => {
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`chrome-extension://${extId}/dashboard.html#/builder`);
+  await page.getByText("New rule").first().waitFor();
+  // Nothing typed yet: the Summary says what's missing, without an error.
+  await page.getByText("Still to fill in: Name").waitFor();
+  await page.getByText("Not ready", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Give the rule a name").count(), 0);
+  assert.equal(await page.getByText("Invalid", { exact: true }).count(), 0);
+  // Typed and cleared: now it's an error, in plain words.
+  const name = page.getByLabel("Name", { exact: true });
+  await name.fill("x");
+  await name.fill("");
+  await page.getByText("Give the rule a name").first().waitFor();
+  await page.getByText("Invalid", { exact: true }).waitFor();
+  await name.fill("My rule");
+  await page.getByText("Valid", { exact: true }).waitFor();
+  // Advanced mode says what it adds.
+  await page.getByText("Advanced mode", { exact: true }).click();
+  await page.getByText(/Advanced mode adds condition groups/).waitFor();
+  await page.close();
+});
+
 await test("popup and dashboard render", async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 900 });

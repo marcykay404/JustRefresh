@@ -19,6 +19,22 @@ import { TestPanel } from "./testing";
 
 export { PatternList } from "./controls";
 
+/** The part of the rule a diagnostic is about: "name", "trigger", "actions", … ("$" = the whole rule). */
+const partOf = (path: string) => path.split(/[.[]/)[0] || "$";
+
+/** What the Summary lists as still to fill in, for problems in parts not edited yet. */
+const PART_NAMES: Record<string, string> = {
+  name: "Name",
+  priority: "Priority",
+  trigger: "WHEN",
+  target: "ON (pages)",
+  stopWhen: "UNTIL",
+  actions: "THEN",
+  safety: "Protection",
+  limits: "Limits",
+  schedule: "Active hours",
+};
+
 /** `fromTemplate`: start from the rule a template filled in (Templates → Customise in the Rule Builder). */
 export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: string; initialUrl?: string; fromTemplate?: boolean }) {
   const dialog = useDialog();
@@ -38,6 +54,9 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
   const [saved, setSaved] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [testTab, setTestTab] = useState<number | null>(null);
+  // Parts of the rule edited so far: problems show there only once you've been there.
+  // A saved rule or a filled-in template shows them all at once.
+  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set(ruleId || fromTemplate ? ["*"] : []));
 
   useEffect(() => {
     if (!ruleId) return;
@@ -77,6 +96,7 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
 
   const set = (patch: Partial<Draft>) => {
     setSaved(null);
+    setTouched((t) => (t.has("*") ? t : new Set([...t, ...Object.keys(patch)])));
     setDraft((d) => ({ ...d, ...patch }));
   };
 
@@ -100,8 +120,10 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
   if (loadError) return <ErrorBox error={loadError} />;
   if (!caps.data) return <div className="muted">Loading…</div>;
 
-  const errorsFor = (prefix: string) => diagnostics.filter((d) => d.path === prefix || d.path.startsWith(`${prefix}.`) || d.path.startsWith(`${prefix}[`));
-  const section: SectionProps = { draft, set, caps: caps.data, diagnostics, errorsFor, advanced, testTab };
+  const shown = touched.has("*") ? diagnostics : diagnostics.filter((d) => partOf(d.path) === "$" || touched.has(partOf(d.path)));
+  const notYet = [...new Set(diagnostics.filter((d) => d.severity === "error" && !shown.includes(d)).map((d) => PART_NAMES[partOf(d.path)] ?? partOf(d.path)))];
+  const errorsFor = (prefix: string) => shown.filter((d) => d.path === prefix || d.path.startsWith(`${prefix}.`) || d.path.startsWith(`${prefix}[`));
+  const section: SectionProps = { draft, set, caps: caps.data, diagnostics: shown, errorsFor, advanced, testTab };
   const toggleAdvanced = (v: boolean) => {
     if (v || isSimpleTree(draft.stopWhen)) return setAdvanced(v);
     void dialog.alert({
@@ -112,6 +134,7 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
   const applyJson = (text: string) => {
     const next = draftFromJson(text);
     setDraft(next.draft);
+    setTouched(new Set(["*"]));
     setAdvanced(advanced || next.needsAdvanced);
     setView("visual");
   };
@@ -122,7 +145,9 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
         <h1>{existing ? `Edit rule: ${existing.name}` : "New rule"}</h1>
         <RuleBadges rule={existing} />
         <span className="spacer" />
-        <Toggle checked={advanced} onChange={toggleAdvanced} label="Advanced mode" />
+        <span title={ADVANCED_HELP}>
+          <Toggle checked={advanced} onChange={toggleAdvanced} label="Advanced mode" />
+        </span>
         <div className="row" role="tablist">
           <button className={view === "visual" ? "primary" : ""} onClick={() => setView("visual")}>
             Visual
@@ -132,6 +157,8 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
           </button>
         </div>
       </div>
+
+      {advanced && <p className="small muted">{ADVANCED_HELP}</p>}
 
       <div className="builder">
         <div className="col">
@@ -150,7 +177,7 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
         </div>
 
         <div className="col sticky">
-          <SaveCard draft={cleaned} existing={existing} valid={valid} saved={saved} saveError={saveError} diagnostics={diagnostics} onSave={save} />
+          <SaveCard draft={cleaned} existing={existing} valid={valid} saved={saved} saveError={saveError} diagnostics={shown} notYet={notYet} onSave={save} />
           <TestPanel draft={cleaned} tabs={tabs.data ?? []} tabId={testTab} setTabId={setTestTab} />
           <details className="card">
             <summary>
@@ -163,6 +190,9 @@ export function RuleBuilder({ ruleId, initialUrl, fromTemplate }: { ruleId?: str
     </>
   );
 }
+
+const ADVANCED_HELP =
+  "Advanced mode adds condition groups (+ Group, + NOT) under UNTIL, and actions for when the page can't be checked under THEN. Both appear once the rule has a stop condition.";
 
 function RuleBadges({ rule }: { rule: Rule | null }) {
   return (
@@ -206,6 +236,8 @@ function SaveCard(p: {
   saved: string | null;
   saveError: unknown;
   diagnostics: Diagnostic[];
+  /** Parts with problems you haven't edited yet (their messages aren't shown yet). */
+  notYet: string[];
   onSave: () => void;
 }) {
   const { existing } = p;
@@ -215,7 +247,7 @@ function SaveCard(p: {
       <h3>Summary</h3>
       <Summary draft={p.draft} />
       <div className="row">
-        <span className={`pill pill-${p.valid ? "ok" : "error"}`}>{p.valid ? "Valid" : "Invalid"}</span>
+        <ValidityPill valid={p.valid} onlyNotYet={p.notYet.length > 0 && !p.diagnostics.some((d) => d.severity === "error")} />
         <span className="spacer" />
         {existing && <button onClick={async () => downloadJson(`${existing.id}.json`, await api("exportConfig", { ruleIds: [existing.id] }))}>Export</button>}
         {existing && (
@@ -238,7 +270,14 @@ function SaveCard(p: {
       ) : (
         <ErrorBox error={p.saveError} />
       )}
+      {p.notYet.length > 0 && <span className="small muted">Still to fill in: {p.notYet.join(", ")}</span>}
       <Diagnostics items={p.diagnostics} />
     </div>
   );
+}
+
+/** Valid, Invalid, or (nothing wrong yet in what you've edited) Not ready. */
+function ValidityPill({ valid, onlyNotYet }: { valid: boolean; onlyNotYet: boolean }) {
+  if (valid) return <span className="pill pill-ok">Valid</span>;
+  return onlyNotYet ? <span className="pill pill-muted">Not ready</span> : <span className="pill pill-error">Invalid</span>;
 }
