@@ -347,7 +347,8 @@
             "required": [
               "type"
             ],
-            "additionalProperties": {}
+            "additionalProperties": {},
+            "description": "Any condition: see getSchema({ kind: 'condition', type }) for each type's fields"
           }
         }
       },
@@ -379,7 +380,8 @@
             "required": [
               "type"
             ],
-            "additionalProperties": {}
+            "additionalProperties": {},
+            "description": "Any condition: see getSchema({ kind: 'condition', type }) for each type's fields"
           }
         }
       },
@@ -407,7 +409,8 @@
           "required": [
             "type"
           ],
-          "additionalProperties": {}
+          "additionalProperties": {},
+          "description": "Any condition: see getSchema({ kind: 'condition', type }) for each type's fields"
         }
       },
       "required": [

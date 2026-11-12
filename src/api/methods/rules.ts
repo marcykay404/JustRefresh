@@ -23,7 +23,9 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
       scope: "rules:read",
       params: z.optional(z.strictObject({ includeSchemas: z.optional(z.boolean()) })),
       handler: async (_a, p) => {
-        const includeSchemas = p?.includeSchemas === true;
+        // Left out = the full payload, as before: older bridges and extension agents keep their schemas.
+        // The MCP bridge asks for the summary unless the agent wants everything.
+        const includeSchemas = p?.includeSchemas !== false;
         // The schema files are only read when they're asked for.
         const schemas = includeSchemas ? ((await loadSchemas()) ?? NO_SCHEMAS) : NO_SCHEMAS;
         return buildCapabilities(svc.registries, (await d.config.get()).settings, schemas, { includeSchemas });
@@ -41,7 +43,7 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
         if (!schemas) throw new ApiError("internal", "The JSON Schemas couldn't be read from the extension package");
         const schema = schemaFor(svc.registries, schemas, p.kind, p.type);
         if (schema === null) {
-          const types = Object.keys(schemaFor(svc.registries, schemas, p.kind) as object);
+          const types = svc.registries[`${p.kind}s` as "conditions"].list().map((h) => h.type);
           throw new ApiError("not_found", `No ${p.kind} type "${p.type}". Types: ${types.join(", ")}`);
         }
         return { kind: p.kind, ...(p.type !== undefined ? { type: p.type } : {}), schema };

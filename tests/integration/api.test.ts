@@ -84,7 +84,7 @@ describe("Scenario G: agent integration & security", () => {
     env.browser.addTab(7, "https://example.com/products/42?token=secret");
     env.page.setHtml(7, `<div id="status">Available</div>`);
 
-    const caps = (await env.service.call(env.agent(), "getCapabilities", undefined)) as { conditions: { type: string }[]; ruleSchema?: object };
+    const caps = (await env.service.call(env.agent(), "getCapabilities", { includeSchemas: false })) as { conditions: { type: string }[]; ruleSchema?: object };
     expect(caps.conditions.map((c) => c.type)).toContain("dom.text");
     expect(caps.ruleSchema).toBeUndefined(); // a summary: schemas come from getSchema
     const schema = (await env.service.call(env.agent(), "getSchema", { kind: "condition", type: "dom.text" })) as { schema: { properties: object } };
@@ -224,7 +224,7 @@ it("capabilities say so when the JSON Schema files can't be read", async () => {
   expect(warn).toHaveBeenCalled();
   await expect(svc.call(env.user, "getSchema", { kind: "rule" })).rejects.toMatchObject({ code: "internal" });
   // The summary doesn't need the files at all.
-  expect(((await svc.call(env.user, "getCapabilities", undefined)) as { conditions: unknown[] }).conditions.length).toBeGreaterThan(0);
+  expect(((await svc.call(env.user, "getCapabilities", { includeSchemas: false })) as { conditions: unknown[] }).conditions.length).toBeGreaterThan(0);
   warn.mockRestore();
   expect(
     ((await env.service.call(env.user, "getCapabilities", { includeSchemas: true })) as { schemasUnavailable?: boolean }).schemasUnavailable,

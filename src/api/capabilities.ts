@@ -1,6 +1,7 @@
 /**
  * Capability discovery for agents and the rule builder: every registered
- * condition/trigger/action with its description and JSON Schema. The
+ * condition/trigger/action with its description (and, on request, its JSON
+ * Schema; getSchema gives one piece at a time). The
  * schemas are generated at build time (`npm run gen:schema`) and read from
  * the extension package on demand, so the service worker ships neither
  * zod's JSON Schema converter nor the schemas themselves.
@@ -25,18 +26,18 @@ export type SchemaKind = "rule" | "condition" | "trigger" | "action";
 const PLURAL = { condition: "conditions", trigger: "triggers", action: "actions" } as const;
 
 /**
- * What agents and the rule builder can use. By default a summary: every
- * condition/trigger/action with its title, description and permissions, the
- * limits and notes, but no JSON Schemas (about half the size of the full
- * payload, which agents pay for in tokens). `includeSchemas` adds each
- * handler's schema and the whole rule schema, as the rule builder needs;
- * agents ask for one piece at a time with getSchema instead.
+ * What agents and the rule builder can use. With `includeSchemas: false` a
+ * summary: every condition/trigger/action with its title, description and
+ * permissions, the limits and notes, but no JSON Schemas (about a fifth of the
+ * full payload, which agents pay for in tokens; they ask for one piece at a
+ * time with getSchema). With schemas, as the rule builder needs, each
+ * handler's schema and the whole rule schema.
  */
 export function buildCapabilities(
   registries: Registries,
   settings?: Pick<Settings, "allowFastIntervals">,
   schemas: SchemaBundle = NO_SCHEMAS,
-  { includeSchemas = false }: { includeSchemas?: boolean } = {},
+  { includeSchemas = true }: { includeSchemas?: boolean } = {},
 ) {
   const fast = settings?.allowFastIntervals === true;
   const withSchema = (kind: keyof SchemaBundle["handlers"], type: string) => (includeSchemas ? { schema: schemaOf(schemas.handlers[kind], type) } : {});
@@ -86,7 +87,7 @@ export function buildCapabilities(
     },
     notes: [
       "JSON Schemas: getSchema({ kind: 'rule' }) for a rule's fields, getSchema({ kind: 'condition' | 'trigger' | 'action', type }) for one handler.",
-      "Agent-created rules are saved as disabled drafts; enableRule asks the user to approve (a trusted agent's enable and delete act at once).",
+      "Agent-created rules are saved as disabled drafts. enableRule, and deleteRule on an enabled rule, ask the user to approve (a trusted agent's act at once).",
       "An agent's updateRule turns the rule off and makes it a draft again, even a running one; enable it again afterwards.",
       "Use testRule for a side-effect-free dry run before asking to enable. To check a CSS selector, test a throwaway rule whose stopWhen is a dom.exists condition.",
       "Conditions return matched / not_matched / unknown; unknown is never treated as false. Its code says why (invalid_selector: fix the selector).",
@@ -106,7 +107,9 @@ export function schemaFor(registries: Registries, schemas: SchemaBundle, kind: S
   if (kind === "rule") {
     const rule = schemas.rule as { $defs?: Record<string, unknown> };
     const pointer = (k: string) => ({ description: `Any ${k}: see getSchema({ kind: '${k}', type }) for each type's fields` });
-    return { ...rule, $defs: { condition: pointer("condition"), trigger: pointer("trigger"), action: pointer("action") } };
+    // Not the full schema document, so not under its $id either.
+    const { $id: _id, ...fields } = rule as { $id?: string };
+    return { ...fields, $defs: { condition: pointer("condition"), trigger: pointer("trigger"), action: pointer("action") } };
   }
   const registered = registries[PLURAL[kind]].list().map((h) => h.type);
   const map = schemas.handlers[PLURAL[kind]];

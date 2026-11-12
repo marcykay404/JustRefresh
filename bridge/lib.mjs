@@ -293,7 +293,7 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
           return reply({ isError: true, content: [{ type: "text", text: e.message }] });
         }
         try {
-          const res = await callApi(t.method, params);
+          const res = await callApi(t.method, forApi(t.method, params));
           if (!res?.ok) {
             const err = res?.error ?? { code: "internal", message: "No response" };
             const hint = err.code === "pairing_required" ? "\nOpen the extension dashboard → Agent Integrations and approve this agent." : "";
@@ -310,10 +310,19 @@ export function createMcpHandler({ callApi, serverName = "justrefresh", version 
   };
 }
 
-/** Capabilities carry the instructions too, for MCP clients that don't show `instructions` to the model. */
+/**
+ * Capabilities carry the instructions too, for MCP clients that don't show
+ * `instructions` to the model. They replace the extension's `notes`, which say
+ * the same in API method names (for agents that call the extension directly).
+ */
 function withInstructions(result) {
-  return result && typeof result === "object" && !Array.isArray(result) ? { instructions: INSTRUCTIONS, ...result } : result;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const { notes: _notes, ...rest } = result;
+  return { instructions: INSTRUCTIONS, ...rest };
 }
+
+/** MCP agents get the capabilities summary unless they ask for every schema (the API's own default is the full payload). */
+const forApi = (method, params) => (method === "getCapabilities" ? { includeSchemas: false, ...params } : params);
 
 function toolResult(result) {
   result ??= null;

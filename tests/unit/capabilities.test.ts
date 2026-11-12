@@ -17,22 +17,26 @@ async function agentEnv() {
 }
 
 describe("getCapabilities", () => {
-  it("is a summary by default: every handler, no schemas, within budget", async () => {
+  it("includeSchemas false is a summary: every handler, no schemas, within budget", async () => {
     const { call } = await agentEnv();
-    const caps = await call<Record<string, unknown> & { conditions: Record<string, unknown>[] }>("getCapabilities");
+    type Item = Record<string, unknown>;
+    const caps = await call<Item & { conditions: Item[]; triggers: Item[]; actions: Item[] }>("getCapabilities", { includeSchemas: false });
     expect(caps.ruleSchema).toBeUndefined();
-    expect(caps.conditions.every((c) => !("schema" in c))).toBe(true);
+    expect(caps.schemasUnavailable).toBeUndefined();
+    for (const item of [...caps.conditions, ...caps.triggers, ...caps.actions]) expect(item, String(item.type)).not.toHaveProperty("schema");
     const r = defaultRegistries();
     expect(caps.conditions.map((c) => c.type)).toEqual(r.conditions.list().map((h) => h.type));
     expect(bytes(caps)).toBeLessThanOrEqual(SUMMARY_BUDGET_BYTES);
     expect(JSON.stringify(caps.notes)).toMatch(/getSchema/);
   });
 
-  it("includeSchemas gives the full payload the rule builder needs", async () => {
+  it("the full payload, as the rule builder needs, is also what callers that don't say get (older bridges, extension agents)", async () => {
     const { call } = await agentEnv();
-    const full = await call<{ ruleSchema: Schema; conditions: { type: string; schema: Schema }[] }>("getCapabilities", { includeSchemas: true });
-    expect(full.ruleSchema.$defs).toHaveProperty("condition");
-    for (const c of full.conditions) expect(c.schema.properties?.type?.const, c.type).toBe(c.type);
+    for (const params of [{ includeSchemas: true }, undefined, {}]) {
+      const full = await call<{ ruleSchema: Schema; conditions: { type: string; schema: Schema }[] }>("getCapabilities", params);
+      expect(full.ruleSchema.$defs).toHaveProperty("condition");
+      for (const c of full.conditions) expect(c.schema.properties?.type?.const, c.type).toBe(c.type);
+    }
   });
 });
 
@@ -58,13 +62,24 @@ describe("getSchema", () => {
     const { schema } = await call<{ schema: Schema }>("getSchema", { kind: "rule" });
     expect(Object.keys(schema.properties ?? {})).toEqual(expect.arrayContaining(["name", "target", "trigger", "stopWhen", "actions"]));
     expect(bytes(schema)).toBeLessThanOrEqual(RULE_SCHEMA_BUDGET_BYTES);
+    expect(schema).not.toHaveProperty("$id");
     // Every $ref still resolves, to a pointer that says where the real definition is.
-    const refs = JSON.stringify(schema).match(/"\$ref":"#\/\$defs\/[a-z]+"/g) ?? [];
+    const refs = [...JSON.stringify(schema).matchAll(/"\$ref":"([^"]*)"/g)].map((m) => m[1]);
     expect(refs.length).toBeGreaterThan(0);
     for (const ref of refs) {
-      const name = ref.slice(ref.lastIndexOf("/") + 1, -1);
+      expect(ref).toMatch(/^#\/\$defs\/[^/]+$/);
+      const name = ref.slice("#/$defs/".length);
       expect(schema.$defs?.[name]?.description, name).toMatch(new RegExp(`getSchema\\(\\{ kind: '${name}'`));
     }
+  });
+
+  it("conditions that hold other conditions say where their fields are", async () => {
+    const { call } = await agentEnv();
+    type Nested = { properties: { conditions?: { items: { description?: string } }; condition?: { description?: string } } };
+    const any = await call<{ schema: Nested }>("getSchema", { kind: "condition", type: "any" });
+    expect(any.schema.properties.conditions?.items.description).toMatch(/getSchema/);
+    const not = await call<{ schema: Nested }>("getSchema", { kind: "condition", type: "not" });
+    expect(not.schema.properties.condition?.description).toMatch(/getSchema/);
   });
 
   it("says which types exist when asked for one that doesn't", async () => {

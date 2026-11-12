@@ -308,11 +308,22 @@ describe("MCP self-description", () => {
   });
 
   it("capabilities carry the instructions, for clients that don't show them to the model", async () => {
-    const handle = createMcpHandler({ callApi: async (method: string) => ({ ok: true, result: { method } }) });
-    const call = async (name: string, args = {}) =>
+    const handle = createMcpHandler({ callApi: async (method: string, params: unknown) => ({ ok: true, result: { method, params, notes: ["n"] } }) });
+    const call = async (name: string, args?: object) =>
       JSON.parse((await handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name, arguments: args } })).result.content[0].text);
-    expect(await call("refresh_get_capabilities")).toEqual({ instructions: INSTRUCTIONS, method: "getCapabilities" });
-    expect(await call("refresh_list_rules")).toEqual({ method: "listRules" });
+    // The summary unless the agent asks for every schema; the instructions replace the notes.
+    expect(await call("refresh_get_capabilities")).toEqual({ instructions: INSTRUCTIONS, method: "getCapabilities", params: { includeSchemas: false } });
+    expect((await call("refresh_get_capabilities", { includeSchemas: true })).params).toEqual({ includeSchemas: true });
+    expect(await call("refresh_list_rules")).toEqual({ method: "listRules", notes: ["n"] });
+    expect(await call("refresh_get_schema", { kind: "rule" })).toEqual({ method: "getSchema", params: { kind: "rule" }, notes: ["n"] });
+  });
+
+  it("refresh_get_schema offers the kinds the API accepts", async () => {
+    const env = createApiEnv();
+    await env.pairAgent();
+    const kinds = TOOLS.find((t) => t.name === "refresh_get_schema").inputSchema.properties.kind.enum;
+    for (const kind of kinds) await expect(env.service.call(env.agent(), "getSchema", { kind })).resolves.toHaveProperty("schema");
+    await expect(env.service.call(env.agent(), "getSchema", { kind: "page" })).rejects.toMatchObject({ code: "invalid_params" });
   });
 
   it("errors are compact too", async () => {
