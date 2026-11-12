@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
 import { useApi, useNow } from "../shared/hooks";
+import { openChromeSiteAccess } from "../shared/chrome-settings";
 import { formatDuration, formatTime, statusLabel } from "../shared/format";
 import { Empty, ErrorBox, StatusPill } from "../shared/components";
 import { INTERVAL_PRESETS } from "../../core/defaults";
@@ -371,10 +372,17 @@ function AccessNeeded({ url }: { url: string }) {
   return (
     <div className="small warn-text" style={{ maxWidth: 220 }}>
       No site access: won't refresh until you allow it.{" "}
-      {origin && (
-        <button className="link small" onClick={() => void requestOrigins([origin]).catch(() => false)}>
-          Allow access
+      {origin === "file:///*" ? (
+        // Chrome lets extensions into local files only with its "Allow access to file URLs" switch.
+        <button className="link small" onClick={openChromeSiteAccess}>
+          Turn on file access in Chrome's settings
         </button>
+      ) : (
+        origin && (
+          <button className="link small" onClick={() => void requestOrigins([origin]).catch(() => false)}>
+            Allow access
+          </button>
+        )
       )}
     </div>
   );

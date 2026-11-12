@@ -40,6 +40,8 @@ type Case = {
   excluded?: boolean;
   /** Rules set for this page with another "?…" part. */
   otherQuery?: { id: string; name: string }[];
+  /** The tab's address (default URL_). */
+  url?: string;
 };
 let current: Case;
 /** Set once createRule ran: the new rule then controls the tab. */
@@ -52,7 +54,7 @@ const URL_ = "https://www.youtube.com/watch?v=x";
 const tabState = () => {
   const c = { hostAccess: true, status: null as string | null, protection: true, source: null as Case["source"], ...current };
   return {
-    tab: { id: 1, windowId: 1, index: 0, title: "Video", url: URL_, active: true, discarded: false },
+    tab: { id: 1, windowId: 1, index: 0, title: "Video", url: current.url ?? URL_, active: true, discarded: false },
     runtime: c.status ? { tabId: 1, status: c.status, refreshCount: 3, nextDueAt: Date.now() + 60_000, lastAttemptAt: Date.now() - 1000 } : null,
     statusLabel: "",
     resolution: {
@@ -78,10 +80,14 @@ const RULE = {
   actions: { onMatched: [{ type: "stopRefresh" }, { type: "notify" }], onNotMatched: [{ type: "refresh" }] },
 };
 const permissionsRequest = vi.fn(async (_p: unknown) => true);
+const tabsCreate = vi.fn();
+/** Chrome's "Allow access to file URLs" for JustRefresh. */
+let fileAccess = false;
 /** What the service worker hands back when the popup opens again after a "Deny". */
 let takeResult: unknown = null;
 (globalThis as { chrome?: unknown }).chrome = {
-  tabs: { query: async () => [{ id: 1 }], create: vi.fn() },
+  tabs: { query: async () => [{ id: 1 }], create: tabsCreate },
+  extension: { isAllowedFileSchemeAccess: async () => fileAccess },
   runtime: {
     getURL: (p: string) => p,
     sendMessage: async (m: { method: string; params: unknown }) => {
@@ -509,5 +515,29 @@ describe("opened again after Chrome's prompt closed it and access was declined",
   it("with access already, doesn't ask", async () => {
     await render({});
     expect(called("takeAfterAccess")).toEqual([]);
+  });
+});
+
+describe("local files", () => {
+  it("while Chrome's file switch is off: explains, doesn't ask, and opens Chrome's settings", async () => {
+    fileAccess = false;
+    await render({ hostAccess: false, url: "file:///Users/me/report.html" });
+    expect(text()).toContain("local files");
+    await click("Start refreshing every 5 min");
+    await tick();
+    expect(permissionsRequest).not.toHaveBeenCalled(); // Chrome would refuse it without a prompt
+    expect(called("startTab")).toEqual([]);
+    expect(text()).toContain("“Allow access to file URLs” is on for JustRefresh");
+    await click("Open Chrome's settings");
+    expect(tabsCreate).toHaveBeenCalledWith({ url: expect.stringMatching(/^chrome:\/\/extensions\/\?id=/) });
+  });
+
+  it("with it on: asks for access like any site", async () => {
+    fileAccess = true;
+    await render({ hostAccess: false, url: "file:///Users/me/report.html" });
+    await click("Start refreshing every 5 min");
+    await tick();
+    expect(permissionsRequest).toHaveBeenCalledWith({ origins: ["file:///*"] });
+    fileAccess = false;
   });
 });

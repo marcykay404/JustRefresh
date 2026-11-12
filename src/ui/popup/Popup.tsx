@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
 import { askAccessThen, type AfterAccessRequest } from "../shared/access";
+import { fileAccessAllowed, openChromeSiteAccess } from "../shared/chrome-settings";
 import { useApi, useNow } from "../shared/hooks";
 import { StillLoading } from "../shared/StillLoading";
 import { ErrorBox } from "../shared/components";
@@ -142,6 +143,11 @@ function TabPopup({
   /** The site-access prompt was declined for the interval in here. */
   const [declinedFor, setDeclinedFor] = useState<number | null>(null);
   const picker = useIntervalPicker(f.currentInterval, overview?.settings.allowFastIntervals === true);
+  /** A local file while Chrome keeps extensions out of local files (only its settings can change that). */
+  const [filesOff, setFilesOff] = useState(false);
+  useEffect(() => {
+    if (f.origin === "file:///*" && !s.hostAccess) void fileAccessAllowed().then((ok) => setFilesOff(!ok));
+  }, [f.origin, s.hostAccess]);
   /** A "Refresh until" the popup was setting up when it closed for Chrome's prompt (then declined). */
   const [restored, setRestored] = useState<{ text: string; mode: UntilMode; anyQuery: boolean; note: string } | null>(null);
 
@@ -187,6 +193,8 @@ function TabPopup({
   const start = (intervalSeconds: number, alreadyGranted = false) => {
     // No protection means nothing reads the page, so there is nothing to ask for.
     if (alreadyGranted || s.hostAccess || !f.origin || !f.protectionOn) return void begin(intervalSeconds);
+    // Chrome refuses local files without asking while its file switch is off: explain instead of asking.
+    if (filesOff) return void setDeclinedFor(intervalSeconds);
     // If Chrome's prompt closes the popup (macOS), the service worker starts it once you allow.
     void askAccessThen(f.origin, { method: "startTab", params: { tabId, intervalSeconds } }).then(({ granted }) => {
       if (!granted) return setDeclinedFor(intervalSeconds);
@@ -297,6 +305,7 @@ function TabPopup({
           tabId={tabId}
           run={run}
           declinedFor={declinedFor}
+          filesOff={filesOff}
           onAccessGranted={() => {
             setDeclinedFor(null);
             picker.reset();
@@ -322,6 +331,8 @@ function Extras(p: {
   tabId: number;
   run: Run;
   declinedFor: number | null;
+  /** A local file while Chrome's "Allow access to file URLs" is off. */
+  filesOff: boolean;
   /** Access was granted from the notice; the service worker did what the click was for. */
   onAccessGranted: () => void;
   onStartUnprotected: () => Promise<void>;
@@ -386,14 +397,27 @@ function Extras(p: {
 
       {blockedByAccess && f.origin && (
         <div className="notice small col">
-          <span>
-            JustRefresh can't see inside <strong>{f.siteName}</strong>, so it can't tell whether you're typing or have unsaved form changes. To be safe, it
-            won't refresh this page until you allow access.
-          </span>
+          {p.filesOff ? (
+            <span>
+              Chrome only lets extensions into local files when “Allow access to file URLs” is on for JustRefresh. Until then it can't tell whether you're
+              typing here, so it won't refresh this page. Turn it on in Chrome's settings, or refresh without protection.
+            </span>
+          ) : (
+            <span>
+              JustRefresh can't see inside <strong>{f.siteName}</strong>, so it can't tell whether you're typing or have unsaved form changes. To be safe, it
+              won't refresh this page until you allow access.
+            </span>
+          )}
           <div className="row">
-            <button className="small" onClick={allowAccess}>
-              Allow access
-            </button>
+            {p.filesOff ? (
+              <button className="small" onClick={openChromeSiteAccess}>
+                Open Chrome's settings
+              </button>
+            ) : (
+              <button className="small" onClick={allowAccess}>
+                Allow access
+              </button>
+            )}
             <button className="small" onClick={() => void p.onStartUnprotected()}>
               Refresh without protection
             </button>
@@ -412,7 +436,7 @@ function Extras(p: {
           byRule={f.byRule}
           needsAccessForRule={f.byRule && !s.hostAccess}
           onToggle={(on) => run("setTabSafety", { tabId, safety: { pauseWhileTyping: on, protectUnsavedChanges: on } })}
-          onAllow={() => f.origin && void requestOrigins([f.origin]).then(() => p.reloadState())}
+          onAllow={() => (p.filesOff ? openChromeSiteAccess() : f.origin && void requestOrigins([f.origin]).then(() => p.reloadState()))}
           showAllow={!!f.origin}
         />
       )}

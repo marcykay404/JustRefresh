@@ -1,3 +1,4 @@
+import { openChromeSiteAccess } from "../shared/chrome-settings";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, requestOrigins } from "../shared/api";
 import { useApi } from "../shared/hooks";
@@ -450,11 +451,6 @@ function useAccessRemoval(setError: (e: unknown) => void, setRemoved: (what: str
 /** What removing here does and doesn't do (Chrome keeps the earlier "allow"; only Chrome's settings clear it). */
 const REMEMBERED =
   "JustRefresh stops using it now. Chrome still remembers you allowed it, so turning refresh on there later won't ask again. To make Chrome ask again, remove it in Chrome's settings too.";
-
-/** JustRefresh's page in chrome://extensions, where its site access can be removed for good. */
-export function openChromeSiteAccess() {
-  void chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
-}
 
 function ChromeSettingsButton() {
   return (
