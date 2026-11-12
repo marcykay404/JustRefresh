@@ -35,7 +35,8 @@ function fakeChrome(host) {
   );
   let log = "";
   host.stderr.on("data", (d) => (log += d));
-  return { seen, listening: () => log.includes("listening") };
+  host.stdout.on("error", () => undefined);
+  return { seen, listening: () => log.includes("listening"), log: () => `exit ${host.exitCode}; stderr: ${log}` };
 }
 
 const stop = async (host) => {
@@ -49,7 +50,9 @@ describe.runIf(isWin)("bridge on Windows", () => {
     const env = { ...process.env, JUSTREFRESH_BRIDGE_DIR: dir };
     const host = spawn(process.execPath, [BRIDGE, "native-host"], { env });
     const chrome = fakeChrome(host);
-    await wait(chrome.listening, "pipe listening");
+    await wait(chrome.listening, "pipe listening").catch((e) => {
+      throw new Error(`${e.message} (${chrome.log()})`);
+    });
 
     // icacls: inheritance removed, and only this account has access (full control, inherited by what's inside).
     const acl = spawnSync("icacls", [dir], { encoding: "utf8" }).stdout;
@@ -58,7 +61,7 @@ describe.runIf(isWin)("bridge on Windows", () => {
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter((l) => l.includes(":("));
-    expect(entries).toHaveLength(1);
+    expect(entries, acl).toHaveLength(1);
     expect(entries[0]).toMatch(new RegExp(`\\\\${process.env.USERNAME}:\\(OI\\)\\(CI\\)\\(F\\)$`, "i"));
     expect(acl).not.toMatch(/\(I\)|SYSTEM|Administrators|BUILTIN\\Users|Everyone/);
 
@@ -102,7 +105,9 @@ describe.runIf(isWin)("bridge on Windows", () => {
       // Start it the way Chrome does: cmd /d /s /c ""<launcher>" <origin>".
       const host = spawn("cmd.exe", ["/d", "/s", "/c", `""${manifest.path}" chrome-extension://${ID}/"`], { env, windowsVerbatimArguments: true });
       const chrome = fakeChrome(host);
-      await wait(chrome.listening, "host started via the .bat launcher");
+      await wait(chrome.listening, "host started via the .bat launcher").catch((e) => {
+        throw new Error(`${e.message} (${chrome.log()}; launcher: ${readFileSync(manifest.path, "utf8")})`);
+      });
       expect(existsSync(join(dataDir, "token"))).toBe(true);
       await stop(host);
     } finally {

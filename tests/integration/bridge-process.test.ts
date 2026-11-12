@@ -145,7 +145,8 @@ describe.skipIf(isWin)("bridge processes", () => {
 
   it("installs with one command: copies itself, registers with the browser, and uninstalls", () => {
     const home = mkdtempSync(join(tmpdir(), "justrefresh-home-"));
-    const env = { ...process.env, HOME: home, JUSTREFRESH_BRIDGE_DIR: join(home, ".justrefresh") };
+    // XDG_CONFIG_HOME too (CI runners set it): Linux browsers' folders are under it.
+    const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config"), JUSTREFRESH_BRIDGE_DIR: join(home, ".justrefresh") };
     const run = (...args: string[]) => spawnSync(process.execPath, args, { env, encoding: "utf8" });
     expect(run(BRIDGE, "install").status).toBe(2); // needs the extension id
     const out = run(BRIDGE, "install", "--extension-id", "abcdefghijklmnopabcdefghijklmnop");
