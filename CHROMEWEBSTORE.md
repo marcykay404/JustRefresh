@@ -22,8 +22,8 @@ in the description, or the UI in the screenshots changes.
 Refresh tabs on a timer, or until the thing you're waiting for appears, without ever losing what you're typing.
 
 NEVER LOSE YOUR WORK
-• Waits while you're typing, and never refreshes a form you've started filling in.
-• Never refreshes a page you reached by submitting a form, so an order or payment is never sent twice.
+• Waits while you're typing, and won't refresh a form you've started filling in (you can switch this off).
+• Won't refresh a page you reached by submitting a form, so Chrome doesn't send it again (on sites you've given it access to).
 • Optionally waits while you move the mouse or scroll.
 
 REFRESH IN ONE TAP
@@ -35,17 +35,17 @@ REFRESH UNTIL SOMETHING APPEARS
 • Or when text disappears, or when a part of the page changes.
 
 RULES AND TEMPLATES
-• Ready-made templates: back in stock, status changes, failed builds, staying signed in.
+• Ready-made templates: back in stock, status changes, a dashboard during work hours, failed builds, staying signed in.
 • Rules for whole sites: schedules (weekdays, working hours), limits, exclusions, and conditions on what the page shows, also inside embedded dashboards.
 • A visual rule builder with a dry run before anything is saved, and JSON import/export.
 
 PRIVATE BY DESIGN
-• No account, no servers, no ads, no tracking. Everything stays in your browser.
+• No account, no servers, no ads, no tracking. Everything stays in your browser, unless you switch on local webhooks or AI apps.
 • Asks for access to a site only when you turn it on there.
 • Never records what you type or what's in forms.
 
 FOR AI AGENTS (OPTIONAL)
-• AI apps on your computer can set up rules through an optional local bridge (MCP). Nothing an agent does takes effect until you approve it, and you choose what each agent may do.
+• AI apps on your computer can set up rules through an optional local bridge (MCP). Rules an agent creates stay off until you approve them, unless you choose to trust that agent, and you choose what each agent may see and do.
 
 Free and open source (MIT): https://github.com/marcykay404/JustRefresh
 ```
@@ -76,27 +76,29 @@ All generated from the real built extension: `npm run build && npm run store:ass
 
 **Permission justifications:**
 
-| Permission                                                       | Why it's needed                                                                                                                                                                                                                                                                         |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tabs`                                                           | Reads the address and title of open tabs to show them in the popup and dashboard and to decide which rule applies to which tab, and reloads tabs.                                                                                                                                       |
-| `storage`                                                        | Keeps the user's rules, settings, run state and a local history in the browser. Nothing leaves the browser.                                                                                                                                                                             |
-| `alarms`                                                         | Schedules refreshes so they happen on time even while the background worker is asleep.                                                                                                                                                                                                  |
-| `notifications`                                                  | Tells the user when what they were waiting for appears, or when a watch stops.                                                                                                                                                                                                          |
-| `scripting`                                                      | Runs JustRefresh's own content script on sites the user allowed, to check whether they are typing or have unsaved form changes before a refresh, and to check the page for the text or element a rule waits for.                                                                        |
-| `offscreen`                                                      | Plays the optional alert sound (service workers can't play audio).                                                                                                                                                                                                                      |
-| `nativeMessaging` (optional)                                     | Only if the user switches on "Allow desktop AI apps to connect": talks to the optional local bridge on the user's own computer, so AI apps the user approves can set up rules.                                                                                                          |
-| Host access: `http://*/*`, `https://*/*`, `file:///*` (optional) | Requested one site at a time, when the user turns on refreshing there, to read activity and page content locally for the checks above. File URLs only if the user also allows them in Chrome.                                                                                           |
-| `externally_connectable` (`ids: ["*"]`)                          | Lets another extension the user adds to the allowlist in Agent Integrations, such as an AI agent extension, propose rules. Every caller must also be approved by the user in Agent Integrations, with the permissions the user chooses; extensions that aren't allowlisted are refused. |
+| Permission                                                       | Why it's needed                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tabs`                                                           | Reads the address and title of open tabs to show them in the popup and dashboard and to decide which rule applies to which tab, and reloads tabs.                                                                                                                                                                                                        |
+| `storage`                                                        | Keeps the user's rules, settings, run state and a local history in the browser. Nothing leaves the browser.                                                                                                                                                                                                                                              |
+| `alarms`                                                         | Schedules refreshes so they happen on time even while the background worker is asleep.                                                                                                                                                                                                                                                                   |
+| `notifications`                                                  | Tells the user when what they were waiting for appears, or when a watch stops.                                                                                                                                                                                                                                                                           |
+| `scripting`                                                      | Runs JustRefresh's own content script on sites the user allowed: to check whether they are typing or have unsaved form changes before a refresh, to check the page for the text or element a rule waits for, and, when a rule or the user asks, to highlight what it found, click an element, keep the scroll position, or let the user pick an element. |
+| `offscreen`                                                      | Plays the optional alert sound (service workers can't play audio).                                                                                                                                                                                                                                                                                       |
+| `nativeMessaging` (optional)                                     | Only if the user switches on "Allow desktop AI apps to connect": talks to the optional local bridge on the user's own computer, so AI apps the user approves can set up rules.                                                                                                                                                                           |
+| Host access: `http://*/*`, `https://*/*`, `file:///*` (optional) | Requested when the user turns on refreshing for a site (or for several selected tabs at once), or for all sites only if the user presses "Allow access to all sites" in Settings; used to read activity and page content locally for the checks above. File URLs only if the user also allows them in Chrome.                                            |
+| `externally_connectable` (`ids: ["*"]`)                          | Lets another extension the user adds to the allowlist in Agent Integrations, such as an AI agent extension, propose rules. Every caller must also be approved by the user in Agent Integrations, with the permissions the user chooses; the allowlist is empty by default, and extensions not on it are refused.                                         |
 
 **Remote code:** No. All code is packaged with the extension (`script-src 'self'`).
 
-**Data usage:** JustRefresh doesn't collect or transmit user data. In the form, tick none of the data types, and certify:
+**Data usage:** JustRefresh doesn't send user data to the developer or anyone else. In the form, tick none of the data types, and certify:
 
 - it does not sell or transfer user data to third parties, outside the approved use cases;
 - it does not use or transfer user data for purposes unrelated to its single purpose;
 - it does not use or transfer user data to determine creditworthiness or for lending.
 
 Page content (for conditions) and activity (typing, unsaved forms) are read on the user's device to decide whether to refresh, and never sent anywhere. The optional webhook action sends a short message only to `localhost`, and only when the user switches webhooks on.
+
+A judgement call to make before submitting: AI apps (through the optional local bridge) or extensions the user approves can read the titles and addresses of open tabs, the user's rules and their history. That happens on the user's own computer, at the user's direction, and never reaches the developer, which is why "none" fits the form's idea of collection. To be more conservative, tick "Web history" and describe it as above. Either way, PRIVACY.md says so.
 
 **Privacy policy URL:** https://github.com/marcykay404/JustRefresh/blob/main/PRIVACY.md
 

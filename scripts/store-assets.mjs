@@ -8,7 +8,7 @@
 // locally), with a short caption. Laid out at 640×400 and rendered at 2× so it stays readable at
 // the 640×400 the store shows today. Re-run after UI changes.
 import { createRequire } from "node:module";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import http from "node:http";
@@ -65,6 +65,8 @@ const server = http.createServer((req, res) => {
     );
   res.end(page("Lumen Hall", "<h1>Lumen Hall</h1>"));
 });
+// Only the fictional site is served; anything over HTTPS (CONNECT) is refused at once instead of hanging.
+server.on("connect", (_req, socket) => socket.end("HTTP/1.1 403 Forbidden\r\n\r\n"));
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 // The browser reaches the site through this server as a proxy, so pages show a real-looking
 // address. ".example" is reserved: it can never be someone's site.
@@ -78,7 +80,8 @@ const manifest = JSON.parse(readFileSync(join(extDir, "manifest.json"), "utf8"))
 manifest.host_permissions = [`http://${HOST}/*`]; // granted up front, like site access the user allowed
 writeFileSync(join(extDir, "manifest.json"), JSON.stringify(manifest));
 
-const context = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), "justrefresh-store-profile-")), {
+const profileDir = mkdtempSync(join(tmpdir(), "justrefresh-store-profile-"));
+const context = await chromium.launchPersistentContext(profileDir, {
   channel: "chromium",
   headless: true,
   colorScheme: "light",
@@ -86,6 +89,8 @@ const context = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir()
   args: [`--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`],
 });
 const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
+// Drives the extension through its debug hook (service-worker.ts, globalThis.__justrefresh), as the e2e tests do.
+if (!(await sw.evaluate(() => !!globalThis.__justrefresh))) throw new Error("The built extension has no __justrefresh hook; this script needs it");
 const extId = sw.url().split("/")[2];
 await sw.evaluate(() => globalThis.__justrefresh.ready);
 for (const p of context.pages()) if (p.url().includes("welcome")) await p.close();
@@ -136,10 +141,7 @@ async function pageShot(p, name) {
   const { page: p, tabId } = await site("/tickets");
   await pageShot(p, "s2-page");
   await popupShot(tabId, "s2-popup", async (popup) => {
-    await popup
-      .getByText("More", { exact: true })
-      .click()
-      .catch(() => undefined);
+    await popup.getByText("More", { exact: true }).click();
     await popup.getByText(/Refresh until something appears/).click();
     await popup.locator("input").first().fill("Tickets available");
   });
@@ -174,17 +176,17 @@ async function pageShot(p, name) {
   });
   const created = await callAs(agentId, "createRule", {
     rule: {
-      name: "Aurora Quartet: tell me when Circle seats are back",
+      name: "Aurora Quartet: tell me when tickets are back",
       target: { patterns: [`${base}/tickets`] },
       trigger: { type: "interval", seconds: 300 },
-      stopWhen: { type: "dom.text", selector: "#status", operator: "contains", value: "Circle" },
-      actions: { onMatched: [{ type: "stopRefresh" }, { type: "notify", title: "Circle seats are back" }], onNotMatched: [{ type: "refresh" }] },
+      stopWhen: { type: "dom.text", selector: "#status", operator: "contains", value: "Tickets available" },
+      actions: { onMatched: [{ type: "stopRefresh" }, { type: "notify", title: "Tickets are back" }], onNotMatched: [{ type: "refresh" }] },
       limits: { maxDurationSeconds: 86400 },
     },
   });
   await callAs(agentId, "enableRule", { id: created.id });
   await dash.goto(`chrome-extension://${extId}/dashboard.html#/agents`);
-  await dash.getByText("Aurora Quartet: tell me when Circle seats are back").first().waitFor();
+  await dash.getByText("Aurora Quartet: tell me when tickets are back").first().waitFor();
   await pageShot(dash, "s5-dashboard");
 }
 
@@ -209,7 +211,7 @@ const SCENES = [
   },
   {
     title: "Never lose what you're typing",
-    text: "A form you've started is never refreshed away: it waits until you're done.",
+    text: "A form you've started isn't refreshed away: it waits until you're done.",
     address: `${HOST}/contact`,
     page: "s3-page.png",
     popup: "s3-popup.png",
@@ -219,10 +221,12 @@ const SCENES = [
     text: "Back in stock, status changes, failed builds, staying signed in, and your own rules.",
     address: "JustRefresh · Dashboard",
     dashboard: "s4-dashboard.png",
+    // Down to the end of the second row of templates, so no card is cut off.
+    height: 560,
   },
   {
     title: "Your AI app proposes, you approve",
-    text: "AI apps on this computer can set up rules over MCP. Nothing runs until you say so.",
+    text: "AI apps on this computer can set up rules over MCP. Their rules stay off until you approve them.",
     address: "JustRefresh · Dashboard",
     dashboard: "s5-dashboard.png",
   },
@@ -231,7 +235,7 @@ const SCENES = [
 function sceneHtml(s) {
   // The dashboard without its sidebar, so the content is shown larger.
   const content = s.dashboard
-    ? `<div class="dash" style="background-image:url(${img(s.dashboard)})"></div>`
+    ? `<div class="dash" style="background-image:url(${img(s.dashboard)}); height: ${s.height ?? 708}px"></div>`
     : `<img class="site" src="${img(s.page)}"><img class="popup" src="${img(s.popup)}">`;
   return `<!doctype html><meta charset="utf-8"><style>
     * { box-sizing: border-box; margin: 0 }
@@ -243,7 +247,7 @@ function sceneHtml(s) {
     h1 { font-size: 44px; line-height: 1.1; font-weight: 750; letter-spacing: -.01em }
     p { font-size: 22px; line-height: 1.4; color: rgba(255,255,255,.88); text-wrap: pretty }
     .window { position: absolute; left: 420px; top: 56px; width: 820px; height: 688px; border-radius: 12px; overflow: hidden;
-      background: #faf7f2; box-shadow: 0 24px 60px rgba(10, 25, 80, .45) }
+      background: ${s.dashboard ? "#f7f8fa" : "#faf7f2"}; box-shadow: 0 24px 60px rgba(10, 25, 80, .45) }
     .bar { height: 44px; background: #e8ebf0; display: flex; align-items: center; gap: 12px; padding: 0 14px; border-bottom: 1px solid #d5dae2 }
     .dots { display: flex; gap: 7px } .dots i { width: 12px; height: 12px; border-radius: 50%; background: #c6ccd6; display: block }
     .address { flex: 1; height: 28px; border-radius: 14px; background: #fff; color: #444b55; font-size: 14px; display: flex; align-items: center; padding: 0 14px }
@@ -289,3 +293,4 @@ function sceneHtml(s) {
 console.log(`Store images in ${out} (extension ${extId})`);
 await context.close();
 server.close();
+for (const dir of [extDir, profileDir]) rmSync(dir, { recursive: true, force: true });
