@@ -10,7 +10,7 @@ import { root, scriptConfig } from "./script-build.mjs";
 const args = process.argv.slice(2);
 const maxIndex = args.indexOf("--max-kb");
 const maxKb = maxIndex >= 0 ? Number(args[maxIndex + 1]) : null;
-const entry = args.find((a, i) => !a.startsWith("--") && i !== maxIndex + 1) ?? "src/background/service-worker.ts";
+const entry = args.find((a, i) => !a.startsWith("--") && (maxIndex < 0 || i !== maxIndex + 1)) ?? "src/background/service-worker.ts";
 
 const format = entry.includes("content") ? "iife" : "es";
 const r = await build(scriptConfig({ entry, file: "x.js", format, write: false }));
@@ -23,7 +23,7 @@ for (const [id, m] of Object.entries(chunk.modules)) {
   by[k] = (by[k] || 0) + m.renderedLength;
 }
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
-console.log(`${entry}: ${kb(chunk.code.length)} minified`);
+console.log(`${entry}: ${kb(Buffer.byteLength(chunk.code))} minified`);
 console.log(
   Object.entries(by)
     .sort((a, b) => b[1] - a[1])
@@ -31,7 +31,7 @@ console.log(
     .map(([k, v]) => `  ${kb(v).padStart(9)}  ${k}`)
     .join("\n"),
 );
-if (maxKb !== null && chunk.code.length > maxKb * 1024) {
-  console.error(`Over budget: ${kb(chunk.code.length)} > ${maxKb} KB`);
+if (maxKb !== null && Buffer.byteLength(chunk.code) > maxKb * 1024) {
+  console.error(`Over budget: ${kb(Buffer.byteLength(chunk.code))} > ${maxKb} KB`);
   process.exit(1);
 }

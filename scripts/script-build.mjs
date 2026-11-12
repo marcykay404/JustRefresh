@@ -9,13 +9,16 @@ import { fileURLToPath } from "node:url";
 
 export const root = fileURLToPath(new URL("..", import.meta.url));
 
-const onwarn = (w, warn) => {
+export const onwarn = (w, warn) => {
   // zod ships comments rollup can't place; harmless.
   if (w.code === "INVALID_ANNOTATION" || /annotation that Rollup cannot interpret/.test(w.message)) return;
   warn(w);
 };
 
-/** Vite config for one script: `format` "es" (service worker module) or "iife" (content script). */
+/**
+ * Vite config for one script: `format` "es" (service worker module) or "iife"
+ * (content script). Neither may export anything: an app entry drops exports.
+ */
 export function scriptConfig({ entry, file, format, outDir, write = true }) {
   return {
     configFile: false,

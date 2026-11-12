@@ -4,18 +4,11 @@
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
 import { cpSync, rmSync, readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { scriptConfig } from "./script-build.mjs";
+import { onwarn, root, scriptConfig } from "./script-build.mjs";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
 const out = resolve(root, "dist");
 const alias = { "@": resolve(root, "src") };
-const onwarn = (w, warn) => {
-  // zod ships comments rollup can't place; harmless.
-  if (w.code === "INVALID_ANNOTATION" || /annotation that Rollup cannot interpret/.test(w.message)) return;
-  warn(w);
-};
 const common = { configFile: false, logLevel: "warn", resolve: { alias }, define: { "process.env.NODE_ENV": '"production"' } };
 
 rmSync(out, { recursive: true, force: true });
