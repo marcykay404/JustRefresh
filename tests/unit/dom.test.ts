@@ -103,6 +103,27 @@ describe("ActivityMonitor", () => {
     expect(m.snapshot().dirty).toBe("clean");
   });
 
+  it("a field the page focuses and then fills itself isn't unsaved once typed back", () => {
+    document.body.innerHTML = `<input id="p">`;
+    const m = new ActivityMonitor(document, asUser);
+    m.start();
+    const input = document.getElementById("p") as HTMLInputElement;
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true })); // autofocus counts as the user's
+    // The page fills it from its server, keeping the default in step (as React does).
+    input.value = "Marcy";
+    input.setAttribute("value", "Marcy");
+    // The user types a letter, then deletes it.
+    input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
+    input.value = "Marcyx";
+    input.setAttribute("value", "Marcyx");
+    userInput(input);
+    expect(m.snapshot().dirty).toBe("dirty");
+    input.value = "Marcy";
+    input.setAttribute("value", "Marcy");
+    userInput(input);
+    expect(m.snapshot().dirty).toBe("clean");
+  });
+
   it("with real React: a half-filled controlled input and textarea are unsaved changes", async () => {
     const { act, createElement, useState } = await import("react");
     const { createRoot } = await import("react-dom/client");

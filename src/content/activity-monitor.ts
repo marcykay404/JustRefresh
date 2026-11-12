@@ -2,7 +2,8 @@
  * Activity & unsaved-change monitor (content script, in the page and in its
  * frames from granted sites; the extension merges them, see core/frames.ts).
  *
- * Privacy: only timestamps and booleans are kept. Input values and
+ * Privacy: only timestamps, booleans and, per edited field, a short hash of
+ * its state are kept, in memory, inside this module. Input values and
  * keystrokes are never read into variables that leave this module, never
  * stored, and never transmitted. Dirty detection compares each control's
  * current value with its default *inside the page* and returns a boolean.
@@ -16,8 +17,10 @@
  * Some frameworks (React) keep a field's default in step with what is typed,
  * so "differs from its default" misses those edits. A field the user is about
  * to edit (focus, beforeinput, pointer or key down) also has a fingerprint of
- * its state noted first; an edited field whose state differs from it counts
- * as changed. Only the fingerprint (a short hash) is kept, never the value.
+ * its state noted, again at each of these until the first edit (a page may
+ * fill a field it focused itself); an edited field whose state differs from
+ * it counts as changed. Only the fingerprint (a 32-bit hash) is kept, never
+ * the value; password fields get none.
  */
 import type { ActivitySnapshot } from "../shared/messaging-types";
 
@@ -49,15 +52,15 @@ function selectChanged(el: HTMLSelectElement): boolean {
 function stateFingerprint(el: Element): string | null {
   let state: string;
   if (el instanceof HTMLInputElement) {
-    if (el.type === "hidden") return null;
+    if (el.type === "hidden" || el.type === "password") return null;
     state = el.type === "checkbox" || el.type === "radio" ? String(el.checked) : el.type === "file" ? String(el.files?.length ?? 0) : el.value;
   } else if (el instanceof HTMLTextAreaElement) state = el.value;
   else if (el instanceof HTMLSelectElement) state = Array.from(el.options, (o) => (o.selected ? "1" : "0")).join("");
   else return null;
-  // FNV-1a, 32 bits: enough to tell "changed" from "the same", and the text can't be read back.
+  // FNV-1a, 32 bits: enough to tell "changed" from "the same". Not a secure hash; it never leaves this module.
   let h = 0x811c9dc5;
   for (let i = 0; i < state.length; i++) h = Math.imul(h ^ state.charCodeAt(i), 0x01000193);
-  return `${state.length}:${(h >>> 0).toString(36)}`;
+  return (h >>> 0).toString(36);
 }
 
 /** Whether a form control's state differs from its default (null = not a tracked control). */
@@ -128,7 +131,8 @@ export class ActivityMonitor {
     );
     // Before the first edit of a field: note its state, to compare with later.
     const aboutToEdit = (e: Event) => {
-      if (!this.isUserEvent(e) || !(e.target instanceof Element) || this.before.has(e.target)) return;
+      // Until the first edit: a page may still fill a field after focusing it itself.
+      if (!this.isUserEvent(e) || !(e.target instanceof Element) || this.edited.has(e.target)) return;
       const print = stateFingerprint(e.target);
       if (print !== null) this.before.set(e.target, print);
     };
