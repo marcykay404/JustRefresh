@@ -70,9 +70,9 @@ export function AgentsView() {
     <>
       <h1>Agent Integrations</h1>
       <p className="muted">
-        AI agents, such as AI apps on your computer or other browser extensions, can set up refresh rules for you. Nothing they do takes effect on its own:
-        rules they create are saved switched off, and switching a rule on or deleting it waits for your OK here, unless you choose to trust that agent. You can
-        take an agent's access away at any time.
+        AI agents, such as AI apps on your computer or other browser extensions, can set up refresh rules for you. Their rules don't run on their own: rules
+        they create are saved switched off, and switching a rule on or deleting it waits for your OK here, unless you choose to trust that agent. You can take
+        an agent's access away at any time.
       </p>
       <ErrorBox error={error ?? actionError} />
       <ApprovalsCard
