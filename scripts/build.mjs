@@ -6,6 +6,7 @@ import react from "@vitejs/plugin-react";
 import { cpSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { scriptConfig } from "./script-build.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const out = resolve(root, "dist");
@@ -48,18 +49,7 @@ for (const [entry, file, format] of [
   ["src/background/service-worker.ts", "background.js", "es"],
   ["src/content/index.ts", "content.js", "iife"],
 ]) {
-  await build({
-    ...common,
-    publicDir: false,
-    build: {
-      outDir: out,
-      emptyOutDir: false,
-      target: "chrome120",
-      minify: true,
-      lib: { entry: resolve(root, entry), formats: [format], name: "justrefresh", fileName: () => file },
-      rollupOptions: { onwarn, output: { inlineDynamicImports: true } },
-    },
-  });
+  await build(scriptConfig({ entry, file, format, outDir: out }));
 }
 
 // 4. The desktop bridge as one file, offered for download in Dashboard → Agent Integrations
