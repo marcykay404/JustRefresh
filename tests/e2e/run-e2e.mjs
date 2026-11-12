@@ -945,6 +945,7 @@ await test("popup and dashboard render", async () => {
   const coffee = page.getByRole("link", { name: "Buy me a coffee" });
   assert.equal(await coffee.getAttribute("href"), "https://buymeacoffee.com/marcykaycod");
   assert.equal(await coffee.getAttribute("target"), "_blank");
+  assert.equal(await page.getByRole("link", { name: "Source code" }).getAttribute("href"), "https://github.com/marcykay404/JustRefresh");
   await coffee.scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(root, "test-results", "settings-support.png") });
   const opened = context.waitForEvent("page");
