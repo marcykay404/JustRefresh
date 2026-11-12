@@ -266,8 +266,13 @@ async function inFrames<T>(tabId: number, call: FrameCall): Promise<FrameAnswer<
           let pending = false;
           try {
             const el = window.frameElement as HTMLIFrameElement | null;
-            const src = el?.getAttribute("src") ?? "";
-            pending = location.href === "about:blank" && src !== "" && src !== "about:blank" && el?.loading !== "lazy";
+            // Only a real page is on its way (not about:, javascript: or a download that never shows one).
+            const toPage = !!el && /^(https?|file):$/.test(new URL(el.src || "about:blank").protocol);
+            // A lazy frame loads only near the viewport (Chrome's margin is up to ~2500 px).
+            const r = el?.getBoundingClientRect();
+            const view = el?.ownerDocument.defaultView;
+            const near = !!r && !!view && r.top < view.innerHeight + 2500 && r.bottom > -2500;
+            pending = location.href === "about:blank" && toPage && (el.loading !== "lazy" || near);
           } catch {
             /* cross-origin parent */
           }
@@ -282,7 +287,9 @@ async function inFrames<T>(tabId: number, call: FrameCall): Promise<FrameAnswer<
         const host = hostOf(self.origin && self.origin !== "null" ? self.origin : location.origin);
         const ancestors = [...(location.ancestorOrigins ?? [])].map(hostOf);
         const api = ownApi();
-        return { host, ancestors, skip: !api && emptyBlank(), value: api ? call(api) : null };
+        // A hidden frame without our script (a download or keep-alive frame) isn't waited for; one with it is read.
+        const hidden = window !== window.top && (innerWidth === 0 || innerHeight === 0);
+        return { host, ancestors, skip: !api && (hidden || emptyBlank()), value: api ? call(api) : null };
       },
     }),
     MESSAGE_TIMEOUT_MS,

@@ -30,24 +30,30 @@ const UNREAD = "A frame on the page couldn't be read yet";
 /** Can't tell yet, because a frame couldn't be read. */
 const notYet = (_from?: EvaluationResult): EvaluationResult => ({ status: "unknown", code: "frame_not_ready", reason: UNREAD });
 
+/** A frame that was read but can't be checked (a real error, not "loading"): the result's problem too. */
+const brokenFrame = (rest: EvaluationResult[]) => rest.find((r) => r.status === "unknown" && r.code !== "page_not_ready" && r.code !== "frame_not_ready");
+
+/** A selector not found in the page itself: the first frame where it matches (an unread frame might come first). */
+function inFrames(leaf: ConditionNode, top: EvaluationResult, read: EvaluationResult[], unread: boolean): EvaluationResult {
+  const found = read.find((r) => countOf(r) > 0);
+  if (unread) return found?.status === "matched" && isPositive(leaf) ? found : notYet(top);
+  return found ?? top;
+}
+
 /** One condition's results, one per frame (top first), as one page's. */
 export function mergeLeaf(leaf: ConditionNode, perFrame: EvaluationResult[]): EvaluationResult {
   const [top, ...rest] = perFrame;
   if (!top) return { status: "unknown", code: "evaluation_error", reason: "No frame answered" };
   if (top.status === "unknown") return top;
-  // A frame that was read but can't be checked (a real error, not "loading") is the result's problem too.
-  const broken = rest.find((r) => r.status === "unknown" && r.code !== "page_not_ready" && r.code !== "frame_not_ready");
+  // Found in the page itself: for a selector (other than counting), frames don't matter.
+  const counting = leaf.type === "dom.exists" || leaf.type === "dom.missing";
+  if (!counting && hasSelector(leaf) && countOf(top) > 0) return top;
+  const broken = brokenFrame(rest);
   if (broken) return broken;
   const read = [top, ...rest.filter((r) => r.status !== "unknown")];
   const unread = read.length < perFrame.length;
-  if (leaf.type === "dom.exists" || leaf.type === "dom.missing") return existence(leaf, read, unread);
-  if (hasSelector(leaf)) {
-    // Found in the page itself: frames don't matter. Elsewhere, an unread frame might come first.
-    if (countOf(top) > 0) return top;
-    const found = read.find((r) => countOf(r) > 0);
-    if (unread) return found?.status === "matched" && isPositive(leaf) ? found : notYet(top);
-    return found ?? top;
-  }
+  if (counting) return existence(leaf, read, unread);
+  if (hasSelector(leaf)) return inFrames(leaf, top, read, unread);
   return wholePage(leaf, read, unread) ?? top;
 }
 
@@ -154,15 +160,4 @@ export function mergeSelectorTests<T extends { ok: true; count: number; samples:
   return { ...top, count: ok.reduce((n, r) => n + r.count, 0), samples: ok.flatMap((r) => r.samples).slice(0, 5) };
 }
 
-/**
- * The site a host belongs to, roughly (no public-suffix list): its last two
- * labels, or three under a country's second level ("example.com.sg",
- * "example.co.uk"). Addresses and single-label hosts are their own site.
- */
-export function siteOf(host: string): string {
-  const h = host.toLowerCase().replace(/\.$/, "");
-  if (/^[\d.]+$/.test(h) || h.includes(":") || !h.includes(".")) return h;
-  const labels = h.split(".");
-  const countrySecondLevel = labels.at(-1)!.length === 2 && /^(co|com|net|org|gov|edu|ac|or|ne|go|mil)$/.test(labels.at(-2)!);
-  return labels.slice(countrySecondLevel ? -3 : -2).join(".");
-}
+export { siteOf } from "../shared/site";

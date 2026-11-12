@@ -120,6 +120,19 @@ describe("a frame that can't be read yet (still loading) never makes a condition
     expect((await env.runtime.get(1))?.reason).toMatch(/couldn't be read yet/);
   });
 
+  it("starting the rule again starts the wait over", async () => {
+    const env = await setup({ type: "dom.missing", selector: "#spinner" }, `<h1>ERP</h1>`, null);
+    for (let i = 0; i < 4; i++) {
+      await env.engine.runCycle(1, "manual");
+      if ((await env.runtime.get(1))?.pendingReload) await env.completeNavigation(1);
+    }
+    expect((await env.runtime.get(1))?.status).toBe("paused_unknown");
+    await env.engine.setTabStatus(1, "scheduled", "Resumed");
+    expect((await env.runtime.get(1))?.framesWaiting).toBeUndefined();
+    await env.engine.runCycle(1, "manual");
+    expect((await env.runtime.get(1))?.status).not.toBe("paused_unknown");
+  });
+
   it("a frame read again resets the wait", async () => {
     const env = await setup({ type: "dom.missing", selector: "#spinner" }, `<h1>ERP</h1>`, `<p id="spinner"></p>`);
     for (const frame of [null, null, `<p id="spinner"></p>`, null, null, null]) {
@@ -222,6 +235,9 @@ describe("merging rules", () => {
   it("a frame that was read but can't be checked (a real error) isn't passed off as loading", () => {
     const broken: EvaluationResult = { status: "unknown", code: "evaluation_error", reason: "boom" };
     expect(mergeLeaf({ type: "dom.missing", selector: "#x" } as ConditionNode, [m(0, "matched"), broken])).toBe(broken);
+    // …but what the page itself shows still decides a selector found there.
+    const found: EvaluationResult = { status: "matched", details: { count: 1 } };
+    expect(mergeLeaf({ type: "dom.text", selector: "#x", operator: "contains", value: "a" } as ConditionNode, [found, broken])).toBe(found);
   });
 
   it("the page's own problems are the result's", () => {

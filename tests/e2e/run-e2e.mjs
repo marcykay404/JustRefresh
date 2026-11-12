@@ -67,10 +67,16 @@ const server = http.createServer((req, res) => {
     return res.end(
       `<title>Framed</title><h1>ERP</h1><iframe id="same" src="/panel"></iframe><iframe id="other" src="http://localhost:${server.address().port}/panel"></iframe>`,
     );
+  // A hidden frame whose page is a download: it stays on about:blank for good.
+  if (path === "/export") {
+    res.setHeader("content-type", "text/csv");
+    res.setHeader("content-disposition", "attachment; filename=export.csv");
+    return res.end("a,b\n");
+  }
   // A frame that loads only when scrolled to, and an empty one: neither is a frame "still loading".
   if (path === "/lazy")
     return res.end(
-      `<title>Lazy</title><h1>Report</h1><iframe src="about:blank"></iframe><div style="height:5000px"></div><iframe loading="lazy" src="/panel"></iframe>`,
+      `<title>Lazy</title><h1>Report</h1><iframe src="about:blank"></iframe><iframe style="display:none" src="/export"></iframe><div style="height:5000px"></div><iframe loading="lazy" src="/panel"></iframe>`,
     );
   if (path === "/panel") return res.end(`<title>Panel</title><div id="panel-state">${panelText}</div><input id="note">`);
   if (path === "/stock") return res.end(`<title>Stock</title><p>Item 42</p><div>${stockText}</div>`);

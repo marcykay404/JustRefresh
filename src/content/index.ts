@@ -21,6 +21,7 @@ import {
 } from "../shared/messaging-types";
 import { ActivityMonitor } from "./activity-monitor";
 import { currentNavigation, detectFormResult, watchFormPosts } from "./form-post";
+import { siteOf } from "../shared/site";
 import { highlight, isBusy } from "./highlight";
 import { clickElement, restoreScroll, saveScroll } from "./page-actions";
 import { cancelPicker, startPicker } from "./picker";
@@ -57,19 +58,21 @@ if (g[FLAG] !== version) {
 }
 
 /**
- * Frames whose content the extension would read: same origin as the page and
- * shown (cross-origin ones can't be told apart from ads here, so they don't
- * count). Used only when the frames can't be asked, to know whether the page
- * alone is the whole answer.
+ * Frames whose content the extension would read: of the page's own site (an
+ * about:blank or srcdoc one only with content). Used only when the frames
+ * can't be asked, to know whether the page alone is the whole answer.
  */
 function readableFrames(): number {
+  const site = siteOf(location.hostname);
   let n = 0;
-  for (const el of document.querySelectorAll("iframe, frame")) {
+  for (const el of document.querySelectorAll<HTMLIFrameElement>("iframe, frame")) {
     try {
-      const doc = (el as HTMLIFrameElement).contentDocument;
-      if (doc && (el as HTMLElement).offsetWidth > 0 && doc.location.href !== "about:blank") n++;
+      const doc = el.contentDocument;
+      const blank = doc ? /^about:/.test(doc.location.href) : false;
+      const read = doc && blank ? !!doc.body?.textContent?.trim() : siteOf(new URL(el.src || "about:blank").hostname) === site;
+      if (read) n++;
     } catch {
-      /* cross-origin */
+      /* no address to tell */
     }
   }
   return n;

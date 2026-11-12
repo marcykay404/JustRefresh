@@ -43,7 +43,7 @@ export const clickAction: ActionHandler<z.infer<typeof clickSchema>> = {
   disruptive: true,
   execute: async (c, ctx) => {
     const r = await ctx.click(c.selector);
-    return r.ok ? { ok: true, message: `Clicked ${c.selector}` } : { ok: false, message: r.error };
+    return r.ok ? { ok: true, message: `Clicked ${c.selector}` } : { ok: false, skipped: r.skipped, message: r.error };
   },
 };
 

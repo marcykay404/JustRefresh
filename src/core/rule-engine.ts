@@ -12,7 +12,7 @@
  *   this file  events, reconciliation, and user controls
  */
 import type { TriggerEvent } from "../registries/contracts";
-import { evaluateConditionTree, explainTrace } from "./evaluator";
+import { evaluateConditionTree, explainTrace, onlyFramesNotReady } from "./evaluator";
 import { resolveTab, type Resolution } from "./rule-resolver";
 import { decideSafety, FORM_RESULT_REASON } from "./safety";
 import { isPaused, newRuntime, transition } from "./state-machine";
@@ -134,6 +134,7 @@ export class RuleEngine extends CycleEngine {
       }
     }
     if (change.status === "complete") {
+      await this.endClickNavigation(tabId);
       await this.resumeAfterFormPage(tabId);
       const handledOwn = await this.onNavigationComplete(tabId);
       if (!handledOwn) await this.runCycle(tabId, "navigation");
@@ -192,6 +193,14 @@ export class RuleEngine extends CycleEngine {
     });
   }
 
+  /** A page loaded: a page change after it is no longer the rule's click's doing (see EngineBase.sync). */
+  private async endClickNavigation(tabId: number) {
+    await this.withLock(tabId, async () => {
+      const rt = await this.deps.stores.runtime.get(tabId);
+      if (rt?.clickedAt !== undefined) await this.deps.stores.runtime.put({ ...rt, clickedAt: undefined });
+    });
+  }
+
   /** Our own reload finished loading: count it and evaluate post-navigation. */
   private async onNavigationComplete(tabId: number): Promise<boolean> {
     return this.withLock(tabId, async () => {
@@ -216,7 +225,13 @@ export class RuleEngine extends CycleEngine {
         const evalOut = await this.evaluate(rule, tab, cur, { justLoaded: true });
         const latest = await this.deps.stores.runtime.get(tabId);
         if (!latest || latest.generation !== cur.generation) return true; // stale
-        cur = { ...latest, lastEvaluation: { at: now, status: evalOut.result.status, reason: explainTrace(evalOut.trace) }, ...withMemory(evalOut.memory) };
+        cur = {
+          ...latest,
+          lastEvaluation: { at: now, status: evalOut.result.status, reason: explainTrace(evalOut.trace) },
+          ...withMemory(evalOut.memory),
+          // Every frame read: the wait for one starts over. (Checks right after a load don't count toward it.)
+          ...(onlyFramesNotReady(evalOut.trace) ? {} : { framesWaiting: undefined }),
+        };
         if (evalOut.result.status === "matched") {
           cur = await this.runActions({ rule, tab, event: "navigation" }, cur, rule.actions.onMatched, evalOut.result.status, { allowRefresh: false });
         } else {
@@ -263,6 +278,7 @@ export class RuleEngine extends CycleEngine {
           reason: undefined,
           resumeAt: null,
           unknownStreak: 0,
+          framesWaiting: undefined,
           nextDueAt: this.nextDue(res.controller, this.now()),
           // A new run: what stateful conditions saw in the old one doesn't count.
           ...(restart

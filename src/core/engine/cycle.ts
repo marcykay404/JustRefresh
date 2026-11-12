@@ -12,7 +12,7 @@
  * Navigation completion is tracked separately (rule-engine.ts).
  */
 import { isLocalWebhookUrl } from "../../actions/page";
-import type { ActionContext, TriggerEvent, TriggerHandler } from "../../registries/contracts";
+import type { ActionContext, ActionResult, TriggerEvent, TriggerHandler } from "../../registries/contracts";
 import type { ActivitySnapshot } from "../../shared/messaging-types";
 import { explainTrace, onlyFramesNotReady } from "../evaluator";
 import { resolveTab } from "../rule-resolver";
@@ -26,6 +26,9 @@ import { EngineBase } from "./base";
 import { FAST_WAIT_REASON } from "./fast-site-limit";
 import { alarmName, NAVIGATION_TIMEOUT_MS, type CycleResult } from "./ports";
 import { SafetyBlock, siteKey, waitingReason, withMemory } from "./support";
+
+/** How an action's result is recorded in History. */
+const outcomeOf = (r: ActionResult): HistoryEntry["outcome"] => (r.ok ? "ok" : r.skipped ? "skipped" : "error");
 
 /** Checks in a row a frame may stay unreadable before that counts as the page not being readable. */
 export const FRAME_WAIT_CHECKS = 3;
@@ -167,7 +170,7 @@ export abstract class CycleEngine extends EngineBase {
     if (isTerminal(c.rt.status)) {
       if (c.event !== "manual") return { ...c.rt, nextDueAt: null };
       // Running it again starts over: what stateful conditions saw before doesn't count.
-      c.rt = transition(c.rt, "scheduled", { reason: undefined, memory: undefined });
+      c.rt = transition(c.rt, "scheduled", { reason: undefined, memory: undefined, framesWaiting: undefined });
     }
     return null;
   }
@@ -322,7 +325,7 @@ export abstract class CycleEngine extends EngineBase {
       }
       try {
         const result = await handler.execute(action, this.actionContext(c, run, config, condition, opts.allowRefresh));
-        if (action.type !== "log") this.log({ ...entry, outcome: result.ok ? "ok" : "error", reason: result.message });
+        if (action.type !== "log") this.log({ ...entry, outcome: outcomeOf(result), reason: result.message });
         if (result.terminal) run.ended = true;
       } catch (e) {
         run.rt = this.afterActionError(c.rule, run.rt, entry, e);
@@ -359,7 +362,7 @@ export abstract class CycleEngine extends EngineBase {
       click: async (selector) => {
         if (!allowRefresh) throw new Error("Clicking is not allowed in this phase");
         const limit = checkLimits(rule.limits, run.rt, this.now());
-        if (limit.reached) return { ok: false as const, error: `Not clicked: ${limit.reason}` };
+        if (limit.reached) return { ok: false as const, skipped: true, error: `Not clicked: ${limit.reason}` };
         const { activity, reason } = await this.page.activity(tab.id);
         this.checkSafety(rule, tab, run.rt, activity, reason, this.now());
         const result = await this.page.click(tab.id, selector);

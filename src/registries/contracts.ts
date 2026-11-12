@@ -90,7 +90,7 @@ export interface ActionContext {
   /** Resolves with a reason when the refresh wasn't made (the rule's limit was reached earlier in this list). */
   reload(opts: { bypassCache: boolean; keepScroll?: boolean }): Promise<void | { skipped: string }>;
   /** Click an element on the page. Waits like a refresh while you type or have unsaved changes (throws to postpone). */
-  click(selector: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  click(selector: string): Promise<{ ok: true } | { ok: false; error: string; skipped?: boolean }>;
   /** Highlight an element or text on the page and scroll to it (not while the page is in use). */
   highlight(target: { selector?: string; text?: string }): Promise<{ ok: true; scrolled: boolean } | { ok: false; error: string }>;
   /** POST JSON to a local webhook, when webhooks are switched on in Settings. */
@@ -107,6 +107,8 @@ export interface ActionResult {
   terminal?: boolean;
   /** The action reloaded the tab. */
   reloaded?: boolean;
+  /** Not done, for an expected reason (e.g. the rule's limit): recorded as skipped, not as an error. */
+  skipped?: boolean;
 }
 
 export interface ActionHandler<TConfig extends { type: string } = { type: string }> {

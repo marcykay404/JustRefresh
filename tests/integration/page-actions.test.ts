@@ -79,18 +79,22 @@ describe("click action", () => {
     expect(env.browser.reloads).toEqual([]);
     await new Promise((r) => setTimeout(r, 0));
     expect((await env.history.list()).find((h) => h.action === "refresh")).toMatchObject({
-      outcome: "error",
+      outcome: "skipped",
       reason: expect.stringMatching(/Not refreshed: Reached maximum/),
     });
   });
 
-  it("only the first page change after a click is the click's: one you make yourself starts a new run", async () => {
+  it("page changes until the click's page has loaded are the click's; one you make after that starts a new run", async () => {
     const env = await setup(whenInStock([{ type: "click", selector: "#add" }]));
     await env.engine.runCycle(1, "manual");
     const generation = (await env.runtime.get(1))!.generation;
     env.browser.addTab(1, `${URL}?page=2`);
     await env.engine.onTabUpdated(1, { url: `${URL}?page=2` }); // the click's
+    env.browser.addTab(1, `${URL}?page=2&sort=default`);
+    await env.engine.onTabUpdated(1, { url: `${URL}?page=2&sort=default` }); // that page tidying its address
     expect((await env.runtime.get(1))?.generation).toBe(generation);
+    expect((await env.runtime.get(1))?.clickCount).toBe(1);
+    await env.engine.onTabUpdated(1, { status: "complete" });
     env.clock.advance(3000);
     env.browser.addTab(1, `${URL}?page=9`);
     await env.engine.onTabUpdated(1, { url: `${URL}?page=9` }); // yours
