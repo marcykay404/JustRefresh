@@ -25,6 +25,11 @@ export function useIntervalPicker(currentInterval: number, fastAllowed: boolean)
     setCustomOpen(false);
     setCustomValue("");
   };
+  /** Pick an interval (e.g. the one a click asked for before the popup closed). */
+  const choose = (seconds: number) => {
+    setCustomOpen(false);
+    setPicked(seconds);
+  };
 
   const element = (
     <IntervalPicker
@@ -50,5 +55,5 @@ export function useIntervalPicker(currentInterval: number, fastAllowed: boolean)
     />
   );
 
-  return { chosen, valid, tooShort, reset, element };
+  return { chosen, valid, tooShort, reset, element, choose };
 }

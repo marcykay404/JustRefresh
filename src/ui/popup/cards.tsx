@@ -7,6 +7,11 @@ import { Countdown, openDashboard, Stats } from "./parts";
 /** Situations where Start can't help: say why, and offer the fix. */
 export type BlockedKind = "restricted" | "tab_excluded" | "paused" | "disabled" | "url_excluded";
 
+/** One of JustRefresh's own pages (dashboard, settings…). */
+export function isOwnPage(url: string, ownBase = chrome.runtime.getURL("")): boolean {
+  return ownBase !== "" && url.startsWith(ownBase);
+}
+
 export function BlockedCard(p: {
   kind: BlockedKind;
   tabId: number;
@@ -18,7 +23,7 @@ export function BlockedCard(p: {
     case "restricted":
       return (
         <p className="muted" style={{ margin: 0 }}>
-          Chrome doesn't let extensions refresh this page.
+          Excluded from JustRefresh
         </p>
       );
     case "tab_excluded":

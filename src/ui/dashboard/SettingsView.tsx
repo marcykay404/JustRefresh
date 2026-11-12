@@ -1,3 +1,4 @@
+import { openChromeSiteAccess } from "../shared/chrome-settings";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, requestOrigins } from "../shared/api";
 import { useApi } from "../shared/hooks";
@@ -386,13 +387,15 @@ function accessSummary(sites: SiteEntry[], unused: number, loaded: boolean): str
 }
 
 /** Confirm, then remove access; a failure goes to `setError`. */
-function useAccessRemoval(setError: (e: unknown) => void) {
+function useAccessRemoval(setError: (e: unknown) => void, setRemoved: (what: string | null) => void) {
   const dialog = useDialog();
-  const removeAfter = async (ask: () => Promise<boolean>, origins: string[]) => {
+  const removeAfter = async (ask: () => Promise<boolean>, origins: string[], what: string) => {
     setError(null);
+    setRemoved(null);
     if (!(await ask())) return;
     try {
       await chrome.permissions.remove({ origins });
+      setRemoved(what);
     } catch (e) {
       setError(e);
     }
@@ -402,11 +405,20 @@ function useAccessRemoval(setError: (e: unknown) => void) {
       () =>
         dialog.confirm({
           title: `Remove access to ${what}?`,
-          message: `Tabs and rules on ${list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing (unless set to refresh without protection), and page conditions will report “unknown”.`,
+          message: (
+            <>
+              <p>
+                Tabs and rules on {list.length > 1 ? "these sites" : "this site"} will pause instead of refreshing (unless set to refresh without protection),
+                and page conditions will report “unknown”.
+              </p>
+              <p>{REMEMBERED}</p>
+            </>
+          ),
           confirmLabel: "Remove access",
           danger: true,
         }),
       list,
+      what,
     );
   const removeUnused = (unused: SiteEntry[]) => {
     const names = unused.map((s) => s.g.label);
@@ -416,22 +428,36 @@ function useAccessRemoval(setError: (e: unknown) => void) {
           title: `Remove access to ${plural(names.length, "unused site")}?`,
           message: (
             <>
-              <p>No running tab or rule uses {names.length === 1 ? "it" : "them"}. JustRefresh asks again the next time you turn on refresh there.</p>
+              <p>No running tab or rule uses {names.length === 1 ? "it" : "them"}.</p>
               <ul>
                 {names.slice(0, 10).map((n) => (
                   <li key={n}>{n}</li>
                 ))}
               </ul>
               {names.length > 10 && <p>…and {names.length - 10} more.</p>}
+              <p>{REMEMBERED}</p>
             </>
           ),
           confirmLabel: "Remove access",
           danger: true,
         }),
       unused.flatMap((s) => s.g.origins),
+      plural(names.length, "unused site"),
     );
   };
   return { remove, removeUnused };
+}
+
+/** What removing here does and doesn't do (Chrome keeps the earlier "allow"; only Chrome's settings clear it). */
+const REMEMBERED =
+  "JustRefresh stops using it now. Chrome still remembers you allowed it, so turning refresh on there later won't ask again. To make Chrome ask again, remove it in Chrome's settings too.";
+
+function ChromeSettingsButton() {
+  return (
+    <button className="small" onClick={openChromeSiteAccess}>
+      Remove completely in Chrome's settings…
+    </button>
+  );
 }
 
 /** The site rows, with a filter for long lists and a collapsed view. */
@@ -478,7 +504,9 @@ export function SiteAccess() {
   const origins = useGrantedOrigins();
   const { sites, loaded } = useSites(origins);
   const [error, setError] = useState<unknown>(null);
-  const { remove, removeUnused } = useAccessRemoval(setError);
+  /** What was just removed here (Chrome still remembers it): offer Chrome's settings. */
+  const [removed, setRemoved] = useState<string | null>(null);
+  const { remove, removeUnused } = useAccessRemoval(setError, setRemoved);
   const unused = sites.filter((s) => !s.used && s.g.kind !== "all");
 
   return (
@@ -488,6 +516,19 @@ export function SiteAccess() {
         JustRefresh installs without access to any website and asks per site when you turn on refresh. Access lets it wait while you're typing or have unsaved
         form changes, and lets rules check a page's content.
       </p>
+      <div className="row" style={{ alignItems: "center" }}>
+        <span className="small muted" style={{ flex: 1 }}>
+          Removing a site here stops JustRefresh using it, but Chrome remembers you allowed it and won't ask again. To make Chrome forget, remove it in Chrome's
+          settings.
+        </span>
+        <ChromeSettingsButton />
+      </div>
+      {removed && (
+        <div className="notice small row" role="status" style={{ alignItems: "center" }}>
+          <span style={{ flex: 1 }}>Removed {removed}. Chrome still remembers you allowed it; remove it in Chrome's settings to make Chrome ask again.</span>
+          <ChromeSettingsButton />
+        </div>
+      )}
       {origins === null && <span className="muted small">Loading…</span>}
       {origins !== null && sites.length === 0 && <span className="muted small">No site access granted.</span>}
       {sites.length > 0 && (

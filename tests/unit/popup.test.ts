@@ -40,6 +40,8 @@ type Case = {
   excluded?: boolean;
   /** Rules set for this page with another "?…" part. */
   otherQuery?: { id: string; name: string }[];
+  /** The tab's address (default URL_). */
+  url?: string;
 };
 let current: Case;
 /** Set once createRule ran: the new rule then controls the tab. */
@@ -52,7 +54,7 @@ const URL_ = "https://www.youtube.com/watch?v=x";
 const tabState = () => {
   const c = { hostAccess: true, status: null as string | null, protection: true, source: null as Case["source"], ...current };
   return {
-    tab: { id: 1, windowId: 1, index: 0, title: "Video", url: URL_, active: true, discarded: false },
+    tab: { id: 1, windowId: 1, index: 0, title: "Video", url: current.url ?? URL_, active: true, discarded: false },
     runtime: c.status ? { tabId: 1, status: c.status, refreshCount: 3, nextDueAt: Date.now() + 60_000, lastAttemptAt: Date.now() - 1000 } : null,
     statusLabel: "",
     resolution: {
@@ -78,8 +80,14 @@ const RULE = {
   actions: { onMatched: [{ type: "stopRefresh" }, { type: "notify" }], onNotMatched: [{ type: "refresh" }] },
 };
 const permissionsRequest = vi.fn(async (_p: unknown) => true);
+const tabsCreate = vi.fn();
+/** Chrome's "Allow access to file URLs" for JustRefresh. */
+let fileAccess = false;
+/** What the service worker hands back when the popup opens again after a "Deny". */
+let takeResult: unknown = null;
 (globalThis as { chrome?: unknown }).chrome = {
-  tabs: { query: async () => [{ id: 1 }], create: vi.fn() },
+  tabs: { query: async () => [{ id: 1 }], create: tabsCreate },
+  extension: { isAllowedFileSchemeAccess: async () => fileAccess },
   runtime: {
     getURL: (p: string) => p,
     sendMessage: async (m: { method: string; params: unknown }) => {
@@ -100,7 +108,9 @@ const permissionsRequest = vi.fn(async (_p: unknown) => true);
                 ? refreshNowResult
                 : m.method === "createRule"
                   ? ((createdRuleId = "new"), { id: "new" })
-                  : { ok: true };
+                  : m.method === "takeAfterAccess"
+                    ? ((r) => ((takeResult = null), r))(takeResult)
+                    : { ok: true };
       return { ok: true, result };
     },
   },
@@ -215,7 +225,12 @@ describe("simpler popup", () => {
     expect(called("includeTab")).toEqual([{ tabId: 1 }]);
   });
 
-  it("Refresh until something appears: creates a rule for this page, hands the tab over and checks at once", async () => {
+  it("Refresh until something appears, without access: hands the set-up to the service worker before Chrome asks", async () => {
+    let toldFirst = false;
+    permissionsRequest.mockImplementationOnce(async () => {
+      toldFirst = called("afterAccess").length === 1; // on macOS the popup closes as Chrome's prompt opens
+      return true;
+    });
     await render({ source: "tab", status: "scheduled", hostAccess: false });
     await click(/^More/);
     await click(/Refresh until something appears/);
@@ -224,6 +239,29 @@ describe("simpler popup", () => {
     await click("Start watching");
     await tick();
     expect(permissionsRequest).toHaveBeenCalledWith({ origins: ["https://www.youtube.com/*"] });
+    expect(toldFirst).toBe(true);
+    expect(called("afterAccess")).toEqual([
+      {
+        id: expect.any(String),
+        origins: ["https://www.youtube.com/*"],
+        method: "refreshUntil",
+        params: expect.objectContaining({ tabId: 1, url: URL_, text: "In stock", mode: "appears", seconds: 60 }),
+      },
+    ]);
+    // Still open after Allow: it asks the service worker to do it now.
+    expect(called("runAfterAccess")).toHaveLength(1);
+    expect(called("createRule")).toEqual([]);
+  });
+
+  it("Refresh until something appears, with access: sets it up at once", async () => {
+    await render({ source: "tab", status: "scheduled" });
+    await click(/^More/);
+    await click(/Refresh until something appears/);
+    await type(el.querySelector<HTMLInputElement>('input[aria-label="Text to look for"]')!, "In stock");
+    await click("1 min");
+    await click("Start watching");
+    await tick();
+    expect(permissionsRequest).not.toHaveBeenCalled();
     const [created] = called("createRule") as { rule: { trigger: unknown; stopWhen: unknown; target: unknown } }[];
     expect(created!.rule.trigger).toEqual({ type: "interval", seconds: 60 });
     expect(created!.rule.stopWhen).toMatchObject({ operator: "contains", value: "In stock" });
@@ -346,7 +384,13 @@ describe("declining site access, then allowing it", () => {
     await click("Allow access");
     await tick();
     expect(permissionsRequest).toHaveBeenCalledTimes(2); // Start, then Allow access: no third request outside a click
-    expect(called("startTab")).toEqual([{ tabId: 1, intervalSeconds: 300 }]);
+    // Each click tells the service worker what it's for (it starts the tab once access is granted).
+    expect(called("afterAccess")).toEqual([
+      { id: expect.any(String), origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 300 } },
+      { id: expect.any(String), origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 300 } },
+    ]);
+    expect(called("runAfterAccess")).toHaveLength(1);
+    expect(text()).not.toContain("won't refresh this page until you allow access");
   });
 });
 
@@ -420,5 +464,88 @@ describe("addresses with a ?… part", () => {
   it("no notice otherwise", async () => {
     await render({});
     expect(text()).not.toContain("different part after");
+  });
+});
+
+describe("pages the popup can't refresh", () => {
+  it("knows JustRefresh's own pages", async () => {
+    const { isOwnPage } = await import("@/ui/popup/cards");
+    const own = "chrome-extension://abc/";
+    expect(isOwnPage(`${own}dashboard.html#/settings`, own)).toBe(true);
+    expect(isOwnPage("https://example.com/", own)).toBe(false);
+    expect(isOwnPage("https://example.com/", "")).toBe(false);
+  });
+});
+
+describe("opened again after Chrome's prompt closed it and access was declined", () => {
+  it("Start refreshing: offers Allow access for the interval that was asked for", async () => {
+    takeResult = { method: "startTab", params: { tabId: 1, intervalSeconds: 900 } };
+    await render({ hostAccess: false });
+    expect(text()).toContain("won't refresh this page until you allow access");
+    await click("Allow access");
+    await tick();
+    expect(called("afterAccess")).toEqual([
+      { id: expect.any(String), origins: ["https://www.youtube.com/*"], method: "startTab", params: { tabId: 1, intervalSeconds: 900 } },
+    ]);
+  });
+
+  it("Refresh until: the form comes back as it was, saying nothing was set up", async () => {
+    takeResult = {
+      method: "refreshUntil",
+      params: {
+        tabId: 1,
+        url: URL_,
+        site: "youtube.com",
+        seconds: 60,
+        text: "In stock",
+        mode: "appears",
+        anyQuery: false,
+        priority: 0,
+        stopAfterMinutes: null,
+      },
+    };
+    await render({ hostAccess: false });
+    expect(text()).toContain("Refresh until something appears");
+    expect(text()).toContain("nothing was set up");
+    expect(el.querySelector<HTMLInputElement>('input[aria-label="Text to look for"]')!.value).toBe("In stock");
+    await click("Start watching");
+    await tick();
+    expect(called("afterAccess")).toEqual([
+      {
+        id: expect.any(String),
+        origins: ["https://www.youtube.com/*"],
+        method: "refreshUntil",
+        params: expect.objectContaining({ text: "In stock", seconds: 60 }),
+      },
+    ]);
+  });
+
+  it("with access already, doesn't ask", async () => {
+    await render({});
+    expect(called("takeAfterAccess")).toEqual([]);
+  });
+});
+
+describe("local files", () => {
+  it("while Chrome's file switch is off: explains, doesn't ask, and opens Chrome's settings", async () => {
+    fileAccess = false;
+    await render({ hostAccess: false, url: "file:///Users/me/report.html" });
+    expect(text()).toContain("local files");
+    await click("Start refreshing every 5 min");
+    await tick();
+    expect(permissionsRequest).not.toHaveBeenCalled(); // Chrome would refuse it without a prompt
+    expect(called("startTab")).toEqual([]);
+    expect(text()).toContain("“Allow access to file URLs” is on for JustRefresh");
+    await click("Open Chrome's settings");
+    expect(tabsCreate).toHaveBeenCalledWith({ url: expect.stringMatching(/^chrome:\/\/extensions\/\?id=/) });
+  });
+
+  it("with it on: asks for access like any site", async () => {
+    fileAccess = true;
+    await render({ hostAccess: false, url: "file:///Users/me/report.html" });
+    await click("Start refreshing every 5 min");
+    await tick();
+    expect(permissionsRequest).toHaveBeenCalledWith({ origins: ["file:///*"] });
+    fileAccess = false;
   });
 });

@@ -39,6 +39,22 @@ export interface ActivitySnapshot {
  */
 export const FRAME_API = "__justRefreshFrame__";
 
+/** Extension pages ask the service worker what it is busy with (answered at once, even during startup). */
+export const HEALTH_CHANNEL = "justrefresh-health";
+
+export interface HealthReport {
+  upForMs: number;
+  /** Startup finished (every API request waits for it). */
+  ready: boolean;
+  startupStep: string | null;
+  startupStepForMs: number | null;
+  startupTookMs: number | null;
+  /** Requests and events still waiting or running, longest first is not guaranteed. */
+  waiting: { what: string; forMs: number }[];
+  /** Recent work that took 2 s or more. */
+  slow: { what: string; ms: number; agoMs: number }[];
+}
+
 export interface FrameApi {
   /** The extension version that set it up (a copy left by an older version is ignored). */
   version: string;

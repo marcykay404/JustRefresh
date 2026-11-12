@@ -8,13 +8,16 @@
  */
 import { useEffect, useState } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
+import { askAccessThen, cancelAfterAccess, type AfterAccessRequest } from "../shared/access";
+import { fileAccessAllowed, openChromeSiteAccess } from "../shared/chrome-settings";
 import { useApi, useNow } from "../shared/hooks";
+import { StillLoading } from "../shared/StillLoading";
 import { ErrorBox } from "../shared/components";
 import type { Rule, TabRuntime } from "../../core/types";
 import { useDialog } from "../shared/dialog";
-import { describeRule } from "./describe";
+import { describeRule, type UntilMode } from "./describe";
 import { startUntil } from "./actions";
-import { BlockedCard, RunningCard, StartCard, type BlockedKind } from "./cards";
+import { BlockedCard, type BlockedKind, isOwnPage, RunningCard, StartCard } from "./cards";
 import { useIntervalPicker } from "./picker";
 import {
   Chevron,
@@ -69,7 +72,7 @@ export function Popup() {
     return (
       <div className="popup-root">
         {header}
-        {state.error ? <ErrorBox error={state.error} /> : <div className="muted">Loading…</div>}
+        {state.error ? <ErrorBox error={state.error} /> : <StillLoading onRetry={() => void state.reload()} />}
       </div>
     );
   }
@@ -94,7 +97,7 @@ function tabFacts(s: TabState, overview: Overview | null) {
     // The interval actually in effect (fast intervals are clamped to 30 s while they're turned off).
     currentInterval: s.interval ?? s.override?.intervalSeconds ?? overview?.settings.defaultIntervalSeconds ?? 300,
     origin,
-    siteName: origin === "file:///*" ? "local files" : hostLabel(s.tab.url),
+    siteName: isOwnPage(s.tab.url) ? "JustRefresh" : origin === "file:///*" ? "local files" : hostLabel(s.tab.url),
     protectionOn: s.safety.pauseWhileTyping || s.safety.protectUnsavedChanges || s.safety.pauseOnMouse || s.safety.pauseOnScroll,
   };
 }
@@ -140,6 +143,37 @@ function TabPopup({
   /** The site-access prompt was declined for the interval in here. */
   const [declinedFor, setDeclinedFor] = useState<number | null>(null);
   const picker = useIntervalPicker(f.currentInterval, overview?.settings.allowFastIntervals === true);
+  /** A local file while Chrome keeps extensions out of local files (only its settings can change that). */
+  const [filesOff, setFilesOff] = useState(false);
+  useEffect(() => {
+    if (f.origin === "file:///*" && !s.hostAccess) void fileAccessAllowed().then((ok) => setFilesOff(!ok));
+  }, [f.origin, s.hostAccess]);
+  /** A "Refresh until" the popup was setting up when it closed for Chrome's prompt (then declined). */
+  const [restored, setRestored] = useState<{ text: string; mode: UntilMode; anyQuery: boolean; note: string } | null>(null);
+
+  // Opened again after "Deny" (Chrome's prompt closes the popup on macOS): carry on from the click
+  // instead of starting over. Taking it back also cancels it, so it can't start later by surprise.
+  useEffect(() => {
+    if (s.hostAccess) return;
+    void api<AfterAccessRequest | null>("takeAfterAccess", { tabId })
+      .catch(() => null)
+      .then((req) => {
+        if (req?.method === "startTab") {
+          if (req.params.intervalSeconds) picker.choose(req.params.intervalSeconds);
+          setDeclinedFor(req.params.intervalSeconds ?? picker.chosen);
+        } else if (req?.method === "refreshUntil") {
+          picker.choose(req.params.seconds);
+          setRestored({
+            text: req.params.text,
+            mode: req.params.mode,
+            anyQuery: req.params.anyQuery,
+            note: `JustRefresh wasn't allowed to read ${f.siteName}, so nothing was set up. Start watching asks Chrome again.`,
+          });
+          setView("until");
+        }
+      });
+    // Once per popup.
+  }, []);
   const { countdown, progress } = countdownOf(f.rt, now, s.interval ?? f.currentInterval);
 
   const begin = async (intervalSeconds: number) => {
@@ -159,17 +193,36 @@ function TabPopup({
   const start = (intervalSeconds: number, alreadyGranted = false) => {
     // No protection means nothing reads the page, so there is nothing to ask for.
     if (alreadyGranted || s.hostAccess || !f.origin || !f.protectionOn) return void begin(intervalSeconds);
-    void requestOrigins([f.origin])
-      .catch(() => false)
-      .then((granted) => (granted ? begin(intervalSeconds) : setDeclinedFor(intervalSeconds)));
+    // Chrome refuses local files without asking while its file switch is off: explain instead of asking.
+    if (filesOff) return void setDeclinedFor(intervalSeconds);
+    // If Chrome's prompt closes the popup (macOS), the service worker starts it once you allow.
+    setError(null);
+    void askAccessThen(f.origin, { method: "startTab", params: { tabId, intervalSeconds } }).then(({ granted, result }) => {
+      if (!granted) return setDeclinedFor(intervalSeconds);
+      // Nothing ran (e.g. it expired while Chrome asked): still open, so start it here (starting twice is harmless).
+      if (!result) return void begin(intervalSeconds);
+      if (!result.ok) setError(new Error(result.message ?? "Couldn't start"));
+      setDeclinedFor(null);
+      picker.reset();
+      setChanging(false);
+      void reloadState();
+    });
   };
 
   const onStartUntil = async (text: string, mode: "appears" | "disappears", anyQuery: boolean) => {
     setError(null);
     const stopAfterMinutes = overview?.settings.defaultStopAfterMinutes ?? null;
-    const r = await startUntil({ state: s, tabId, site: f.siteName, origin: f.origin, seconds: picker.chosen, text, mode, anyQuery, stopAfterMinutes }, run);
+    let r;
+    try {
+      r = await startUntil({ state: s, tabId, site: f.siteName, origin: f.origin, seconds: picker.chosen, text, mode, anyQuery, stopAfterMinutes });
+    } catch (e) {
+      setError(e);
+      return;
+    }
+    void reloadState();
     if (r.warning) setError(new Error(r.warning));
     if (!r.done) return;
+    setRestored(null);
     picker.reset();
     setView("main");
   };
@@ -184,10 +237,14 @@ function TabPopup({
         <UntilForm
           site={f.siteName}
           url={s.tab.url}
+          restored={restored ?? undefined}
           picker={picker.element}
           canStart={picker.valid}
           problem={picker.tooShort}
-          onCancel={() => setView("main")}
+          onCancel={() => {
+            setRestored(null);
+            setView("main");
+          }}
           onStart={onStartUntil}
         />
       );
@@ -256,16 +313,54 @@ function TabPopup({
           tabId={tabId}
           run={run}
           declinedFor={declinedFor}
-          onStart={start}
+          filesOff={filesOff}
+          onAccessGranted={() => {
+            setDeclinedFor(null);
+            picker.reset();
+            setChanging(false);
+            void reloadState();
+          }}
           onStartUnprotected={async () => {
+            void cancelAfterAccess(tabId); // the declined click's request isn't wanted now
             await run("startTab", { tabId, intervalSeconds: declinedFor ?? picker.chosen, safety: { onActivityUnavailable: "refresh" } });
             setDeclinedFor(null);
           }}
+          setError={setError}
           onUntil={() => setView("until")}
           reloadState={reloadState}
         />
       )}
     </>
+  );
+}
+
+/**
+ * JustRefresh can't see inside the page, so it won't refresh it: allow access
+ * (for a local file, only Chrome's settings can), or refresh without protection.
+ */
+function NoAccessNotice(p: { site: string; filesOff: boolean; onAllow: () => void; onUnprotected: () => void }) {
+  return (
+    <div className="notice small col">
+      {p.filesOff ? (
+        <span>
+          Chrome only lets extensions into local files when “Allow access to file URLs” is on for JustRefresh. Until then it can't tell whether you're typing
+          here, so it won't refresh this page. Turn it on in Chrome's settings, or refresh without protection.
+        </span>
+      ) : (
+        <span>
+          JustRefresh can't see inside <strong>{p.site}</strong>, so it can't tell whether you're typing or have unsaved form changes. To be safe, it won't
+          refresh this page until you allow access.
+        </span>
+      )}
+      <div className="row">
+        <button className="small" onClick={p.filesOff ? openChromeSiteAccess : p.onAllow}>
+          {p.filesOff ? "Open Chrome's settings" : "Allow access"}
+        </button>
+        <button className="small" onClick={p.onUnprotected}>
+          Refresh without protection
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -276,7 +371,11 @@ function Extras(p: {
   tabId: number;
   run: Run;
   declinedFor: number | null;
-  onStart: (seconds: number, alreadyGranted?: boolean) => void;
+  /** A local file while Chrome's "Allow access to file URLs" is off. */
+  filesOff: boolean;
+  setError: (e: unknown) => void;
+  /** Access was granted from the notice; the service worker did what the click was for. */
+  onAccessGranted: () => void;
   onStartUnprotected: () => Promise<void>;
   onUntil: () => void;
   reloadState: () => Promise<void>;
@@ -310,9 +409,20 @@ function Extras(p: {
     if (ok) await run("refreshNow", { tabId, force: true });
   };
 
-  const allowAccess = () =>
-    f.origin &&
-    void requestOrigins([f.origin]).then((ok) => ok && (p.declinedFor !== null ? p.onStart(p.declinedFor, true) : void run("resumeTab", { tabId })));
+  // What the earlier click was for happens once you allow, even if Chrome's prompt closes the popup.
+  const allowAccess = () => {
+    if (!f.origin) return;
+    p.setError(null);
+    const then: AfterAccessRequest =
+      p.declinedFor !== null ? { method: "startTab", params: { tabId, intervalSeconds: p.declinedFor } } : { method: "resumeTab", params: { tabId } };
+    void askAccessThen(f.origin, then).then(({ granted, result }) => {
+      if (!granted) return;
+      // Nothing ran (e.g. it expired while Chrome asked): still open, so do it here (harmless if it already ran).
+      if (!result) void run(then.method, then.params);
+      else if (!result.ok) p.setError(new Error(result.message ?? "Couldn't start"));
+      p.onAccessGranted();
+    });
+  };
 
   return (
     <>
@@ -334,20 +444,7 @@ function Extras(p: {
       />
 
       {blockedByAccess && f.origin && (
-        <div className="notice small col">
-          <span>
-            JustRefresh can't see inside <strong>{f.siteName}</strong>, so it can't tell whether you're typing or have unsaved form changes. To be safe, it
-            won't refresh this page until you allow access.
-          </span>
-          <div className="row">
-            <button className="small" onClick={allowAccess}>
-              Allow access
-            </button>
-            <button className="small" onClick={() => void p.onStartUnprotected()}>
-              Refresh without protection
-            </button>
-          </div>
-        </div>
+        <NoAccessNotice site={f.siteName} filesOff={p.filesOff} onAllow={allowAccess} onUnprotected={() => void p.onStartUnprotected()} />
       )}
 
       {!f.blocked && !blockedByAccess && (
@@ -361,7 +458,7 @@ function Extras(p: {
           byRule={f.byRule}
           needsAccessForRule={f.byRule && !s.hostAccess}
           onToggle={(on) => run("setTabSafety", { tabId, safety: { pauseWhileTyping: on, protectUnsavedChanges: on } })}
-          onAllow={() => f.origin && void requestOrigins([f.origin]).then(() => p.reloadState())}
+          onAllow={() => (p.filesOff ? openChromeSiteAccess() : f.origin && void requestOrigins([f.origin]).then(() => p.reloadState()))}
           showAllow={!!f.origin}
         />
       )}
