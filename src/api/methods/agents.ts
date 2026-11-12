@@ -57,7 +57,13 @@ export function agentsMethods(svc: ServiceInternals): Record<string, MethodDef> 
         let outcome = "rejected";
         await d.config.update((c) => {
           const req = c.approvals.find((a) => a.id === p.id);
-          if (!req || req.status !== "pending") throw new ApiError("not_found", "No pending approval with that id");
+          if (!req) throw new ApiError("not_found", "No pending approval with that id");
+          // Withdrawn or outdated just before the click: say so quietly, as for any outdated request.
+          if (req.status === "stale") {
+            outcome = "stale";
+            return;
+          }
+          if (req.status !== "pending") throw new ApiError("not_found", "No pending approval with that id");
           const rule = c.rules[req.ruleId];
           if (!rule || rule.meta.revision !== req.ruleRevision) {
             req.status = "stale";

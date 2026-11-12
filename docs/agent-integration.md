@@ -69,7 +69,8 @@ apps → Set up) offers the bridge as one file and the install command.
   same validation as the UI.
 - Agent-created/updated rules are drafts. Activation and deletion of active
   rules go through an approval queue (badge on the toolbar icon). An approval
-  becomes **stale** if the rule changes after the request. The user may grant
+  becomes **stale** if the rule changes after the request, or when anyone
+  switches the rule on or off before it is approved. The user may grant
   an agent _trusted activation_ for its own rules.
 - Agents can only modify rules they created; they can never call user-only
   methods (global controls, settings, exclusions, agent management, import).
@@ -102,7 +103,8 @@ Things agents wouldn't expect:
   `missing_permission` (no site access), `restricted_url` (a browser page
   JustRefresh can't read), `page_not_ready` or `timeout` (try again later);
   the full list is `UnknownCode` in `src/core/types.ts`.
-- `disableRule` also withdraws a request waiting to switch the rule on.
+- `disableRule` also withdraws a request waiting to switch the rule on, whoever
+  disables it (agents may disable any rule).
 - `enableRule` on a rule that is already on returns `enabled` without asking
   for approval again, and disabling a rule that is already off changes
   nothing (its revision stays the same).

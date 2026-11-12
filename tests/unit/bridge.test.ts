@@ -199,7 +199,41 @@ describe("MCP self-description", () => {
     expect(none.structuredContent).toEqual({ result: null });
   });
 
-  it("disable withdraws a waiting enable request; enable or disable of a rule already so changes nothing", async () => {
+  it("an approval at the same moment as a disable can't leave the rule on", async () => {
+    for (const order of ["disable first", "approve first"]) {
+      const env = createApiEnv();
+      const agent = env.agent();
+      await env.pairAgent();
+      const created = await env.service.call(agent, "createRule", { rule: SPEC_EXAMPLE });
+      const { approvalId } = await env.service.call(agent, "enableRule", { id: created.id });
+      const disable = () => env.service.call(agent, "disableRule", { id: created.id });
+      const approve = () => env.service.call(env.user, "resolveApproval", { id: approvalId, approve: true });
+      await Promise.all(order === "disable first" ? [disable(), approve()] : [approve(), disable()]);
+      expect((await env.config.get()).rules[created.id].enabled, order).toBe(false);
+    }
+  });
+
+  it("the user switching a rule on settles the agent's waiting enable request", async () => {
+    const env = createApiEnv();
+    const agent = env.agent();
+    await env.pairAgent();
+    const created = await env.service.call(agent, "createRule", { rule: SPEC_EXAMPLE });
+    await env.service.call(agent, "enableRule", { id: created.id });
+    // The user switches it on themselves: the agent's request isn't left waiting.
+    await env.service.call(env.user, "enableRule", { id: created.id });
+    const pending = async () => (await env.config.get()).approvals.filter((a) => a.status === "pending").map((a) => a.kind);
+    expect(await pending()).toEqual([]);
+  });
+
+  it("an agent can't learn or change the state of a rule it doesn't own through enable", async () => {
+    const env = createApiEnv();
+    await env.pairAgent();
+    const mine = await env.service.call(env.user, "createRule", { rule: { ...SPEC_EXAMPLE, enabled: true } });
+    expect((await env.config.get()).rules[mine.id].enabled).toBe(true);
+    await expect(env.service.call(env.agent(), "enableRule", { id: mine.id })).rejects.toMatchObject({ code: "forbidden" });
+  });
+
+  it("disable withdraws a waiting enable request; enabling a rule already on asks nothing", async () => {
     const env = createApiEnv();
     const agent = env.agent();
     await env.pairAgent();
@@ -215,7 +249,7 @@ describe("MCP self-description", () => {
     await env.service.call(agent, "disableRule", { id: created.id });
     expect(await revision()).toBe(before);
     expect(await waiting()).toEqual([]);
-    await expect(env.service.call(env.user, "resolveApproval", { id: first.approvalId, approve: true })).rejects.toMatchObject({ code: "not_found" });
+    expect(await env.service.call(env.user, "resolveApproval", { id: first.approvalId, approve: true })).toEqual({ outcome: "stale" });
     expect((await env.config.get()).rules[created.id].enabled).toBe(false);
 
     // Asked again and approved: it runs. Asking again while it runs changes nothing.

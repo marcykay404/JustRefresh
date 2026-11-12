@@ -154,11 +154,8 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
       mutates: true,
       handler: async (_actor, p) => {
         // Disabling is always safe; agents may disable any rule.
+        // Also withdraws a request waiting to switch it on (see setEnabled).
         await svc.setEnabled(p.id, false);
-        // "Off" also withdraws a request waiting to switch it on.
-        await d.config.update((c) => {
-          for (const a of c.approvals) if (a.ruleId === p.id && a.kind === "activate" && a.status === "pending") a.status = "stale";
-        });
         return { status: "disabled" };
       },
     }),

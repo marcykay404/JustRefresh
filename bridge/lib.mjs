@@ -178,7 +178,7 @@ export const TOOLS = [
     // It can switch a rule on at once (trusted agents), and a live rule reloads and clicks on websites.
     { ...WRITE, destructiveHint: true, openWorldHint: true },
     "Ask to switch on a rule you created (one already on just returns enabled). Usually returns pending_approval: tell the user to approve it in the JustRefresh dashboard → Agent Integrations → Waiting for your OK, " +
-      "then check refresh_get_status: enabled means approved; not enabled with nothing in pendingApprovals means the user declined it or the rule changed since you asked. Check every 30 s or more slowly. If the user trusts you, the rule is switched on at once, with no approval step.",
+      "then check refresh_get_status: enabled means approved; not enabled with nothing in pendingApprovals means the user declined it, or the rule was changed or switched off (by anyone) since you asked. Check every 30 s or more slowly. If the user trusts you, the rule is switched on at once, with no approval step.",
     { id },
     ["id"],
   ),

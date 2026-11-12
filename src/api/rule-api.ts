@@ -253,7 +253,10 @@ export class RuleManagementService {
     await this.deps.config.update((c) => {
       const r = c.rules[id];
       if (!r) throw new ApiError("not_found", `Rule "${id}" not found`);
-      // Already so: nothing changes, so the revision (and any approval waiting on it) stays valid.
+      // A request waiting to switch it on is settled either way: it's on now, or "off" withdraws it.
+      // Same write as the change, so an approval can't slip in between and switch it back on.
+      for (const a of c.approvals) if (a.ruleId === id && a.kind === "activate" && a.status === "pending") a.status = "stale";
+      // Already so: nothing else changes, so the revision (and a waiting delete request) stays valid.
       if (r.enabled === enabled && !(enabled && r.meta.draft)) return;
       r.enabled = enabled;
       if (enabled) r.meta.draft = false;

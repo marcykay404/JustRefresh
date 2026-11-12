@@ -129,7 +129,7 @@ describe("Scenario G: agent integration & security", () => {
     const created = (await env.service.call(env.agent(), "createRule", { rule: SPEC_EXAMPLE })) as Rule;
     const pending = (await env.service.call(env.agent(), "enableRule", { id: created.id })) as { approvalId: string };
     await env.service.call(env.agent(), "updateRule", { id: created.id, patch: { trigger: { type: "interval", seconds: 300 } } });
-    await expect(env.service.call(env.user, "resolveApproval", { id: pending.approvalId, approve: true })).rejects.toMatchObject({ code: "not_found" });
+    expect(await env.service.call(env.user, "resolveApproval", { id: pending.approvalId, approve: true })).toEqual({ outcome: "stale" });
     expect(((await env.service.call(env.user, "getRule", { id: created.id })) as Rule).enabled).toBe(false);
   });
 
