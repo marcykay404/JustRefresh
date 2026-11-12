@@ -80,6 +80,8 @@ describe("setup for an AI app, JustRefresh from the Chrome Web Store", () => {
       const prompt = agentSetupPrompt(STORE_EXTENSION_ID, platform, "0.1.1");
       expect(prompt).toContain("   npx -y justrefresh@0.1.1 install\n");
       expect(prompt).not.toMatch(/I downloaded justrefresh-bridge\.mjs/);
+      expect(prompt).toMatch(/Keep that version exactly \(never @latest or no version\)/);
+      expect(prompt).toMatch(/that version isn't on npm yet/);
       // If npm can't be used: the download, with this extension's id.
       expect(prompt).toContain(portableInstallCommand(STORE_EXTENSION_ID));
       // The rest is the same as for a download.

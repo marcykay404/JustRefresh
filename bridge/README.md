@@ -36,8 +36,9 @@ same as the extension's):
 npx -y justrefresh@<version> install
 ```
 
-It needs no extension id, and prints the MCP settings plus a ready-made
-`claude mcp add` line. Your AI app then starts the installed copy in
+It needs no extension id (`--extension-id <id>` installs for another copy;
+copies it was installed for before stay registered until you uninstall), and
+prints the MCP settings plus a ready-made `claude mcp add` line. Your AI app then starts the installed copy in
 `~/.justrefresh/bin`, the same one Chrome starts, so both sides match.
 
 For any other copy of JustRefresh (unpacked from a checkout or a release

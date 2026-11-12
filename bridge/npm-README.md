@@ -22,14 +22,15 @@ may see and do.
 2. Install the bridge (use the version JustRefresh's dashboard shows):
 
    ```bash
-   npx -y justrefresh install
+   npx -y justrefresh@<version> install
    ```
 
    It copies itself to `~/.justrefresh/bin`, registers with your Chromium
    browsers, and prints the MCP settings for your AI app, with a ready-made
    `claude mcp add` line for Claude Code. It's set up for JustRefresh from the
    Chrome Web Store; for another copy (unpacked, or from Edge Add-ons), add
-   `--extension-id <id>` from its dashboard.
+   `--extension-id <id>` from its dashboard. Installing for one copy keeps any
+   other it was installed for before; `uninstall` removes them all.
 
 3. Add the printed settings to your AI app, restart it, and approve it in the
    JustRefresh dashboard when it asks to connect.

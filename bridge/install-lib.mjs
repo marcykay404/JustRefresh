@@ -84,12 +84,25 @@ export const BROWSERS = Object.keys(PROFILE_DIRS.darwin);
 /** The registry keys to write for these browsers, each once. */
 const winKeys = (browsers) => [...new Set(browsers.flatMap((b) => WIN_KEYS[b] ?? []))];
 
+const INSTALL_OPTIONS = { "extension-id": "extensionId", browser: "browser" };
+
+/**
+ * `install [--extension-id <id>] [--browser <name>]` (also `--name=value`).
+ * Strict: a mistyped or empty option is refused, never ignored, since leaving
+ * the id out means "JustRefresh from the Chrome Web Store".
+ */
 export function parseInstallArgs(argv) {
-  const opt = (name) => {
-    const i = argv.indexOf(`--${name}`);
-    return i >= 0 ? argv[i + 1] : undefined;
-  };
-  return { extensionId: opt("extension-id"), browser: opt("browser") };
+  const args = argv[0] === "install" ? argv.slice(1) : argv;
+  const out = {};
+  for (let i = 0; i < args.length; i++) {
+    const m = /^--([a-z-]+)(?:=(.*))?$/.exec(args[i]);
+    const key = m && Object.hasOwn(INSTALL_OPTIONS, m[1]) ? INSTALL_OPTIONS[m[1]] : null;
+    if (!key) throw new Error(`Unknown option "${args[i]}". Options: --extension-id <id>, --browser <name>.`);
+    const value = m[2] ?? args[++i];
+    if (!value || value.startsWith("--")) throw new Error(`--${m[1]} needs a value.`);
+    out[key] = value;
+  }
+  return out;
 }
 
 /** Where things go. `env` overrides exist for tests. */
@@ -179,6 +192,25 @@ export function restrictToUser(dir, { platform = process.platform, run = execFil
   }
 }
 
+const EXTENSION_ORIGIN = /^chrome-extension:\/\/[a-p]{32}\/$/;
+
+/**
+ * Extensions the bridge is already registered for here (an earlier install, e.g.
+ * for an unpacked copy): kept, so installing for one copy doesn't cut off another.
+ */
+function registeredOrigins(loc, browsers) {
+  const files = loc.platform === "win32" ? [path.join(loc.bin, `${HOST}.json`)] : browsers.map((b) => path.join(manifestDir(loc, b), `${HOST}.json`));
+  const found = new Set();
+  for (const file of files) {
+    try {
+      for (const o of JSON.parse(fs.readFileSync(file, "utf8")).allowed_origins ?? []) if (EXTENSION_ORIGIN.test(o)) found.add(o);
+    } catch {
+      // Not registered there yet.
+    }
+  }
+  return [...found];
+}
+
 function register(loc, browsers, manifest, run) {
   const json = JSON.stringify(manifest, null, 2);
   if (loc.platform === "win32") {
@@ -213,6 +245,8 @@ export function install({
     );
   }
   const browsers = targetBrowsers(loc, browser);
+  const own = `chrome-extension://${extensionId}/`;
+  const kept = registeredOrigins(loc, browsers).filter((o) => o !== own);
   fs.mkdirSync(loc.dataDir, { recursive: true, mode: 0o700 });
   restrictToUser(loc.dataDir, { platform: loc.platform, run, log });
   copyBridge(sourceDir, loc.bin, entry, bundled);
@@ -222,7 +256,7 @@ export function install({
     description: "JustRefresh local agent bridge",
     path: launcher,
     type: "stdio",
-    allowed_origins: [`chrome-extension://${extensionId}/`],
+    allowed_origins: [own, ...kept],
   };
   const registered = register(loc, browsers, manifest, run);
   log(`Installed the JustRefresh bridge in ${loc.bin}`);
@@ -231,10 +265,13 @@ export function install({
       ? `  for JustRefresh from the Chrome Web Store (${extensionId}); for another copy, run again with --extension-id <its id>`
       : `  for the JustRefresh extension ${extensionId}`,
   );
+  if (kept.length) log(`  still also for ${kept.map((o) => o.slice("chrome-extension://".length, -1)).join(", ")} (installed before; uninstall to start over)`);
   for (const r of registered) log(`  registered with ${r}`);
   log("\nNext: restart JustRefresh if the dashboard asks, then add this to your AI app's MCP settings:");
   log(JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: { command: node, args: [script, "mcp"] } } }, null, 2));
-  log(`\nClaude Code: claude mcp add --scope user ${MCP_SERVER_KEY} -- "${node}" "${script}" mcp`);
+  // Quoted for the shell people use there: single quotes keep $ and ` literal in sh; PowerShell, cmd and Git Bash take double quotes.
+  const q = loc.platform === "win32" ? (p) => `"${p}"` : shQuote;
+  log(`\nClaude Code: claude mcp add --scope user ${MCP_SERVER_KEY} -- ${q(node)} ${q(script)} mcp`);
   log("\nWhen the app first connects, approve it in JustRefresh → Dashboard → Agent Integrations.");
   log("If you switch Node versions (nvm, a new Homebrew Node), run this install again.");
   return { browsers, launcher, script };

@@ -96,7 +96,7 @@ function installFromNpm(extensionId: string, platform: SetupPlatform, version: s
   return [
     "2. Install the bridge from npm (this exact version, to match my JustRefresh). Run:",
     `   ${npxInstallCommand(version)}`,
-    `   ${AFTER_INSTALL} If npx isn't available or can't reach npm, ask me to click "Download the bridge" in JustRefresh → Agent Integrations, then run: ${portableInstallCommand(extensionId)}${platform === "windows" ? " (in cmd.exe, %USERPROFILE% in place of $HOME)" : ""}`,
+    `   ${AFTER_INSTALL} Keep that version exactly (never @latest or no version). If it fails (no npx, offline, or that version isn't on npm yet), ask me to click "Download the bridge" in JustRefresh → Agent Integrations, then run: ${portableInstallCommand(extensionId)}${platform === "windows" ? " (in cmd.exe, %USERPROFILE% in place of $HOME)" : ""}`,
   ];
 }
 

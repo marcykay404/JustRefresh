@@ -231,8 +231,8 @@ function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: bool
         <li>Switch on “Allow desktop AI apps to connect” above.</li>
         {npm ? (
           <li>
-            Nothing to download: the install command below gets the bridge from npm, at this version of JustRefresh. (No npm? {download} instead, and run{" "}
-            <code>{installCommand(chrome.runtime.id, paths)}</code>.)
+            Nothing to download: the install command below gets the bridge from npm, at this version of JustRefresh. If it fails (no npm, offline, or this
+            version isn't on npm yet), {download} instead and run <code>{installCommand(chrome.runtime.id, paths)}</code>.
           </li>
         ) : (
           <li>

@@ -965,7 +965,7 @@ await test("the npm package: only the bridge, its README and licence; npx-style 
   const inst = spawnSync(process.execPath, [join(pkgDir, "justrefresh-bridge.mjs"), "install", "--browser", "chrome"], { encoding: "utf8", env });
   assert.equal(inst.status, 0, inst.stderr);
   assert.match(inst.stdout, /for JustRefresh from the Chrome Web Store \(hgdoldonldledoimnhlpkmipchjfgolf\)/);
-  assert.match(inst.stdout, /Claude Code: claude mcp add --scope user justrefresh -- ".*node" ".*justrefresh-bridge\.mjs" mcp/);
+  assert.match(inst.stdout, /Claude Code: claude mcp add --scope user justrefresh -- ['"].*node['"] ['"].*justrefresh-bridge\.mjs['"] mcp/);
   assert.equal(readFileSync(join(home, ".justrefresh", "bin", "justrefresh-bridge.mjs"), "utf8"), main);
 });
 
