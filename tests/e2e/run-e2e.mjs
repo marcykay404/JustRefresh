@@ -901,6 +901,44 @@ await test("the desktop bridge is packaged as one runnable file", async () => {
   const r = spawnSync(process.execPath, [join(root, "dist", "bridge", "justrefresh-bridge.mjs")], { encoding: "utf8" });
   assert.equal(r.status, 2);
   assert.match(r.stderr, /Usage: justrefresh-bridge\.mjs install/);
+  // A second download, next to an older one and unrelated files: the file that runs is installed, nothing else.
+  const { mkdirSync, copyFileSync, readdirSync } = await import("node:fs");
+  const home = mkdtempSync(join(tmpdir(), "justrefresh-home-"));
+  const downloads = join(home, "Downloads");
+  mkdirSync(downloads);
+  for (const f of ["justrefresh-bridge.mjs", "lib.mjs", "install-lib.mjs"]) writeFileSync(join(downloads, f), "// old or unrelated\n");
+  copyFileSync(join(root, "dist", "bridge", "justrefresh-bridge.mjs"), join(downloads, "justrefresh-bridge (1).mjs"));
+  const env = { ...process.env, HOME: home, JUSTREFRESH_BRIDGE_DIR: join(home, ".justrefresh") };
+  const inst = spawnSync(
+    process.execPath,
+    [join(downloads, "justrefresh-bridge (1).mjs"), "install", "--extension-id", "abcdefghijklmnopabcdefghijklmnop", "--browser", "chrome"],
+    { encoding: "utf8", env },
+  );
+  assert.equal(inst.status, 0, inst.stderr);
+  const bin = join(home, ".justrefresh", "bin");
+  assert.equal(readFileSync(join(bin, "justrefresh-bridge.mjs"), "utf8"), readFileSync(join(root, "dist", "bridge", "justrefresh-bridge.mjs"), "utf8"));
+  assert.deepEqual(
+    readdirSync(bin).filter((f) => f.endsWith(".mjs")),
+    ["justrefresh-bridge.mjs"],
+  );
+});
+
+await test("Agent Integrations: setup for an AI app copies its steps with this extension's id", async () => {
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    navigator.clipboard.writeText = async (text) => {
+      window.__copied = text;
+    };
+  });
+  await page.goto(`chrome-extension://${extId}/dashboard.html#/agents`);
+  await page.getByText("Set up (about two minutes").click();
+  await page.getByRole("button", { name: "Copy setup for your AI app" }).click();
+  await page.getByRole("button", { name: "Copied: paste it into your AI app" }).waitFor();
+  const copied = await page.evaluate(() => window.__copied);
+  assert.match(copied, new RegExp(`install --extension-id ${extId}`));
+  assert.match(copied, /claude mcp add --scope user justrefresh --/);
+  assert.doesNotMatch(copied, /<you>/);
+  await page.close();
 });
 
 await test("a new rule shows problems only in the parts you have edited", async () => {

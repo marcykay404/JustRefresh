@@ -1,5 +1,5 @@
 /** The bridge installer: which browsers it finds and where it registers (with a fake `reg` on Windows). */
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error plain ESM without types
@@ -55,5 +55,54 @@ describe("Windows registry entries", () => {
     const deleted = calls.map((c) => c[2]);
     expect(new Set(deleted).size).toBe(deleted.length); // each key once
     expect(deleted).toContain("HKCU\\Software\\Vivaldi\\NativeMessagingHosts\\com.justrefresh.bridge");
+  });
+});
+
+describe("installing the downloaded file", () => {
+  it.skipIf(process.platform === "win32")("installs the file that runs, whatever the download is called, and nothing else lying in the folder", () => {
+    const h = home();
+    const downloads = join(h, "Downloads");
+    mkdirSync(downloads);
+    // An older download, a newer one Chrome renamed, and an unrelated file with a bridge name.
+    writeFileSync(join(downloads, "justrefresh-bridge.mjs"), "// old\n");
+    const bundle = "// new, one file\n";
+    writeFileSync(join(downloads, "justrefresh-bridge (1).mjs"), bundle);
+    writeFileSync(join(downloads, "lib.mjs"), "// someone else's\n");
+    writeFileSync(join(downloads, "install-lib.mjs"), "// someone else's\n");
+    const loc = locations({ home: h, platform: "darwin", env: { JUSTREFRESH_BRIDGE_DIR: join(h, ".justrefresh") } });
+    const lines: string[] = [];
+    install({
+      extensionId: ID,
+      sourceDir: downloads,
+      entry: join(downloads, "justrefresh-bridge (1).mjs"),
+      bundled: true, // as the build marks the downloadable file
+      node: "/opt/homebrew/bin/node",
+      loc,
+      run: () => undefined,
+      log: (l: string) => lines.push(l),
+    });
+    expect(readFileSync(join(loc.bin, "justrefresh-bridge.mjs"), "utf8")).toBe(bundle);
+    expect(existsSync(join(loc.bin, "lib.mjs"))).toBe(false);
+    expect(existsSync(join(loc.bin, "install-lib.mjs"))).toBe(false);
+
+    // The settings it prints, which the setup for an AI app tells the app to use exactly.
+    const printed = JSON.parse(lines.find((l) => l.startsWith("{"))!);
+    expect(printed).toEqual({ mcpServers: { justrefresh: { command: "/opt/homebrew/bin/node", args: [join(loc.bin, "justrefresh-bridge.mjs"), "mcp"] } } });
+  });
+
+  it.skipIf(process.platform === "win32")("from a checkout, brings the files the bridge imports", () => {
+    const h = home();
+    const loc = locations({ home: h, platform: "darwin", env: { JUSTREFRESH_BRIDGE_DIR: join(h, ".justrefresh") } });
+    const src = join(__dirname, "../../bridge");
+    install({
+      extensionId: ID,
+      sourceDir: src,
+      entry: join(src, "justrefresh-bridge.mjs"),
+      node: "/usr/local/bin/node",
+      loc,
+      run: () => undefined,
+      log: () => undefined,
+    });
+    for (const f of ["justrefresh-bridge.mjs", "lib.mjs", "install-lib.mjs"]) expect(existsSync(join(loc.bin, f)), f).toBe(true);
   });
 });

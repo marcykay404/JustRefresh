@@ -51,6 +51,8 @@ await build({
   configFile: false,
   logLevel: "warn",
   publicDir: false,
+  // The installer knows it is the downloaded single file (no lib.mjs or install-lib.mjs to copy).
+  define: { __JUSTREFRESH_BUNDLED__: "true" },
   build: {
     outDir: resolve(out, "bridge"),
     emptyOutDir: false,
