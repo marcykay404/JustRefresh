@@ -879,6 +879,14 @@ await test("popup and dashboard render", async () => {
   await page.goto(`chrome-extension://${extId}/dashboard.html#/tabs`);
   await page.getByRole("heading", { name: "Tabs" }).waitFor();
   await page.screenshot({ path: join(root, "test-results", "tabs.png") });
+  // Settings → Site access: Chrome's own settings for JustRefresh are one click away.
+  await page.goto(`chrome-extension://${extId}/dashboard.html#/settings`);
+  const opened = context.waitForEvent("page");
+  await page.getByRole("button", { name: "Remove completely in Chrome's settings…" }).click();
+  const chromeSettings = await opened;
+  await waitFor(() => chromeSettings.url().startsWith(`chrome://extensions/?id=${extId}`), "chrome://extensions opened at JustRefresh");
+  await chromeSettings.close();
+  await page.goto(`chrome-extension://${extId}/dashboard.html#/tabs`);
   // The popup on JustRefresh's own page: named, and simply excluded.
   const dashboardTab = await tabIdFor(`chrome-extension://${extId}/dashboard.html#/tabs`);
   const own = await openPopupFor(dashboardTab);
