@@ -10,6 +10,8 @@ describe("support link", () => {
     expect(html).toContain(`href="${SUPPORT_URL}"`);
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
+    // A coffee cup, which screen readers skip (the link is still "Buy me a coffee").
+    expect(html).toContain('<span aria-hidden="true">☕</span>');
     // Screen readers say where it goes.
     expect(html).toContain('aria-describedby="support-link-note"');
     expect(html).toContain('id="support-link-note"');

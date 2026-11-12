@@ -39,6 +39,7 @@ export function SettingsView() {
         {saved && <span className="pill pill-ok">Saved</span>}
       </div>
       <ErrorBox error={actionError} />
+      <SupportCard />
       <div className="grid-2">
         <div className="card col">
           <h2>Global</h2>
@@ -199,7 +200,6 @@ export function SettingsView() {
         </div>
       </div>
       <ImportExport onDone={reload} />
-      <SupportCard />
     </>
   );
 }
@@ -211,14 +211,15 @@ export const SOURCE_URL = "https://github.com/marcykay404/JustRefresh";
 
 export function SupportCard() {
   return (
-    <div className="card col">
+    <div className="card col support-card">
       <h2>Support JustRefresh</h2>
       <p className="small muted" style={{ margin: 0 }}>
         JustRefresh is free and open source (MIT), with no ads, accounts or tracking. If it saves you time, you can buy me a coffee. The code is on GitHub, for
         reading, reporting problems or contributing.
       </p>
       <div className="row">
-        <a className="btn" href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-link-note">
+        <a className="btn primary" href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-link-note">
+          <span aria-hidden="true">☕</span>
           Buy me a coffee
         </a>
         <span id="support-link-note" className="small muted">
