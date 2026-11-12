@@ -916,7 +916,8 @@ await test("Agent Integrations: setup for an AI app copies its steps with this e
   await page.getByRole("button", { name: "Copied: paste it into your AI app" }).waitFor();
   const copied = await page.evaluate(() => window.__copied);
   assert.match(copied, new RegExp(`install --extension-id ${extId}`));
-  assert.match(copied, /claude mcp add --scope user justrefresh -- node .*justrefresh-bridge\.mjs mcp/);
+  assert.match(copied, /claude mcp add --scope user justrefresh --/);
+  assert.doesNotMatch(copied, /<you>/);
   await page.close();
 });
 

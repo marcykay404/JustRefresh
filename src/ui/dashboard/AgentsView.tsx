@@ -162,19 +162,22 @@ function ApprovalRow({ approval: a, rule, agentName, act }: { approval: Approval
 
 /** A command or snippet with a Copy button. */
 function CopyLine({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean | null>(false);
   const copy = () =>
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    void navigator.clipboard.writeText(text).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      },
+      () => setCopied(null), // the text stays selectable
+    );
   return (
     <div className="row" style={{ flexWrap: "nowrap", alignItems: "flex-start" }}>
       <pre className="copy-line" aria-label={label} style={{ flex: 1, margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
         {text}
       </pre>
       <button className="small" onClick={copy}>
-        {copied ? "Copied" : "Copy"}
+        {copied ? "Copied" : copied === null ? "Couldn't copy" : "Copy"}
       </button>
     </div>
   );
@@ -188,10 +191,17 @@ function CopyButton({ text, label, className = "small" }: { text: string; label:
       () => setState("copied"),
       () => setState("failed"),
     );
+  const said = state === "copied" ? "Copied: paste it into your AI app" : state === "failed" ? "Couldn't copy. Select the text and copy it yourself." : "";
   return (
-    <button className={className} onClick={copy} onBlur={() => setState("idle")}>
-      {state === "copied" ? "Copied: paste it into your AI app" : state === "failed" ? "Couldn't copy" : label}
-    </button>
+    <>
+      <button className={className} onClick={copy} onBlur={() => setState("idle")}>
+        {state === "copied" ? "Copied: paste it into your AI app" : state === "failed" ? "Couldn't copy" : label}
+      </button>
+      {/* Announced by screen readers; the button's own label changes silently. */}
+      <span className="sr-only" role="status">
+        {said}
+      </span>
+    </>
   );
 }
 
