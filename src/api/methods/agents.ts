@@ -83,6 +83,7 @@ export function agentsMethods(svc: ServiceInternals): Record<string, MethodDef> 
             rule.meta.updatedAt = d.clock.now();
           } else {
             delete c.rules[req.ruleId];
+            for (const o of c.approvals) if (o.ruleId === req.ruleId && o.status === "pending") o.status = "stale";
           }
         });
         return { outcome };

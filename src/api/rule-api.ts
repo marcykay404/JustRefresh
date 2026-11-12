@@ -228,9 +228,14 @@ export class RuleManagementService {
     return rest as unknown as RuleInput;
   }
 
+  /**
+   * Record an agent's request for the user's OK. null = the agent is trusted
+   * (go ahead); { status: "enabled" } = the rule was switched on meanwhile.
+   * Checked and recorded in one write, so a rule switched on in between
+   * doesn't end up with a request waiting to switch it on.
+   */
   async requestApproval(actor: Actor, kind: ApprovalRequest["kind"], rule: Rule) {
-    const config = await this.deps.config.get();
-    const agent = agentFor(actor, config)!;
+    const agent = agentFor(actor, await this.deps.config.get())!;
     if (agent.trustedActivation) return null;
     const req: ApprovalRequest = {
       id: this.newId("approval"),
@@ -241,11 +246,19 @@ export class RuleManagementService {
       createdAt: this.deps.clock.now(),
       status: "pending",
     };
+    let alreadyOn = false;
     await this.deps.config.update((c) => {
-      c.approvals = c.approvals.filter((a) => !(a.ruleId === rule.id && a.kind === kind && a.status === "pending"));
+      const current = c.rules[rule.id];
+      if (kind === "activate" && current?.enabled && !current.meta.draft) {
+        alreadyOn = true;
+        return;
+      }
+      // An earlier request for the same thing is replaced; kept as stale, so an Approve already on screen is answered quietly.
+      for (const a of c.approvals) if (a.ruleId === rule.id && a.kind === kind && a.status === "pending") a.status = "stale";
       c.approvals.push(req);
       c.approvals = c.approvals.slice(-200);
     });
+    if (alreadyOn) return { status: "enabled" as const };
     return { status: "pending_approval" as const, approvalId: req.id, message: "Waiting for the user to approve in the extension dashboard" };
   }
 

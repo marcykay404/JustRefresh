@@ -225,12 +225,45 @@ describe("MCP self-description", () => {
     expect(await pending()).toEqual([]);
   });
 
-  it("an agent can't learn or change the state of a rule it doesn't own through enable", async () => {
+  it("an agent's enable of a rule it doesn't own is refused before the already-on answer", async () => {
     const env = createApiEnv();
     await env.pairAgent();
     const mine = await env.service.call(env.user, "createRule", { rule: { ...SPEC_EXAMPLE, enabled: true } });
     expect((await env.config.get()).rules[mine.id].enabled).toBe(true);
     await expect(env.service.call(env.agent(), "enableRule", { id: mine.id })).rejects.toMatchObject({ code: "forbidden" });
+  });
+
+  it("the user switching a rule on while the agent asks leaves nothing waiting", async () => {
+    for (const order of ["agent first", "user first"]) {
+      const env = createApiEnv();
+      const agent = env.agent();
+      await env.pairAgent();
+      const created = await env.service.call(agent, "createRule", { rule: SPEC_EXAMPLE });
+      const ask = () => env.service.call(agent, "enableRule", { id: created.id });
+      const user = () => env.service.call(env.user, "enableRule", { id: created.id });
+      await Promise.all(order === "agent first" ? [ask(), user()] : [user(), ask()]);
+      const c = await env.config.get();
+      expect(c.rules[created.id].enabled, order).toBe(true);
+      expect(
+        c.approvals.filter((a) => a.status === "pending"),
+        order,
+      ).toEqual([]);
+    }
+  });
+
+  it("an Approve on a request the agent has since replaced, or for a deleted rule, is answered quietly", async () => {
+    const env = createApiEnv();
+    const agent = env.agent();
+    await env.pairAgent();
+    const created = await env.service.call(agent, "createRule", { rule: SPEC_EXAMPLE });
+    const first = await env.service.call(agent, "enableRule", { id: created.id });
+    const second = await env.service.call(agent, "enableRule", { id: created.id });
+    expect(await env.service.call(env.user, "resolveApproval", { id: first.approvalId, approve: true })).toEqual({ outcome: "stale" });
+    expect((await env.config.get()).rules[created.id].enabled).toBe(false);
+    // Deleting the draft settles what was waiting for it (the badge stops counting it).
+    await env.service.call(agent, "deleteRule", { id: created.id });
+    expect((await env.config.get()).approvals.filter((a) => a.status === "pending")).toEqual([]);
+    expect(await env.service.call(env.user, "resolveApproval", { id: second.approvalId, approve: true })).toEqual({ outcome: "stale" });
   });
 
   it("disable withdraws a waiting enable request; enabling a rule already on asks nothing", async () => {

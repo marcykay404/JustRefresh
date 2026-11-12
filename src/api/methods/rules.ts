@@ -87,6 +87,8 @@ export function rulesMethods(svc: ServiceInternals): Record<string, MethodDef> {
         }
         await d.config.update((c) => {
           delete c.rules[p.id];
+          // Nothing left to approve for it.
+          for (const a of c.approvals) if (a.ruleId === p.id && a.status === "pending") a.status = "stale";
         });
         return { status: "deleted" };
       },
