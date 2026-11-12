@@ -19,6 +19,8 @@ import { registerExternalMessaging } from "../integrations/external-messaging";
 import { bridgeStatus, setBridgeEnabled } from "../integrations/native-bridge";
 import { STATUS_LABELS, type TabRuntime } from "../core/types";
 import { tabBadge } from "../core/badge";
+import { healthReport, startupDone, startupStep, timed } from "./diagnostics";
+import { HEALTH_CHANNEL } from "../shared/messaging-types";
 
 /** The generated JSON Schemas ship as package files; read them once, when an agent first asks. */
 let schemaBundle: Promise<SchemaBundle> | null = null;
@@ -74,8 +76,10 @@ const BOOT_KEY = "boot";
  */
 const ready: Promise<void> = (async () => {
   try {
+    startupStep("reading its state");
     const booted = (await chrome.storage.session.get(BOOT_KEY))[BOOT_KEY];
     if (!booted) {
+      startupStep("restoring per-tab settings");
       const tabs = await chromeBrowser.listTabs();
       await config.update((c) => {
         const r = restoreTabOverrides(c.tabOverrides, tabs);
@@ -85,16 +89,25 @@ const ready: Promise<void> = (async () => {
         }
       });
       await chrome.storage.session.set({ [BOOT_KEY]: Date.now() });
+      startupStep("registering the content script");
       await syncContentScripts().catch((e) => console.warn("Content script registration failed", e));
-      await engine.reconcileAll("startup");
+      startupStep("checking every tab (browser or extension just started)");
+      await engine.reconcileAll("startup", { progress: startupStep });
     } else {
-      await engine.reconcileAll("wake");
+      startupStep("checking every tab (waking up)");
+      await engine.reconcileAll("wake", { progress: startupStep });
     }
     const settings = (await config.get()).settings;
-    if (settings.nativeBridgeEnabled) await setBridgeEnabled(service, true);
+    if (settings.nativeBridgeEnabled) {
+      startupStep("connecting the desktop bridge");
+      await setBridgeEnabled(service, true);
+    }
+    startupStep("updating the toolbar badge");
     await updateBadge();
   } catch (e) {
     console.error("Startup reconciliation failed", e);
+  } finally {
+    startupDone();
   }
 })();
 
@@ -142,9 +155,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-async function after<T>(fn: () => Promise<T>): Promise<T> {
-  await ready;
-  return fn();
+/** Run `fn` once startup has finished; `what` names it in the health report while it waits or runs. */
+async function after<T>(fn: () => Promise<T>, what = "an event"): Promise<T> {
+  return timed(what, async () => {
+    await ready;
+    return fn();
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -158,17 +174,17 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 chrome.runtime.onStartup.addListener(() => void ready);
 
-chrome.alarms.onAlarm.addListener((alarm) => void after(() => engine.handleAlarm(alarm.name)));
-setShortTimerHandler((name) => void after(() => engine.handleAlarm(name)));
+chrome.alarms.onAlarm.addListener((alarm) => void after(() => engine.handleAlarm(alarm.name), `timer ${alarm.name}`));
+setShortTimerHandler((name) => void after(() => engine.handleAlarm(name), `timer ${name}`));
 
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.url === undefined && change.status === undefined && change.discarded === undefined) return;
-  void after(() => engine.onTabUpdated(tabId, { url: change.url, status: change.status }));
+  void after(() => engine.onTabUpdated(tabId, { url: change.url, status: change.status }), `tab ${tabId} ${change.status ?? "address"} change`);
 });
 chrome.tabs.onCreated.addListener((tab) => {
-  if (tab.id !== undefined) void after(() => engine.syncTab(tab.id!));
+  if (tab.id !== undefined) void after(() => engine.syncTab(tab.id!), `new tab ${tab.id}`);
 });
-chrome.tabs.onRemoved.addListener((tabId) => void after(() => engine.onTabRemoved(tabId)));
+chrome.tabs.onRemoved.addListener((tabId) => void after(() => engine.onTabRemoved(tabId), `closed tab ${tabId}`));
 chrome.tabs.onReplaced.addListener((added, removed) => void after(() => engine.onTabReplaced(added, removed)));
 
 chrome.permissions.onAdded.addListener(
@@ -177,9 +193,9 @@ chrome.permissions.onAdded.addListener(
       await syncContentScripts();
       await injectIntoOpenTabs();
       await engine.reconcileAll("config");
-    }),
+    }, "site access granted: setting up open tabs"),
 );
-chrome.permissions.onRemoved.addListener(() => void after(() => syncContentScripts()));
+chrome.permissions.onRemoved.addListener(() => void after(() => syncContentScripts(), "site access removed"));
 
 chrome.notifications.onClicked.addListener((id) => {
   const parts = id.split(":");
@@ -195,6 +211,11 @@ chrome.notifications.onClicked.addListener((id) => {
 
 /* Internal API for the popup / dashboard. */
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // What it's busy with: answered at once, without waiting for startup.
+  if ((msg as { channel?: string } | null)?.channel === HEALTH_CHANNEL && isExtensionPage(sender)) {
+    sendResponse(healthReport());
+    return false;
+  }
   if (!isApiRequest(msg)) return false;
   if (!isExtensionPage(sender)) {
     sendResponse({ ok: false, error: { code: "forbidden", message: "Untrusted sender" } });
@@ -208,7 +229,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } catch (e) {
       return toErrorResponse(e);
     }
-  }).then(sendResponse);
+  }, `request ${msg.method}`).then(sendResponse);
   return true;
 });
 

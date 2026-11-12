@@ -26,6 +26,22 @@ export * from "./engine/ports";
 export { FORM_RESULT_REASON } from "./safety";
 export { FAST_WAIT_REASON } from "./engine/fast-site-limit";
 
+export interface ReconcileOptions {
+  /** The config before a change: only tabs it affects are re-checked. */
+  before?: Config;
+  /** Told which tab it's on (for the health report while starting up). */
+  progress?: (step: string) => void;
+}
+
+/** A tab's host for progress messages (no path or query: they can hold private details). */
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).host || url.split(":")[0]!;
+  } catch {
+    return "?";
+  }
+};
+
 export class RuleEngine extends CycleEngine {
   /* ---------------- reconciliation ---------------- */
 
@@ -34,7 +50,7 @@ export class RuleEngine extends CycleEngine {
    * service-worker wake, and after configuration changes. Recreates missing
    * alarms, removes stale ones, and staggers overdue schedules.
    */
-  async reconcileAll(reason: "startup" | "wake" | "config", opts: { before?: Config } = {}): Promise<void> {
+  async reconcileAll(reason: "startup" | "wake" | "config", opts: ReconcileOptions = {}): Promise<void> {
     // One at a time: a later reconcile that skips unaffected tabs must not
     // overtake an earlier one still waiting for a busy tab, or the earlier one
     // would write last, with the older config.
@@ -42,13 +58,16 @@ export class RuleEngine extends CycleEngine {
     this.reconcileChain = run.catch(() => undefined);
     const tabs = await run;
     if (reason === "startup") {
-      for (const tab of tabs) await this.handleEvent(tab.id, "startup");
+      for (const [i, tab] of tabs.entries()) {
+        opts.progress?.(`running startup rules: tab ${i + 1} of ${tabs.length} (${hostOf(tab.url)})`);
+        await this.handleEvent(tab.id, "startup");
+      }
     }
   }
 
   private reconcileChain: Promise<unknown> = Promise.resolve();
 
-  private async reconcileOnce(reason: "startup" | "wake" | "config", opts: { before?: Config }): Promise<TabInfo[]> {
+  private async reconcileOnce(reason: "startup" | "wake" | "config", opts: ReconcileOptions): Promise<TabInfo[]> {
     const [config, tabs, runtimes, alarms] = await Promise.all([
       this.deps.stores.config.get(),
       this.deps.browser.listTabs(),
@@ -68,7 +87,8 @@ export class RuleEngine extends CycleEngine {
     }
     const alarmMap = new Map(alarms.map((a) => [a.name, a.scheduledTime]));
     let slot = 0;
-    for (const tab of tabs) {
+    for (const [i, tab] of tabs.entries()) {
+      opts.progress?.(`checking tab ${i + 1} of ${tabs.length} (${hostOf(tab.url)})`);
       const res = resolveTab(tab, config);
       // After a change (an agent's or the user's), only tabs whose controlling
       // rule or state the change affects need a look: the rest are already in

@@ -9,12 +9,13 @@
 import { useEffect, useState } from "react";
 import { api, originOf, requestOrigins } from "../shared/api";
 import { useApi, useNow } from "../shared/hooks";
+import { StillLoading } from "../shared/StillLoading";
 import { ErrorBox } from "../shared/components";
 import type { Rule, TabRuntime } from "../../core/types";
 import { useDialog } from "../shared/dialog";
 import { describeRule } from "./describe";
 import { startUntil } from "./actions";
-import { BlockedCard, RunningCard, StartCard, type BlockedKind } from "./cards";
+import { BlockedCard, type BlockedKind, isOwnPage, RunningCard, StartCard } from "./cards";
 import { useIntervalPicker } from "./picker";
 import {
   Chevron,
@@ -69,7 +70,7 @@ export function Popup() {
     return (
       <div className="popup-root">
         {header}
-        {state.error ? <ErrorBox error={state.error} /> : <div className="muted">Loading…</div>}
+        {state.error ? <ErrorBox error={state.error} /> : <StillLoading onRetry={() => void state.reload()} />}
       </div>
     );
   }
@@ -94,7 +95,7 @@ function tabFacts(s: TabState, overview: Overview | null) {
     // The interval actually in effect (fast intervals are clamped to 30 s while they're turned off).
     currentInterval: s.interval ?? s.override?.intervalSeconds ?? overview?.settings.defaultIntervalSeconds ?? 300,
     origin,
-    siteName: origin === "file:///*" ? "local files" : hostLabel(s.tab.url),
+    siteName: isOwnPage(s.tab.url) ? "JustRefresh" : origin === "file:///*" ? "local files" : hostLabel(s.tab.url),
     protectionOn: s.safety.pauseWhileTyping || s.safety.protectUnsavedChanges || s.safety.pauseOnMouse || s.safety.pauseOnScroll,
   };
 }
@@ -177,7 +178,14 @@ function TabPopup({
   const card = () => {
     if (f.blocked)
       return (
-        <BlockedCard kind={f.blocked} tabId={tabId} controllerName={s.resolution.controllerName} reason={s.resolution.reason} run={(m, p) => void run(m, p)} />
+        <BlockedCard
+          kind={f.blocked}
+          url={s.tab.url}
+          tabId={tabId}
+          controllerName={s.resolution.controllerName}
+          reason={s.resolution.reason}
+          run={(m, p) => void run(m, p)}
+        />
       );
     if (view === "until") {
       return (

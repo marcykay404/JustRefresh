@@ -422,3 +422,16 @@ describe("addresses with a ?… part", () => {
     expect(text()).not.toContain("different part after");
   });
 });
+
+describe("pages the popup can't refresh", () => {
+  it("says why, for JustRefresh's own pages, the browser's own pages and the Web Store", async () => {
+    const { isOwnPage, restrictedMessage } = await import("@/ui/popup/cards");
+    const own = "chrome-extension://abc/";
+    expect(isOwnPage(`${own}dashboard.html#/settings`, own)).toBe(true);
+    expect(isOwnPage("https://example.com/", own)).toBe(false);
+    expect(isOwnPage("https://example.com/", "")).toBe(false);
+    expect(restrictedMessage(`${own}dashboard.html`, own)).toMatch(/JustRefresh's own page, so there's nothing to refresh here/);
+    expect(restrictedMessage("chrome://settings/", own)).toMatch(/browser's own pages/);
+    expect(restrictedMessage("https://chromewebstore.google.com/detail/x", own)).toMatch(/Chrome Web Store/);
+  });
+});

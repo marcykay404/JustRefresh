@@ -7,8 +7,29 @@ import { Countdown, openDashboard, Stats } from "./parts";
 /** Situations where Start can't help: say why, and offer the fix. */
 export type BlockedKind = "restricted" | "tab_excluded" | "paused" | "disabled" | "url_excluded";
 
+/** One of JustRefresh's own pages (dashboard, settings…). */
+export function isOwnPage(url: string, ownBase = chrome.runtime.getURL("")): boolean {
+  return ownBase !== "" && url.startsWith(ownBase);
+}
+
+/** Why a page can't be refreshed at all, in words: JustRefresh's own page, Chrome's, or the Web Store. */
+export function restrictedMessage(url: string, ownBase = chrome.runtime.getURL("")): string {
+  if (isOwnPage(url, ownBase)) {
+    return "This is JustRefresh's own page, so there's nothing to refresh here. Go to the website you want to refresh and open JustRefresh there.";
+  }
+  if (/^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/.test(url)) {
+    return "Chrome doesn't let extensions work on the Chrome Web Store, so JustRefresh can't refresh it.";
+  }
+  if (/^(chrome|edge|brave|about|devtools|chrome-extension|view-source):/.test(url)) {
+    return "This is one of the browser's own pages (settings, extensions, new tab…). Chrome doesn't let extensions refresh those.";
+  }
+  return "Chrome doesn't let extensions refresh this page.";
+}
+
 export function BlockedCard(p: {
   kind: BlockedKind;
+  /** The tab's address (to say why a restricted page can't be refreshed). */
+  url: string;
   tabId: number;
   controllerName: string | null;
   reason?: string;
@@ -18,7 +39,7 @@ export function BlockedCard(p: {
     case "restricted":
       return (
         <p className="muted" style={{ margin: 0 }}>
-          Chrome doesn't let extensions refresh this page.
+          {restrictedMessage(p.url)}
         </p>
       );
     case "tab_excluded":
