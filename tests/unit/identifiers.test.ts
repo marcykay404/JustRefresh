@@ -7,8 +7,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { agentKeyPath, BRIDGE_FILE, createMcpHandler, DATA_DIR_NAME, eventsFilePath, MCP_SERVER_KEY, TOOLS } from "../../bridge/lib.mjs";
-import { HOST, locations } from "../../bridge/install-lib.mjs";
-import { agentSetupPrompt, BRIDGE_FILE as DASHBOARD_BRIDGE_FILE, bridgePaths, mcpSettings } from "@/ui/dashboard/agent-setup";
+import { HOST, locations, STORE_EXTENSION_ID } from "../../bridge/install-lib.mjs";
+import {
+  agentSetupPrompt,
+  BRIDGE_FILE as DASHBOARD_BRIDGE_FILE,
+  bridgePaths,
+  mcpSettings,
+  STORE_EXTENSION_ID as DASHBOARD_STORE_ID,
+} from "@/ui/dashboard/agent-setup";
+import { npmPackage } from "../../scripts/npm-package.mjs";
 import { AGENT_PROTOCOL } from "@/integrations/external-messaging";
 import { BUNDLE_FORMAT } from "@/integrations/json-import";
 import { NATIVE_HOST } from "@/integrations/native-bridge";
@@ -39,6 +46,19 @@ describe("published identifiers (fixed once published)", () => {
 
   it("agent protocol: justrefresh-agent/1", () => expect(AGENT_PROTOCOL).toBe("justrefresh-agent/1"));
 
+  it("the Chrome Web Store extension id, the same for the installer and the dashboard", () => {
+    expect(STORE_EXTENSION_ID).toBe("hgdoldonldledoimnhlpkmipchjfgolf");
+    expect(DASHBOARD_STORE_ID).toBe(STORE_EXTENSION_ID);
+  });
+
+  it("the npm package: justrefresh, whose command runs the bridge file, with no dependencies", () => {
+    const pkg = npmPackage("1.2.3");
+    expect(pkg).toMatchObject({ name: "justrefresh", version: "1.2.3", license: "MIT", type: "module", bin: { justrefresh: BRIDGE_FILE } });
+    expect(pkg.files).toEqual([BRIDGE_FILE, "README.md", "LICENSE"]);
+    expect(pkg.engines.node).toBe(">=18");
+    expect(pkg).not.toHaveProperty("dependencies");
+  });
+
   it("export format tag: justrefresh", () => expect(BUNDLE_FORMAT).toBe("justrefresh"));
 
   it("MCP: the server is justrefresh in users' settings and in its own name; its tool names", async () => {
@@ -47,7 +67,7 @@ describe("published identifiers (fixed once published)", () => {
     const init = await handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
     expect(init.result.serverInfo.name).toBe("justrefresh");
     expect(Object.keys(JSON.parse(mcpSettings(bridgePaths("mac"))).mcpServers)).toEqual(["justrefresh"]);
-    expect(agentSetupPrompt("a".repeat(32), "mac")).toContain("claude mcp add --scope user justrefresh --");
+    expect(agentSetupPrompt("a".repeat(32), "mac", "0.1.0")).toContain("claude mcp add --scope user justrefresh --");
     // Agents' prompts, skills and permission settings name these; new tools may be added, none renamed or removed.
     const published = [
       "refresh_get_capabilities",

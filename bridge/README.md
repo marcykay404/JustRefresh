@@ -28,8 +28,23 @@ MCP client ──stdio──▶ justrefresh-bridge.mjs mcp ──local socket + 
 
 ## Setup
 
-The dashboard walks you through it (Dashboard → Agent Integrations → Desktop
-AI apps → Set up), with the commands ready to copy:
+With JustRefresh from the Chrome Web Store, one command installs the bridge
+from npm (the `justrefresh` package; use the version the dashboard shows, the
+same as the extension's):
+
+```bash
+npx -y justrefresh@<version> install
+```
+
+It needs no extension id (`--extension-id <id>` installs for another copy;
+copies it was installed for before stay registered until you uninstall), and
+prints the MCP settings plus a ready-made `claude mcp add` line. Your AI app then starts the installed copy in
+`~/.justrefresh/bin`, the same one Chrome starts, so both sides match.
+
+For any other copy of JustRefresh (unpacked from a checkout or a release
+zip, or another store), the dashboard walks you through downloading the
+bridge instead (Dashboard → Agent Integrations → Desktop AI apps → Set up),
+with the commands ready to copy:
 
 1. Switch on **Allow desktop AI apps to connect** (grants the optional
    `nativeMessaging` permission). The first time, click **Restart JustRefresh**

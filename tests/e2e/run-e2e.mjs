@@ -946,6 +946,29 @@ await test("the desktop bridge is packaged as one runnable file", async () => {
   );
 });
 
+await test("the npm package: only the bridge, its README and licence; npx-style install needs no extension id", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const built = spawnSync(process.execPath, [join(root, "scripts", "build-npm.mjs")], { encoding: "utf8" });
+  assert.equal(built.status, 0, built.stderr);
+  const pkgDir = join(root, "dist-npm");
+  const pack = spawnSync("npm", ["pack", "--dry-run", "--json"], { cwd: pkgDir, encoding: "utf8", shell: process.platform === "win32" });
+  assert.equal(pack.status, 0, pack.stderr);
+  const [info] = JSON.parse(pack.stdout);
+  assert.equal(info.name, "justrefresh");
+  assert.equal(info.version, JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version);
+  assert.deepEqual(info.files.map((f) => f.path).sort(), ["LICENSE", "README.md", "justrefresh-bridge.mjs", "package.json"]);
+  const main = readFileSync(join(pkgDir, "justrefresh-bridge.mjs"), "utf8");
+  assert.ok(main.startsWith("#!/usr/bin/env node\n"), "runs as a command");
+  // As `npx -y justrefresh install` would: from the package folder, no id.
+  const home = mkdtempSync(join(tmpdir(), "justrefresh-npm-home-"));
+  const env = { ...process.env, HOME: home, JUSTREFRESH_BRIDGE_DIR: join(home, ".justrefresh") };
+  const inst = spawnSync(process.execPath, [join(pkgDir, "justrefresh-bridge.mjs"), "install", "--browser", "chrome"], { encoding: "utf8", env });
+  assert.equal(inst.status, 0, inst.stderr);
+  assert.match(inst.stdout, /for JustRefresh from the Chrome Web Store \(hgdoldonldledoimnhlpkmipchjfgolf\)/);
+  assert.match(inst.stdout, /Claude Code: claude mcp add --scope user justrefresh -- ['"].*node['"] ['"].*justrefresh-bridge\.mjs['"] mcp/);
+  assert.equal(readFileSync(join(home, ".justrefresh", "bin", "justrefresh-bridge.mjs"), "utf8"), main);
+});
+
 await test("Agent Integrations: setup for an AI app copies its steps with this extension's id", async () => {
   const page = await context.newPage();
   await page.addInitScript(() => {

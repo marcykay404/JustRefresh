@@ -329,6 +329,6 @@ if (mode === "native-host" || (mode ?? "").startsWith("chrome-extension://")) ru
 else if (mode === "mcp") runMcp();
 else if (mode === "install" || mode === "uninstall") runInstall(process.argv.slice(2));
 else {
-  console.error("Usage: justrefresh-bridge.mjs install --extension-id <id> | uninstall | native-host | mcp");
+  console.error("Usage: justrefresh-bridge.mjs install [--extension-id <id>] [--browser <name>] | uninstall | native-host | mcp");
   process.exit(2);
 }

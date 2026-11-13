@@ -9,7 +9,7 @@ export const MAX_CYCLOMATIC = 15;
 export const MAX_COGNITIVE = 15;
 
 export default [
-  { ignores: ["dist/**", "node_modules/**", "test-results/**", "coverage/**"] },
+  { ignores: ["dist/**", "dist-npm/**", "node_modules/**", "test-results/**", "coverage/**"] },
   {
     files: ["src/**/*.{ts,tsx}"],
     languageOptions: { parser: tseslint.parser, parserOptions: { ecmaFeatures: { jsx: true } } },

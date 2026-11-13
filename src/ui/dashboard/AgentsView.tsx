@@ -7,7 +7,7 @@ import type { AgentRecord, AgentScope, ApprovalRequest, AuditEntry, Rule, Settin
 import { useDialog } from "../shared/dialog";
 import { describeRule, intervalLabel } from "../popup/describe";
 import { matchesAny, patternToString } from "../../core/url-pattern";
-import { agentSetupPrompt, BRIDGE_FILE, bridgePaths, installCommand, mcpSettings, platformOf } from "./agent-setup";
+import { agentSetupPrompt, BRIDGE_FILE, bridgeFromNpm, bridgePaths, installCommand, mcpSettings, npxInstallCommand, platformOf } from "./agent-setup";
 
 interface AgentsData {
   agents: AgentRecord[];
@@ -213,7 +213,15 @@ function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: bool
   const platform = platformOf(navigator.userAgent);
   const paths = bridgePaths(platform);
   const { bin } = paths;
-  const command = installCommand(chrome.runtime.id, paths);
+  const version = chrome.runtime.getManifest().version;
+  // From the Chrome Web Store: the bridge of this version comes from npm. Any other copy: the download.
+  const npm = bridgeFromNpm(chrome.runtime.id);
+  const command = npm ? npxInstallCommand(version) : installCommand(chrome.runtime.id, paths);
+  const download = (
+    <a className="btn small" href={chrome.runtime.getURL(`bridge/${BRIDGE_FILE}`)} download={BRIDGE_FILE}>
+      Download the bridge
+    </a>
+  );
   // MCP apps don't expand ~ or $HOME: the installer prints this with the real path.
   const mcp = mcpSettings(paths);
   return (
@@ -221,23 +229,35 @@ function BridgeSetup({ enabled, connected }: { enabled: boolean; connected: bool
       <summary className="small">Set up (about two minutes; needs Node.js 18 or later)</summary>
       <ol className="small col setup-steps" style={{ gap: 8, margin: "8px 0 0", paddingLeft: 20 }}>
         <li>Switch on “Allow desktop AI apps to connect” above.</li>
-        <li>
-          <a className="btn small" href={chrome.runtime.getURL(`bridge/${BRIDGE_FILE}`)} download={BRIDGE_FILE}>
-            Download the bridge
-          </a>{" "}
-          (one file, <code>{BRIDGE_FILE}</code>).
-        </li>
+        {npm ? (
+          <li>
+            Nothing to download: the install command below gets the bridge from npm, at this version of JustRefresh. If it fails (no npm, offline, or this
+            version isn't on npm yet), {download} instead and run <code>{installCommand(chrome.runtime.id, paths)}</code>.
+          </li>
+        ) : (
+          <li>
+            {download} (one file, <code>{BRIDGE_FILE}</code>).
+          </li>
+        )}
         <li className="col" style={{ gap: 6 }}>
           <span>
             <strong>Let your AI app do this step and step 5:</strong> if it can run commands (like Claude Code), paste these instructions into it. It installs
             the bridge and adds JustRefresh to its own settings; you still restart it and approve it here.
           </span>
           <span>
-            <CopyButton text={agentSetupPrompt(chrome.runtime.id, platform)} label="Copy setup for your AI app" />
+            <CopyButton text={agentSetupPrompt(chrome.runtime.id, platform, version)} label="Copy setup for your AI app" />
           </span>
           <span>
-            Or install it yourself: run this in a terminal (change the folder or file name if yours differ). It copies itself to <code>{bin}</code> and
-            registers with your browsers; you can delete the download afterwards.
+            {npm ? (
+              <>
+                Or install it yourself: run this in a terminal. It copies the bridge to <code>{bin}</code> and registers it with your browsers.
+              </>
+            ) : (
+              <>
+                Or install it yourself: run this in a terminal (change the folder or file name if yours differ). It copies itself to <code>{bin}</code> and
+                registers with your browsers; you can delete the download afterwards.
+              </>
+            )}
           </span>
           <CopyLine label="Install command" text={command} />
         </li>

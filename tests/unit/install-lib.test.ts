@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error plain ESM without types
-import { BROWSERS, install, locations, targetBrowsers, uninstall } from "../../bridge/install-lib.mjs";
+import { BROWSERS, install, locations, parseInstallArgs, STORE_EXTENSION_ID, targetBrowsers, uninstall } from "../../bridge/install-lib.mjs";
 
 const ID = "abcdefghijklmnopabcdefghijklmnop";
 const home = () => mkdtempSync(join(tmpdir(), "jr-install-"));
@@ -104,5 +104,57 @@ describe("installing the downloaded file", () => {
       log: () => undefined,
     });
     for (const f of ["justrefresh-bridge.mjs", "lib.mjs", "install-lib.mjs"]) expect(existsSync(join(loc.bin, f)), f).toBe(true);
+  });
+});
+
+describe("installing for JustRefresh from the Chrome Web Store", () => {
+  it.skipIf(process.platform === "win32")("needs no extension id, and prints a ready-made claude mcp add line", () => {
+    const h = home();
+    const loc = locations({ home: h, platform: "darwin", env: { JUSTREFRESH_BRIDGE_DIR: join(h, ".justrefresh") } });
+    const src = join(__dirname, "../../bridge");
+    const lines: string[] = [];
+    install({
+      sourceDir: src,
+      entry: join(src, "justrefresh-bridge.mjs"),
+      node: "/usr/local/bin/node",
+      loc,
+      run: () => undefined,
+      log: (l: string) => lines.push(l),
+    });
+    const manifest = JSON.parse(readFileSync(join(h, "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.justrefresh.bridge.json"), "utf8"));
+    expect(manifest.allowed_origins).toEqual([`chrome-extension://${STORE_EXTENSION_ID}/`]);
+    expect(lines.join("\n")).toContain("for JustRefresh from the Chrome Web Store");
+    expect(lines).toContain(`\nClaude Code: claude mcp add --scope user justrefresh -- '/usr/local/bin/node' '${join(loc.bin, "justrefresh-bridge.mjs")}' mcp`);
+    // Another copy still names its own id.
+    expect(() => install({ extensionId: "not-an-id", sourceDir: src, loc, run: () => undefined, log: () => undefined })).toThrow(/32-letter id/);
+  });
+});
+
+describe("install options", () => {
+  it('are strict: a mistyped or empty option is refused, not taken as "the store copy"', () => {
+    expect(parseInstallArgs(["install"])).toEqual({});
+    expect(parseInstallArgs(["install", "--extension-id", ID, "--browser", "edge"])).toEqual({ extensionId: ID, browser: "edge" });
+    expect(parseInstallArgs(["--extension-id=" + ID])).toEqual({ extensionId: ID });
+    expect(() => parseInstallArgs(["install", "--extension-id"])).toThrow(/needs a value/);
+    expect(() => parseInstallArgs(["install", "--extension-id", "--browser", "chrome"])).toThrow(/needs a value/);
+    expect(() => parseInstallArgs(["install", "--extension-id="])).toThrow(/needs a value/);
+    expect(() => parseInstallArgs(["install", "--extensionid", ID])).toThrow(/Unknown option "--extensionid"/);
+    expect(() => parseInstallArgs(["install", ID])).toThrow(/Unknown option/);
+  });
+
+  it.skipIf(process.platform === "win32")("installing for one copy keeps the others it was installed for", () => {
+    const h = home();
+    const loc = locations({ home: h, platform: "darwin", env: { JUSTREFRESH_BRIDGE_DIR: join(h, ".justrefresh") } });
+    const src = join(__dirname, "../../bridge");
+    const quiet = { sourceDir: src, entry: join(src, "justrefresh-bridge.mjs"), node: "/usr/local/bin/node", loc, run: () => undefined, browser: "chrome" };
+    install({ ...quiet, extensionId: ID, log: () => undefined });
+    const lines: string[] = [];
+    install({ ...quiet, log: (l: string) => lines.push(l) }); // the store copy
+    const file = join(h, "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.justrefresh.bridge.json");
+    expect(JSON.parse(readFileSync(file, "utf8")).allowed_origins).toEqual([`chrome-extension://${STORE_EXTENSION_ID}/`, `chrome-extension://${ID}/`]);
+    expect(lines.join("\n")).toContain(`still also for ${ID}`);
+    // Installing again for the same copy doesn't list it twice.
+    install({ ...quiet, log: () => undefined });
+    expect(JSON.parse(readFileSync(file, "utf8")).allowed_origins).toHaveLength(2);
   });
 });
