@@ -7,6 +7,8 @@ in the description, or the UI in the screenshots changes.
 **Listing:** https://chromewebstore.google.com/detail/justrefresh/hgdoldonldledoimnhlpkmipchjfgolf
 (live since 0.1.0, 2026-11-15).
 
+The same extension on Microsoft Edge Add-ons: [EDGEADDONS.md](EDGEADDONS.md).
+
 ## Store listing
 
 **Name:** JustRefresh

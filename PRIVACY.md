@@ -1,8 +1,9 @@
 # JustRefresh privacy policy
 
-JustRefresh is a browser extension that refreshes tabs for you. It has no
-account, no servers and no analytics. Nothing is sent to the developer, and
-nothing is sent to anyone else unless you switch on one of the options under
+JustRefresh is a browser extension (for Chrome and Microsoft Edge) that
+refreshes tabs for you. It has no account, no servers and no analytics.
+Nothing is sent to the developer, and nothing is sent to anyone else unless
+you switch on one of the options under
 [What leaves your browser](#what-leaves-your-browser).
 
 ## What it stores, and where
@@ -12,7 +13,7 @@ Your rules, settings, which tabs are refreshing, a history of recent refreshes
 do, and the last week's events about each agent's own rules are stored in your
 browser (`chrome.storage`), on your device. Tabs you set to refresh are
 remembered by address and title, so they resume after a restart; the rest of
-the state of running tabs is kept only until Chrome closes.
+the state of running tabs is kept only until the browser closes.
 
 - Clear the history on the History page, and the agent activity log in Agent
   Integrations. **Reset to defaults** in Dashboard → Settings deletes all of
@@ -41,8 +42,8 @@ the state of running tabs is kept only until Chrome closes.
 
 It asks for access to a site when you turn refreshing on there (or for several
 selected tabs at once), and for every site only if you press "Allow access to
-all sites" in Settings. You can remove access in Settings or in Chrome at any
-time.
+all sites" in Settings. You can remove access in Settings or in the browser at
+any time.
 
 ## What leaves your browser
 

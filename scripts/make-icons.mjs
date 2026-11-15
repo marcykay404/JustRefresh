@@ -110,4 +110,6 @@ for (const s of [16, 32, 48, 128]) writeFileSync(`public/icons/icon${s}.png`, ic
 // Chrome Web Store icon: 128×128 with the artwork at 96×96 and 16 px of transparent padding.
 mkdirSync("store", { recursive: true });
 writeFileSync("store/icon-128.png", icon(128, 16));
+// Edge Add-ons logo: 1:1, 300×300 recommended (128×128 minimum); a little padding, like the toolbar icon.
+writeFileSync("store/edge-logo-300.png", icon(300, 12));
 console.log("icons written");
