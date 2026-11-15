@@ -35,7 +35,13 @@ AI agents all drive through **one** Rule Management API.
 
 Local-first: no account, no backend, no telemetry.
 
-## Install (unpacked)
+## Install
+
+**[Get JustRefresh on the Chrome Web Store](https://chromewebstore.google.com/detail/justrefresh/hgdoldonldledoimnhlpkmipchjfgolf)**
+(Chrome 120+). Each [release](https://github.com/marcykay404/JustRefresh/releases)
+also has the same build as a zip, to load unpacked.
+
+### From source (unpacked)
 
 ```bash
 npm install

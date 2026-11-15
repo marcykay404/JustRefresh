@@ -4,6 +4,9 @@ Everything the Chrome Web Store developer dashboard asks for, kept next to the
 code so it changes with it. Update this file whenever a permission, a feature
 in the description, or the UI in the screenshots changes.
 
+**Listing:** https://chromewebstore.google.com/detail/justrefresh/hgdoldonldledoimnhlpkmipchjfgolf
+(live since 0.1.0, 2026-11-15).
+
 ## Store listing
 
 **Name:** JustRefresh
@@ -123,12 +126,12 @@ exports or agents users have set up; `tests/unit/identifiers.test.ts` pins them.
 | Bridge files users rely on | `~/.justrefresh/events/<agent>.jsonl`, `~/.justrefresh/agents/<agent>.key`                                                                 |
 | MCP server                 | `justrefresh` in users' MCP settings and as the server's own name; tool names `refresh_*` (new ones may be added, none renamed or removed) |
 | Webhook messages           | `"source": "justrefresh"`                                                                                                                  |
-| npm package                | `justrefresh` (not yet published; the name was free on 2026-11-12)                                                                         |
+| npm package                | `justrefresh`, first published at 0.1.1 (0.1.0 shipped without it)                                                                         |
 
 ## Before each upload
 
 - Bump `version` in `package.json` (the build copies it into the manifest), then `npm run check`, and tag the release.
-- **Publish the bridge to npm at the same version first**: `npm run build:npm`, then `cd dist-npm && npm publish`. The store build's dashboard tells users to run `npx -y justrefresh@<its version> install`, so that version must be on npm before the update reaches them.
+- **Publish the bridge to npm at the same version first**: `npm run build:npm`, then `cd dist-npm && npm publish`. The store build's dashboard tells users to run `npx -y justrefresh@<its version> install`, so that version must be on npm before the update reaches them. Then check it: `npm view justrefresh@<version>`, and run `npx -y justrefresh@<version> install` once (it installs for the store ID, which unpacked builds never exercise).
 - Regenerate the images if the popup or dashboard changed: `npm run build && npm run store:assets`.
-- Upload a zip of `dist/` (not the repo).
+- Upload a zip of `dist/` (not the repo), and attach the same zip, with its SHA-256, to the GitHub release for the tag.
 - Check this file still matches the manifest's permissions.
