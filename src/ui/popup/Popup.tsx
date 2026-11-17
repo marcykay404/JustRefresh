@@ -11,6 +11,7 @@ import { api, originOf, requestOrigins } from "../shared/api";
 import { askAccessThen, cancelAfterAccess, type AfterAccessRequest } from "../shared/access";
 import { fileAccessAllowed, openChromeSiteAccess } from "../shared/chrome-settings";
 import { useApi, useNow } from "../shared/hooks";
+import { countdownOf } from "../shared/format";
 import { StillLoading } from "../shared/StillLoading";
 import { ErrorBox } from "../shared/components";
 import type { Rule, TabRuntime } from "../../core/types";
@@ -110,12 +111,6 @@ function blockedKind(s: TabState): BlockedKind | null {
   if (kind === "restricted") return "restricted";
   if (s.override?.mode === "excluded") return "tab_excluded";
   return kind === "paused" || kind === "disabled" || kind === "url_excluded" ? kind : null;
-}
-
-function countdownOf(rt: TabRuntime | null, now: number, intervalSeconds: number) {
-  const countdown = rt?.nextDueAt ? Math.max(0, rt.nextDueAt - now) : null;
-  const progress = countdown !== null && intervalSeconds ? Math.min(100, Math.max(0, 100 - (countdown / (intervalSeconds * 1000)) * 100)) : 0;
-  return { countdown, progress };
 }
 
 function TabPopup({

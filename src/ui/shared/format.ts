@@ -1,4 +1,4 @@
-import type { ExecutionStatus } from "../../core/types";
+import type { ExecutionStatus, TabRuntime } from "../../core/types";
 import { STATUS_LABELS } from "../../core/types";
 
 export function formatDuration(ms: number): string {
@@ -43,4 +43,16 @@ export function downloadJson(name: string, data: unknown) {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/** Time left until the next refresh, and how much of the current wait (0–100) has passed. */
+export function countdownOf(rt: TabRuntime | null, now: number, intervalSeconds: number) {
+  if (!rt?.nextDueAt) return { countdown: null, progress: 0 };
+  const countdown = Math.max(0, rt.nextDueAt - now);
+  // The wait being counted down, from the last check (or the start) to the next one.
+  // A randomized rule's wait can be far longer than its interval.
+  const span = rt.nextDueAt - Math.max(rt.startedAt, rt.lastAttemptAt ?? 0);
+  const total = span > 0 ? span : intervalSeconds * 1000;
+  const progress = total ? Math.min(100, Math.max(0, 100 - (countdown / total) * 100)) : 0;
+  return { countdown, progress };
 }

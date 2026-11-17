@@ -1,6 +1,9 @@
 import { validateRule } from "@/core/rule-schema";
 import { matchesAny } from "@/core/url-pattern";
 import { describeRule, intervalChips, intervalLabel, untilRule } from "@/ui/popup/describe";
+import { countdownOf } from "@/ui/shared/format";
+import { newRuntime } from "@/core/state-machine";
+import type { TabRuntime } from "@/core/types";
 
 describe("popup wording helpers", () => {
   it("labels intervals in words", () => {
@@ -41,7 +44,38 @@ describe("popup wording helpers", () => {
           ],
         } as never,
       }),
-    ).toBe("Refreshing every 10 min until any of 2 conditions match, then notify me");
+    ).toBe("Refreshing every 10 min until #a appears on the page or #b appears on the page, then notify me");
+  });
+
+  it("names the random range and a refresh limit", () => {
+    const rule = {
+      trigger: { type: "interval", seconds: 60, randomMaxSeconds: 108000 } as never,
+      stopWhen: {
+        type: "any",
+        conditions: [
+          { type: "dom.text", operator: "contains", value: "3 successful checks" },
+          { type: "refreshCount", operator: ">=", value: 40 },
+        ],
+      } as never,
+      actions: { onMatched: [{ type: "stopRefresh" }, { type: "notify" }], onNotMatched: [{ type: "refresh" }] } as never,
+    };
+    expect(describeRule(rule)).toBe(
+      "Refreshing at random every 1 min to 30 hours until “3 successful checks” appears or it has refreshed 40 times, then notify me",
+    );
+    // A random maximum no larger than the interval is just the interval.
+    expect(describeRule({ ...rule, trigger: { type: "interval", seconds: 60, randomMaxSeconds: 60 } as never }, null)).toMatch(/^Refreshing every 1 min until/);
+  });
+
+  it("keeps the count for nested or long condition lists", () => {
+    const leaf = { type: "dom.exists", selector: "#a" };
+    const rule = (conditions: unknown[]) => ({
+      trigger: { type: "interval", seconds: 600 } as never,
+      stopWhen: { type: "all", conditions } as never,
+      actions: { onMatched: [{ type: "stopRefresh" }], onNotMatched: [{ type: "refresh" }] } as never,
+    });
+    expect(describeRule(rule([leaf, leaf, leaf, leaf]))).toContain("all of 4 conditions match");
+    expect(describeRule(rule([leaf, { type: "any", conditions: [leaf, leaf] }]))).toContain("all of 2 conditions match");
+    expect(describeRule(rule([leaf, { type: "refreshCount", operator: "<", value: 3 }]))).toContain("all of 2 conditions match");
   });
 });
 
@@ -130,4 +164,21 @@ it("describes click and webhook actions plainly, saying where a webhook sends an
     "send a message to http://127.0.0.1:2375/x (with the page address)",
   );
   expect(actionsPhrase([{ type: "refresh", keepScroll: true } as never])).toBe("refresh (keeping the scroll position)");
+});
+
+describe("countdown progress", () => {
+  const rt = (patch: Partial<TabRuntime>) => ({ ...newRuntime(1, "https://example.com/", 0), ...patch });
+  it("measures the wait actually scheduled, not the rule's interval", () => {
+    // Randomized: 60 s interval, but this wait runs 10 hours from the last check.
+    const r = rt({ startedAt: 0, lastAttemptAt: 1000, nextDueAt: 1000 + 10 * 3600_000 });
+    expect(countdownOf(r, 1000 + 5 * 3600_000, 60)).toEqual({ countdown: 5 * 3600_000, progress: 50 });
+  });
+  it("counts from the start before the first check", () => {
+    expect(countdownOf(rt({ startedAt: 0, nextDueAt: 60_000 }), 15_000, 60).progress).toBe(25);
+  });
+  it("falls back to the interval when the times don't add up, and is empty with nothing scheduled", () => {
+    expect(countdownOf(rt({ startedAt: 0, lastAttemptAt: 90_000, nextDueAt: 60_000 }), 30_000, 60).progress).toBe(50);
+    expect(countdownOf(rt({ nextDueAt: null }), 0, 60)).toEqual({ countdown: null, progress: 0 });
+    expect(countdownOf(null, 0, 60)).toEqual({ countdown: null, progress: 0 });
+  });
 });

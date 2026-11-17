@@ -41,9 +41,23 @@ const TEXT_WORDS: Record<string, (n: Node) => string> = {
   equals: (n) => `the text${whereOf(n)} is ${quote(n.value)}`,
 };
 
+const REFRESH_COUNT_WORDS: Record<string, (v: number) => string> = {
+  ">=": (v) => `it has refreshed ${v} time${v === 1 ? "" : "s"}`,
+  ">": (v) => `it has refreshed more than ${v} time${v === 1 ? "" : "s"}`,
+};
+
+/** Simple conditions that read well joined with "or"/"and" (no nested groups). */
+const joinable = (c: ConditionNode) => {
+  const n = c as Node;
+  if (n.type === "refreshCount") return Object.hasOwn(REFRESH_COUNT_WORDS, String(n.operator));
+  return Object.hasOwn(CONDITION_WORDS, n.type) && !["all", "any", "not"].includes(n.type);
+};
+
 const group = (n: Node) => {
   const items = (n.conditions as ConditionNode[] | undefined) ?? [];
   if (items.length === 1) return describeCondition(items[0]!);
+  // "“Sold out” disappears or it has refreshed 40 times"; longer lists keep the count.
+  if (items.length <= 3 && items.every(joinable)) return items.map(describeCondition).join(n.type === "all" ? " and " : " or ");
   return `${n.type === "all" ? "all" : "any"} of ${items.length} conditions match`;
 };
 
@@ -53,6 +67,8 @@ const CONDITION_WORDS: Record<string, (n: Node) => string> = {
   "dom.changed": (n) => (whereOf(n) ? `the content${whereOf(n)} changes` : "the page changes"),
   "dom.exists": (n) => `${String(n.selector)} appears on the page`,
   "dom.missing": (n) => `${String(n.selector)} is gone from the page`,
+  refreshCount: (n) =>
+    Object.hasOwn(REFRESH_COUNT_WORDS, String(n.operator)) ? REFRESH_COUNT_WORDS[String(n.operator)]!(Number(n.value)) : "the refresh count matches",
   all: group,
   any: group,
   not: () => "a condition stops matching",
@@ -70,7 +86,7 @@ export function describeCondition(c: ConditionNode): string {
  * rule's own (fast intervals run at 30 s while they're turned off).
  */
 export function describeRule(rule: Pick<Rule, "trigger" | "stopWhen" | "actions">, effectiveSeconds?: number | null): string {
-  const when = triggerPhrase(rule.trigger as { type: string; seconds?: number }, effectiveSeconds);
+  const when = triggerPhrase(rule.trigger as Trigger, effectiveSeconds);
   const { onUnknown } = rule.actions;
   const unknown = onUnknown?.length ? `; if the page can't be checked: ${actionsPhrase(onUnknown)}` : "";
   const main = rule.stopWhen ? withCondition(when, describeCondition(rule.stopWhen), rule.actions) : withoutCondition(when, rule.actions.onNotMatched);
@@ -84,10 +100,15 @@ const TRIGGER_PHRASES: Record<string, string> = {
   urlChange: "each time the address changes",
 };
 
-/** "every 5 min", "each time the page loads", … */
-function triggerPhrase(t: { type: string; seconds?: number }, effectiveSeconds?: number | null): string {
+type Trigger = { type: string; seconds?: number; randomMaxSeconds?: number };
+
+/** "every 5 min", "at random every 5 to 6 min", "each time the page loads", … */
+function triggerPhrase(t: Trigger, effectiveSeconds?: number | null): string {
   const seconds = effectiveSeconds ?? t.seconds;
-  if (t.type === "interval" && seconds) return `every ${intervalLabel(seconds)}`;
+  if (t.type === "interval" && seconds) {
+    const max = t.randomMaxSeconds;
+    return max && max > seconds ? `at random every ${intervalLabel(seconds)} to ${intervalLabel(max)}` : `every ${intervalLabel(seconds)}`;
+  }
   return Object.hasOwn(TRIGGER_PHRASES, t.type) ? TRIGGER_PHRASES[t.type]! : `on its ${t.type} trigger`;
 }
 
