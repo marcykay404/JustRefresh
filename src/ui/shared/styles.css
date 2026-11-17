@@ -359,6 +359,9 @@ body.popup {
   font-size: 22px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  /* "22h 33m" stays on one line; the text beside it wraps instead. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .btn-grid {
   display: grid;

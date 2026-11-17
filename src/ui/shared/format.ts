@@ -1,4 +1,4 @@
-import type { ExecutionStatus } from "../../core/types";
+import type { ExecutionStatus, TabRuntime } from "../../core/types";
 import { STATUS_LABELS } from "../../core/types";
 
 export function formatDuration(ms: number): string {
@@ -43,4 +43,23 @@ export function downloadJson(name: string, data: unknown) {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/**
+ * Time left until the next refresh, and how much of the current wait (0–100)
+ * has passed. A fixed interval is the wait. A randomized one
+ * (`randomMaxSeconds`) can be much longer than its interval, so its wait is
+ * taken from the last check (or the start), capped at the random maximum. That
+ * is an estimate: after Resume or Refresh now the bar can start partly full.
+ */
+export function countdownOf(rt: TabRuntime | null, now: number, intervalSeconds: number, randomMaxSeconds?: number) {
+  if (!rt?.nextDueAt) return { countdown: null, progress: 0 };
+  const countdown = Math.max(0, rt.nextDueAt - now);
+  let total = intervalSeconds * 1000;
+  if (randomMaxSeconds && randomMaxSeconds > intervalSeconds) {
+    const span = rt.nextDueAt - Math.max(rt.startedAt, rt.lastAttemptAt ?? 0);
+    total = Math.min(Math.max(span, countdown), randomMaxSeconds * 1000);
+  }
+  const progress = total ? Math.min(100, Math.max(0, 100 - (countdown / total) * 100)) : 0;
+  return { countdown, progress };
 }

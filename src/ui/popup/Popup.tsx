@@ -11,6 +11,7 @@ import { api, originOf, requestOrigins } from "../shared/api";
 import { askAccessThen, cancelAfterAccess, type AfterAccessRequest } from "../shared/access";
 import { fileAccessAllowed, openChromeSiteAccess } from "../shared/chrome-settings";
 import { useApi, useNow } from "../shared/hooks";
+import { countdownOf } from "../shared/format";
 import { StillLoading } from "../shared/StillLoading";
 import { ErrorBox } from "../shared/components";
 import type { Rule, TabRuntime } from "../../core/types";
@@ -112,12 +113,6 @@ function blockedKind(s: TabState): BlockedKind | null {
   return kind === "paused" || kind === "disabled" || kind === "url_excluded" ? kind : null;
 }
 
-function countdownOf(rt: TabRuntime | null, now: number, intervalSeconds: number) {
-  const countdown = rt?.nextDueAt ? Math.max(0, rt.nextDueAt - now) : null;
-  const progress = countdown !== null && intervalSeconds ? Math.min(100, Math.max(0, 100 - (countdown / (intervalSeconds * 1000)) * 100)) : 0;
-  return { countdown, progress };
-}
-
 function TabPopup({
   tabId,
   s,
@@ -174,7 +169,10 @@ function TabPopup({
       });
     // Once per popup.
   }, []);
-  const { countdown, progress } = countdownOf(f.rt, now, s.interval ?? f.currentInterval);
+  // useApi keeps the last rule while another loads: only use the one this tab runs.
+  const ruleData = ruleId && rule.data?.id === ruleId ? rule.data : undefined;
+  const randomMax = (ruleData?.trigger as { randomMaxSeconds?: number } | undefined)?.randomMaxSeconds;
+  const { countdown, progress } = countdownOf(f.rt, now, s.interval ?? f.currentInterval, randomMax);
 
   const begin = async (intervalSeconds: number) => {
     setDeclinedFor(null);
@@ -252,8 +250,8 @@ function TabPopup({
     if (f.byRule) {
       return (
         <RuleCard
-          name={s.resolution.controllerName ?? rule.data?.name ?? "Rule"}
-          summary={rule.data ? describeRule(rule.data, s.interval) : null}
+          name={s.resolution.controllerName ?? ruleData?.name ?? "Rule"}
+          summary={ruleData ? describeRule(ruleData, s.interval) : null}
           onEdit={() => openDashboard(`/builder/${ruleId}`)}
           rt={f.rt}
           countdown={countdown}

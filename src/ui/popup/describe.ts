@@ -19,8 +19,10 @@ export function intervalLabel(seconds: number): string {
     const rest = s % 60;
     return rest ? `${m} min ${rest} sec` : `${m} min`;
   }
-  const h = Math.floor(s / 3600);
-  const m = Math.round((s % 3600) / 60);
+  // Whole minutes first, so 7170 s is "2 hours", not "1 hr 60 min".
+  const minutes = Math.round(s / 60);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
   if (m) return `${h} hr ${m} min`;
   return h === 1 ? "1 hour" : `${h} hours`;
 }
@@ -41,9 +43,25 @@ const TEXT_WORDS: Record<string, (n: Node) => string> = {
   equals: (n) => `the text${whereOf(n)} is ${quote(n.value)}`,
 };
 
+const times = (v: number) => (v === 1 ? "once" : `${v} times`);
+
+const REFRESH_COUNT_WORDS: Record<string, (v: number) => string> = {
+  ">=": (v) => `it has refreshed ${times(v)}`,
+  ">": (v) => `it has refreshed more than ${times(v)}`,
+};
+
+/** Simple conditions that read well joined with "or"/"and" (no nested groups). */
+const joinable = (c: ConditionNode) => {
+  const n = c as Node;
+  if (n.type === "refreshCount") return Object.hasOwn(REFRESH_COUNT_WORDS, String(n.operator));
+  return Object.hasOwn(CONDITION_WORDS, n.type) && !["all", "any", "not"].includes(n.type);
+};
+
 const group = (n: Node) => {
   const items = (n.conditions as ConditionNode[] | undefined) ?? [];
   if (items.length === 1) return describeCondition(items[0]!);
+  // "“Sold out” disappears or it has refreshed 40 times"; longer lists keep the count.
+  if (items.length <= 3 && items.every(joinable)) return items.map(describeCondition).join(n.type === "all" ? " and " : " or ");
   return `${n.type === "all" ? "all" : "any"} of ${items.length} conditions match`;
 };
 
@@ -53,6 +71,8 @@ const CONDITION_WORDS: Record<string, (n: Node) => string> = {
   "dom.changed": (n) => (whereOf(n) ? `the content${whereOf(n)} changes` : "the page changes"),
   "dom.exists": (n) => `${String(n.selector)} appears on the page`,
   "dom.missing": (n) => `${String(n.selector)} is gone from the page`,
+  refreshCount: (n) =>
+    Object.hasOwn(REFRESH_COUNT_WORDS, String(n.operator)) ? REFRESH_COUNT_WORDS[String(n.operator)]!(Number(n.value)) : "the refresh count matches",
   all: group,
   any: group,
   not: () => "a condition stops matching",
@@ -70,7 +90,7 @@ export function describeCondition(c: ConditionNode): string {
  * rule's own (fast intervals run at 30 s while they're turned off).
  */
 export function describeRule(rule: Pick<Rule, "trigger" | "stopWhen" | "actions">, effectiveSeconds?: number | null): string {
-  const when = triggerPhrase(rule.trigger as { type: string; seconds?: number }, effectiveSeconds);
+  const when = triggerPhrase(rule.trigger as Trigger, effectiveSeconds);
   const { onUnknown } = rule.actions;
   const unknown = onUnknown?.length ? `; if the page can't be checked: ${actionsPhrase(onUnknown)}` : "";
   const main = rule.stopWhen ? withCondition(when, describeCondition(rule.stopWhen), rule.actions) : withoutCondition(when, rule.actions.onNotMatched);
@@ -84,10 +104,24 @@ const TRIGGER_PHRASES: Record<string, string> = {
   urlChange: "each time the address changes",
 };
 
-/** "every 5 min", "each time the page loads", … */
-function triggerPhrase(t: { type: string; seconds?: number }, effectiveSeconds?: number | null): string {
+type Trigger = { type: string; seconds?: number; randomMaxSeconds?: number };
+
+/** 300, 360 → "at random intervals of 5 to 6 min"; 3600, 7200 → "… of 1 to 2 hours"; 3600, 3620 → "every 1 hour". */
+function rangePhrase(lo: number, hi: number): string {
+  const [a, b] = [intervalLabel(lo), intervalLabel(hi)];
+  if (a === b) return `every ${a}`;
+  const [, n, unit] = /^(\d+) (hour|min|sec)s?$/.exec(a) ?? [];
+  const sameUnit = unit !== undefined && new RegExp(`^\\d+ ${unit}s?$`).test(b);
+  return `at random intervals of ${sameUnit ? n : a} to ${b}`;
+}
+
+/** "every 5 min", "at random intervals of 5 to 6 min", "each time the page loads", … */
+function triggerPhrase(t: Trigger, effectiveSeconds?: number | null): string {
   const seconds = effectiveSeconds ?? t.seconds;
-  if (t.type === "interval" && seconds) return `every ${intervalLabel(seconds)}`;
+  if (t.type === "interval" && seconds) {
+    const max = t.randomMaxSeconds;
+    return max && max > seconds ? rangePhrase(seconds, max) : `every ${intervalLabel(seconds)}`;
+  }
   return Object.hasOwn(TRIGGER_PHRASES, t.type) ? TRIGGER_PHRASES[t.type]! : `on its ${t.type} trigger`;
 }
 
