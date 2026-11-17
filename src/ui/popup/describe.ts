@@ -19,8 +19,10 @@ export function intervalLabel(seconds: number): string {
     const rest = s % 60;
     return rest ? `${m} min ${rest} sec` : `${m} min`;
   }
-  const h = Math.floor(s / 3600);
-  const m = Math.round((s % 3600) / 60);
+  // Whole minutes first, so 7170 s is "2 hours", not "1 hr 60 min".
+  const minutes = Math.round(s / 60);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
   if (m) return `${h} hr ${m} min`;
   return h === 1 ? "1 hour" : `${h} hours`;
 }
@@ -104,11 +106,13 @@ const TRIGGER_PHRASES: Record<string, string> = {
 
 type Trigger = { type: string; seconds?: number; randomMaxSeconds?: number };
 
-/** 300, 360 → "5 to 6 min"; 60, 108000 → "1 min to 30 hours". */
-function rangeLabel(lo: number, hi: number): string {
+/** 300, 360 → "at random intervals of 5 to 6 min"; 3600, 7200 → "… of 1 to 2 hours"; 3600, 3620 → "every 1 hour". */
+function rangePhrase(lo: number, hi: number): string {
   const [a, b] = [intervalLabel(lo), intervalLabel(hi)];
-  const [, n, unit] = /^(\d+) (\w+)$/.exec(a) ?? [];
-  return unit && new RegExp(`^\\d+ ${unit}$`).test(b) ? `${n} to ${b}` : `${a} to ${b}`;
+  if (a === b) return `every ${a}`;
+  const [, n, unit] = /^(\d+) (hour|min|sec)s?$/.exec(a) ?? [];
+  const sameUnit = unit !== undefined && new RegExp(`^\\d+ ${unit}s?$`).test(b);
+  return `at random intervals of ${sameUnit ? n : a} to ${b}`;
 }
 
 /** "every 5 min", "at random intervals of 5 to 6 min", "each time the page loads", … */
@@ -116,7 +120,7 @@ function triggerPhrase(t: Trigger, effectiveSeconds?: number | null): string {
   const seconds = effectiveSeconds ?? t.seconds;
   if (t.type === "interval" && seconds) {
     const max = t.randomMaxSeconds;
-    return max && max > seconds ? `at random intervals of ${rangeLabel(seconds, max)}` : `every ${intervalLabel(seconds)}`;
+    return max && max > seconds ? rangePhrase(seconds, max) : `every ${intervalLabel(seconds)}`;
   }
   return Object.hasOwn(TRIGGER_PHRASES, t.type) ? TRIGGER_PHRASES[t.type]! : `on its ${t.type} trigger`;
 }

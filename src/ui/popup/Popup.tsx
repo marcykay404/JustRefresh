@@ -169,7 +169,9 @@ function TabPopup({
       });
     // Once per popup.
   }, []);
-  const randomMax = (rule.data?.trigger as { randomMaxSeconds?: number } | undefined)?.randomMaxSeconds;
+  // useApi keeps the last rule while another loads: only use the one this tab runs.
+  const ruleData = ruleId && rule.data?.id === ruleId ? rule.data : undefined;
+  const randomMax = (ruleData?.trigger as { randomMaxSeconds?: number } | undefined)?.randomMaxSeconds;
   const { countdown, progress } = countdownOf(f.rt, now, s.interval ?? f.currentInterval, randomMax);
 
   const begin = async (intervalSeconds: number) => {
@@ -248,8 +250,8 @@ function TabPopup({
     if (f.byRule) {
       return (
         <RuleCard
-          name={s.resolution.controllerName ?? rule.data?.name ?? "Rule"}
-          summary={rule.data ? describeRule(rule.data, s.interval) : null}
+          name={s.resolution.controllerName ?? ruleData?.name ?? "Rule"}
+          summary={ruleData ? describeRule(ruleData, s.interval) : null}
           onEdit={() => openDashboard(`/builder/${ruleId}`)}
           rt={f.rt}
           countdown={countdown}

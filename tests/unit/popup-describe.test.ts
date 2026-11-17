@@ -67,7 +67,11 @@ describe("popup wording helpers", () => {
     const random = (seconds: number, randomMaxSeconds: number, effective?: number) =>
       describeRule({ ...rule, stopWhen: undefined, trigger: { type: "interval", seconds, randomMaxSeconds } as never }, effective);
     expect(random(300, 360)).toBe("Refreshing at random intervals of 5 to 6 min");
-    expect(random(3600, 7200)).toBe("Refreshing at random intervals of 1 hour to 2 hours");
+    expect(random(3600, 7200)).toBe("Refreshing at random intervals of 1 to 2 hours");
+    expect(random(3600, 7170)).toBe("Refreshing at random intervals of 1 to 2 hours");
+    expect(random(3600, 5400)).toBe("Refreshing at random intervals of 1 hour to 1 hr 30 min");
+    // A range too small to show reads as the interval.
+    expect(random(3600, 3620)).toBe("Refreshing every 1 hour");
     // Fast intervals turned off: the popup passes the interval in effect (30 s).
     expect(random(5, 20, 30)).toBe("Refreshing every 30 sec");
     expect(random(10, 60, 30)).toBe("Refreshing at random intervals of 30 sec to 1 min");
@@ -199,6 +203,11 @@ describe("countdown progress", () => {
   it("uses the interval for a fixed one, even when the wait was restarted later (Resume, Refresh now)", () => {
     const r = rt({ startedAt: 0, lastAttemptAt: 0, nextDueAt: 3600_000 + 600_000 });
     expect(countdownOf(r, 3600_000, 600).progress).toBe(0);
+  });
+  it("uses the interval when the random maximum isn't above it (fast intervals off clamp both to 30 s)", () => {
+    const r = rt({ startedAt: 0, lastAttemptAt: 0, nextDueAt: 3600_000 + 30_000 });
+    expect(countdownOf(r, 3600_000 + 15_000, 30, 20).progress).toBe(50);
+    expect(countdownOf(r, 3600_000 + 15_000, 30, 30).progress).toBe(50);
   });
   it("caps a randomized wait at the random maximum", () => {
     // Resumed an hour after the last check, with 10 min of a 60 s–20 min random wait to go.
