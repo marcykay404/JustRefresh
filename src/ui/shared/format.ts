@@ -45,14 +45,21 @@ export function downloadJson(name: string, data: unknown) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-/** Time left until the next refresh, and how much of the current wait (0–100) has passed. */
-export function countdownOf(rt: TabRuntime | null, now: number, intervalSeconds: number) {
+/**
+ * Time left until the next refresh, and how much of the current wait (0–100)
+ * has passed. A fixed interval is the wait. A randomized one
+ * (`randomMaxSeconds`) can be much longer than its interval, so its wait is
+ * taken from the last check (or the start), capped at the random maximum. That
+ * is an estimate: after Resume or Refresh now the bar can start partly full.
+ */
+export function countdownOf(rt: TabRuntime | null, now: number, intervalSeconds: number, randomMaxSeconds?: number) {
   if (!rt?.nextDueAt) return { countdown: null, progress: 0 };
   const countdown = Math.max(0, rt.nextDueAt - now);
-  // The wait being counted down, from the last check (or the start) to the next one.
-  // A randomized rule's wait can be far longer than its interval.
-  const span = rt.nextDueAt - Math.max(rt.startedAt, rt.lastAttemptAt ?? 0);
-  const total = span > 0 ? span : intervalSeconds * 1000;
+  let total = intervalSeconds * 1000;
+  if (randomMaxSeconds && randomMaxSeconds > intervalSeconds) {
+    const span = rt.nextDueAt - Math.max(rt.startedAt, rt.lastAttemptAt ?? 0);
+    total = Math.min(Math.max(span, countdown), randomMaxSeconds * 1000);
+  }
   const progress = total ? Math.min(100, Math.max(0, 100 - (countdown / total) * 100)) : 0;
   return { countdown, progress };
 }

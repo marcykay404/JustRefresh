@@ -169,7 +169,8 @@ function TabPopup({
       });
     // Once per popup.
   }, []);
-  const { countdown, progress } = countdownOf(f.rt, now, s.interval ?? f.currentInterval);
+  const randomMax = (rule.data?.trigger as { randomMaxSeconds?: number } | undefined)?.randomMaxSeconds;
+  const { countdown, progress } = countdownOf(f.rt, now, s.interval ?? f.currentInterval, randomMax);
 
   const begin = async (intervalSeconds: number) => {
     setDeclinedFor(null);

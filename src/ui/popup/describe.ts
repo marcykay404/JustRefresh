@@ -41,9 +41,11 @@ const TEXT_WORDS: Record<string, (n: Node) => string> = {
   equals: (n) => `the text${whereOf(n)} is ${quote(n.value)}`,
 };
 
+const times = (v: number) => (v === 1 ? "once" : `${v} times`);
+
 const REFRESH_COUNT_WORDS: Record<string, (v: number) => string> = {
-  ">=": (v) => `it has refreshed ${v} time${v === 1 ? "" : "s"}`,
-  ">": (v) => `it has refreshed more than ${v} time${v === 1 ? "" : "s"}`,
+  ">=": (v) => `it has refreshed ${times(v)}`,
+  ">": (v) => `it has refreshed more than ${times(v)}`,
 };
 
 /** Simple conditions that read well joined with "or"/"and" (no nested groups). */
@@ -102,12 +104,19 @@ const TRIGGER_PHRASES: Record<string, string> = {
 
 type Trigger = { type: string; seconds?: number; randomMaxSeconds?: number };
 
-/** "every 5 min", "at random every 5 to 6 min", "each time the page loads", … */
+/** 300, 360 → "5 to 6 min"; 60, 108000 → "1 min to 30 hours". */
+function rangeLabel(lo: number, hi: number): string {
+  const [a, b] = [intervalLabel(lo), intervalLabel(hi)];
+  const [, n, unit] = /^(\d+) (\w+)$/.exec(a) ?? [];
+  return unit && new RegExp(`^\\d+ ${unit}$`).test(b) ? `${n} to ${b}` : `${a} to ${b}`;
+}
+
+/** "every 5 min", "at random intervals of 5 to 6 min", "each time the page loads", … */
 function triggerPhrase(t: Trigger, effectiveSeconds?: number | null): string {
   const seconds = effectiveSeconds ?? t.seconds;
   if (t.type === "interval" && seconds) {
     const max = t.randomMaxSeconds;
-    return max && max > seconds ? `at random every ${intervalLabel(seconds)} to ${intervalLabel(max)}` : `every ${intervalLabel(seconds)}`;
+    return max && max > seconds ? `at random intervals of ${rangeLabel(seconds, max)}` : `every ${intervalLabel(seconds)}`;
   }
   return Object.hasOwn(TRIGGER_PHRASES, t.type) ? TRIGGER_PHRASES[t.type]! : `on its ${t.type} trigger`;
 }

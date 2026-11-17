@@ -60,10 +60,30 @@ describe("popup wording helpers", () => {
       actions: { onMatched: [{ type: "stopRefresh" }, { type: "notify" }], onNotMatched: [{ type: "refresh" }] } as never,
     };
     expect(describeRule(rule)).toBe(
-      "Refreshing at random every 1 min to 30 hours until “3 successful checks” appears or it has refreshed 40 times, then notify me",
+      "Refreshing at random intervals of 1 min to 30 hours until “3 successful checks” appears or it has refreshed 40 times, then notify me",
     );
     // A random maximum no larger than the interval is just the interval.
     expect(describeRule({ ...rule, trigger: { type: "interval", seconds: 60, randomMaxSeconds: 60 } as never }, null)).toMatch(/^Refreshing every 1 min until/);
+    const random = (seconds: number, randomMaxSeconds: number, effective?: number) =>
+      describeRule({ ...rule, stopWhen: undefined, trigger: { type: "interval", seconds, randomMaxSeconds } as never }, effective);
+    expect(random(300, 360)).toBe("Refreshing at random intervals of 5 to 6 min");
+    expect(random(3600, 7200)).toBe("Refreshing at random intervals of 1 hour to 2 hours");
+    // Fast intervals turned off: the popup passes the interval in effect (30 s).
+    expect(random(5, 20, 30)).toBe("Refreshing every 30 sec");
+    expect(random(10, 60, 30)).toBe("Refreshing at random intervals of 30 sec to 1 min");
+  });
+
+  it("joins with and, and words other refresh counts", () => {
+    const rule = (conditions: unknown[], type = "all") => ({
+      trigger: { type: "interval", seconds: 600 } as never,
+      stopWhen: { type, conditions } as never,
+      actions: { onMatched: [{ type: "stopRefresh" }], onNotMatched: [{ type: "refresh" }] } as never,
+    });
+    const shown = { type: "dom.exists", selector: "#ok" };
+    expect(describeRule(rule([shown, { type: "refreshCount", operator: ">", value: 1 }]))).toContain(
+      "until #ok appears on the page and it has refreshed more than once",
+    );
+    expect(describeRule(rule([shown, { type: "refreshCount", operator: ">=", value: 1 }], "any"))).toContain("or it has refreshed once");
   });
 
   it("keeps the count for nested or long condition lists", () => {
@@ -171,13 +191,22 @@ describe("countdown progress", () => {
   it("measures the wait actually scheduled, not the rule's interval", () => {
     // Randomized: 60 s interval, but this wait runs 10 hours from the last check.
     const r = rt({ startedAt: 0, lastAttemptAt: 1000, nextDueAt: 1000 + 10 * 3600_000 });
-    expect(countdownOf(r, 1000 + 5 * 3600_000, 60)).toEqual({ countdown: 5 * 3600_000, progress: 50 });
+    expect(countdownOf(r, 1000 + 5 * 3600_000, 60, 108000)).toEqual({ countdown: 5 * 3600_000, progress: 50 });
   });
-  it("counts from the start before the first check", () => {
-    expect(countdownOf(rt({ startedAt: 0, nextDueAt: 60_000 }), 15_000, 60).progress).toBe(25);
+  it("counts a randomized wait from the start before the first check", () => {
+    expect(countdownOf(rt({ startedAt: 0, nextDueAt: 60_000 }), 15_000, 30, 120).progress).toBe(25);
   });
-  it("falls back to the interval when the times don't add up, and is empty with nothing scheduled", () => {
-    expect(countdownOf(rt({ startedAt: 0, lastAttemptAt: 90_000, nextDueAt: 60_000 }), 30_000, 60).progress).toBe(50);
+  it("uses the interval for a fixed one, even when the wait was restarted later (Resume, Refresh now)", () => {
+    const r = rt({ startedAt: 0, lastAttemptAt: 0, nextDueAt: 3600_000 + 600_000 });
+    expect(countdownOf(r, 3600_000, 600).progress).toBe(0);
+  });
+  it("caps a randomized wait at the random maximum", () => {
+    // Resumed an hour after the last check, with 10 min of a 60 s–20 min random wait to go.
+    const r = rt({ startedAt: 0, lastAttemptAt: 0, nextDueAt: 3600_000 + 600_000 });
+    expect(countdownOf(r, 3600_000, 60, 1200).progress).toBe(50);
+  });
+  it("is never ahead of the time left when the times don't add up, and is empty with nothing scheduled", () => {
+    expect(countdownOf(rt({ startedAt: 0, lastAttemptAt: 90_000, nextDueAt: 60_000 }), 30_000, 30, 120).progress).toBe(0);
     expect(countdownOf(rt({ nextDueAt: null }), 0, 60)).toEqual({ countdown: null, progress: 0 });
     expect(countdownOf(null, 0, 60)).toEqual({ countdown: null, progress: 0 });
   });
